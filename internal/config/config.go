@@ -1,0 +1,147 @@
+package config
+
+import (
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// Config holds all application configuration.
+type Config struct {
+	Server   ServerConfig
+	Database DatabaseConfig
+	Secret   SecretConfig
+	Worker   WorkerConfig
+	Ingest   IngestConfig
+	Admin    AdminConfig
+	Log      LogConfig
+}
+
+type ServerConfig struct {
+	ListenAddr string
+}
+
+type DatabaseConfig struct {
+	Path string
+}
+
+type SecretConfig struct {
+	MasterKeyEnv string // raw ENCRYPTION_MASTER_KEY value
+}
+
+type WorkerConfig struct {
+	EventProcessorConcurrency int
+	DeliveryWorkerConcurrency int
+	LeaseTimeout              time.Duration
+	RetryBaseDelay            time.Duration
+	RetryMaxDelay             time.Duration
+	RetryJitterPercent        int
+	DefaultMaxAttempts        int
+	ClaimPollInterval         time.Duration
+	LeaseRecoveryInterval     time.Duration
+}
+
+type IngestConfig struct {
+	MaxPayloadBytes    int
+	GlobalRateLimit    string
+	EventRetentionDays int
+}
+
+type AdminConfig struct {
+	InitialPassword string
+}
+
+type LogConfig struct {
+	Level string
+}
+
+// Load reads configuration from environment variables with sensible defaults.
+func Load() (*Config, error) {
+	cfg := &Config{
+		Server: ServerConfig{
+			ListenAddr: getEnv("LISTEN_ADDR", ":8080"),
+		},
+		Database: DatabaseConfig{
+			Path: getEnv("DATABASE_PATH", "data/zpush.db"),
+		},
+		Secret: SecretConfig{
+			MasterKeyEnv: os.Getenv("ENCRYPTION_MASTER_KEY"),
+		},
+		Worker: WorkerConfig{
+			EventProcessorConcurrency: getEnvInt("EVENT_PROCESSOR_CONCURRENCY", 4),
+			DeliveryWorkerConcurrency: getEnvInt("DELIVERY_WORKER_CONCURRENCY", 8),
+			LeaseTimeout:              getEnvDuration("LEASE_TIMEOUT", 5*time.Minute),
+			RetryBaseDelay:            30 * time.Second,
+			RetryMaxDelay:             1 * time.Hour,
+			RetryJitterPercent:        20,
+			DefaultMaxAttempts:        getEnvInt("DEFAULT_MAX_ATTEMPTS", 5),
+			ClaimPollInterval:         2 * time.Second,
+			LeaseRecoveryInterval:     30 * time.Second,
+		},
+		Ingest: IngestConfig{
+			MaxPayloadBytes:    getEnvInt("MAX_PAYLOAD_BYTES", 1048576), // 1MB
+			GlobalRateLimit:    getEnv("INGEST_GLOBAL_RATE_LIMIT", "100/200"),
+			EventRetentionDays: getEnvInt("EVENT_RETENTION_DAYS", 30),
+		},
+		Admin: AdminConfig{
+			InitialPassword: os.Getenv("ADMIN_INITIAL_PASSWORD"),
+		},
+		Log: LogConfig{
+			Level: getEnv("LOG_LEVEL", "info"),
+		},
+	}
+
+	if cfg.Secret.MasterKeyEnv == "" {
+		return nil, fmt.Errorf("ENCRYPTION_MASTER_KEY is required but not set")
+	}
+
+	return cfg, nil
+}
+
+func getEnv(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
+
+func getEnvInt(key string, fallback int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
+	}
+	return fallback
+}
+
+func getEnvDuration(key string, fallback time.Duration) time.Duration {
+	if v := os.Getenv(key); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
+		}
+		// Also try seconds as integer
+		if n, err := strconv.Atoi(v); err == nil {
+			return time.Duration(n) * time.Second
+		}
+	}
+	return fallback
+}
+
+// ParseGlobalRateLimit parses "rate/burst" format (e.g. "100/200").
+func ParseGlobalRateLimit(s string) (rate float64, burst int, err error) {
+	parts := strings.SplitN(s, "/", 2)
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("invalid rate limit format %q, expected rate/burst", s)
+	}
+	r, err := strconv.ParseFloat(parts[0], 64)
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid rate %q: %w", parts[0], err)
+	}
+	b, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid burst %q: %w", parts[1], err)
+	}
+	return r, b, nil
+}
