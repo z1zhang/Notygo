@@ -1,0 +1,441 @@
+package processor
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"strings"
+	"sync"
+	"time"
+
+	"zPush/internal/config"
+	"zPush/internal/delivery"
+	"zPush/internal/destination"
+	"zPush/internal/event"
+	"zPush/internal/mapping"
+	"zPush/internal/rules"
+	"zPush/internal/source"
+	"zPush/internal/templates"
+)
+
+// EventProcessor processes received events by claiming them, applying mappings,
+// evaluating rules, rendering templates, and creating deliveries.
+type EventProcessor struct {
+	cfg          config.WorkerConfig
+	sourceRepo   *source.Repository
+	mappingRepo  *mapping.Repository
+	ruleRepo     *rules.Repository
+	templateRepo *templates.Repository
+	destRepo     *destination.Repository
+	eventRepo    *event.Repository
+	deliveryRepo *delivery.Repository
+	workerID     string
+}
+
+// NewEventProcessor creates a new EventProcessor.
+func NewEventProcessor(
+	cfg config.WorkerConfig,
+	sourceRepo *source.Repository,
+	mappingRepo *mapping.Repository,
+	ruleRepo *rules.Repository,
+	templateRepo *templates.Repository,
+	destRepo *destination.Repository,
+	eventRepo *event.Repository,
+	deliveryRepo *delivery.Repository,
+) *EventProcessor {
+	workerID := generateWorkerID()
+	return &EventProcessor{
+		cfg:          cfg,
+		sourceRepo:   sourceRepo,
+		mappingRepo:  mappingRepo,
+		ruleRepo:     ruleRepo,
+		templateRepo: templateRepo,
+		destRepo:     destRepo,
+		eventRepo:    eventRepo,
+		deliveryRepo: deliveryRepo,
+		workerID:     workerID,
+	}
+}
+
+// Run starts the event processing loop. Blocks until context is cancelled.
+func (p *EventProcessor) Run(ctx context.Context) {
+	slog.Info("event processor starting", "worker_id", p.workerID, "concurrency", p.cfg.EventProcessorConcurrency)
+
+	sem := make(chan struct{}, p.cfg.EventProcessorConcurrency)
+	var wg sync.WaitGroup
+
+	ticker := time.NewTicker(p.cfg.ClaimPollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			slog.Info("event processor stopping, waiting for in-flight tasks", "worker_id", p.workerID)
+			wg.Wait()
+			slog.Info("event processor stopped", "worker_id", p.workerID)
+			return
+
+		case <-ticker.C:
+			// Try to claim an event
+			evt, err := p.eventRepo.ClaimEvent(ctx, p.workerID, p.cfg.LeaseTimeout)
+			if err != nil {
+				// No events to claim or error
+				continue
+			}
+
+			// Acquire semaphore slot
+			select {
+			case sem <- struct{}{}:
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					defer func() { <-sem }()
+					p.processEvent(ctx, evt)
+				}()
+			default:
+				// At concurrency limit; release the claim back
+				slog.Warn("event processor at concurrency limit, releasing claim", "event_id", evt.ID)
+				_ = p.eventRepo.SetStatus(ctx, evt.ID, event.EventStatusReceived)
+			}
+		}
+	}
+}
+
+// processEvent handles a single event through the full processing pipeline.
+func (p *EventProcessor) processEvent(ctx context.Context, evt *event.Event) {
+	slog.Info("processing event", "event_id", evt.ID, "source_id", evt.SourceID)
+
+	// 1. Fetch source + mapping
+	src, err := p.sourceRepo.GetByID(ctx, evt.SourceID)
+	if err != nil {
+		slog.Error("failed to fetch source for event", "event_id", evt.ID, "source_id", evt.SourceID, "error", err)
+		_ = p.eventRepo.MarkFailed(ctx, evt.ID, "PROCESSOR_001", "source not found")
+		return
+	}
+
+	var mapObj *mapping.Mapping
+	var mappingID *string
+	var mappingRevision *int
+
+	if src.MappingID != nil && *src.MappingID != "" {
+		mapObj, err = p.mappingRepo.GetByID(ctx, *src.MappingID)
+		if err != nil {
+			slog.Error("failed to fetch mapping for event", "event_id", evt.ID, "mapping_id", *src.MappingID, "error", err)
+			// Continue without mapping
+		} else {
+			mappingID = &mapObj.ID
+			mappingRevision = &mapObj.Revision
+		}
+	}
+
+	// 2. Parse the mapping.Fields JSON into []MappingEntry and apply mapping
+	parsedFields := map[string]any{}
+	validationErrors := map[string]any{}
+
+	if mapObj != nil {
+		parsedFields, validationErrors, err = applyMapping(mapObj, evt.PayloadRaw)
+		if err != nil {
+			slog.Error("failed to apply mapping", "event_id", evt.ID, "error", err)
+			validationErrors["mapping_error"] = err.Error()
+		}
+	}
+
+	// 3. Get enabled rules and build rule_set_snapshot
+	enabledRules, err := p.ruleRepo.ListEnabled(ctx)
+	if err != nil {
+		slog.Error("failed to list enabled rules", "event_id", evt.ID, "error", err)
+		enabledRules = []rules.Rule{}
+	}
+
+	ruleSetSnapshot := make([]event.RuleSnapshot, 0, len(enabledRules))
+	for _, r := range enabledRules {
+		ruleSetSnapshot = append(ruleSetSnapshot, event.RuleSnapshot{
+			ID:           r.ID,
+			Name:         r.Name,
+			Priority:     r.Priority,
+			Conditions:   r.Conditions,
+			Destinations: r.DestinationIDs,
+		})
+	}
+
+	// 4. Create EventRun with all metadata
+	eventRun := &event.EventRun{
+		EventID:          evt.ID,
+		RunType:          "initial",
+		MappingID:        mappingID,
+		MappingRevision:  mappingRevision,
+		RuleSetSnapshot:  ruleSetSnapshot,
+		ParsedFields:     parsedFields,
+		ValidationResult: validationErrors,
+		MatchedRuleIDs:   []string{},
+		Status:           event.EventRunStatusProcessing,
+	}
+
+	createdRun, err := p.eventRepo.CreateEventRun(ctx, eventRun)
+	if err != nil {
+		slog.Error("failed to create event run", "event_id", evt.ID, "error", err)
+		_ = p.eventRepo.MarkFailed(ctx, evt.ID, "PROCESSOR_002", "failed to create event run")
+		return
+	}
+
+	// 5. Evaluate rules
+	var matchedRuleIDs []string
+	for _, rule := range enabledRules {
+		matched, err := evaluateRule(rule, parsedFields)
+		if err != nil {
+			slog.Warn("rule evaluation error", "rule_id", rule.ID, "error", err)
+			continue
+		}
+		if matched {
+			matchedRuleIDs = append(matchedRuleIDs, rule.ID)
+
+			// 6. For each matched rule: render template, create deliveries
+			p.processMatchedRule(ctx, evt, createdRun, rule, parsedFields)
+		}
+	}
+
+	// 7. Mark EventRun completed, Mark Event processed
+	_ = p.eventRepo.CompleteEventRun(ctx, createdRun.ID, matchedRuleIDs)
+	_ = p.eventRepo.MarkProcessed(ctx, evt.ID)
+
+	slog.Info("event processed", "event_id", evt.ID, "matched_rules", len(matchedRuleIDs))
+}
+
+// processMatchedRule renders the template and creates deliveries for a matched rule.
+func (p *EventProcessor) processMatchedRule(ctx context.Context, evt *event.Event, run *event.EventRun, rule rules.Rule, fields map[string]any) {
+	var renderedTitle, renderedBody string
+
+	// Render template if rule has one
+	if rule.TemplateID != nil && *rule.TemplateID != "" {
+		tmpl, err := p.templateRepo.GetByID(ctx, *rule.TemplateID)
+		if err != nil {
+			slog.Error("failed to fetch template", "template_id", *rule.TemplateID, "error", err)
+		} else {
+			renderedTitle, renderedBody, err = renderTemplate(tmpl, fields)
+			if err != nil {
+				slog.Error("failed to render template", "template_id", *rule.TemplateID, "error", err)
+			}
+		}
+	}
+
+	// Create deliveries for each destination
+	for _, destID := range rule.DestinationIDs {
+		idempotencyKey := fmt.Sprintf("%s-%s-%s", evt.ID, run.ID, destID)
+
+		d := &delivery.Delivery{
+			EventID:        evt.ID,
+			EventRunID:     run.ID,
+			RuleID:         rule.ID,
+			DestinationID:  destID,
+			IdempotencyKey: idempotencyKey,
+			Status:         delivery.DeliveryStatusPending,
+			MaxAttempts:    p.cfg.DefaultMaxAttempts,
+			NextAttemptAt:  time.Now().UTC(),
+			RenderedTitle:  &renderedTitle,
+			RenderedBody:   &renderedBody,
+		}
+
+		_, err := p.deliveryRepo.Create(ctx, d)
+		if err != nil {
+			slog.Error("failed to create delivery", "event_id", evt.ID, "destination_id", destID, "error", err)
+		}
+	}
+}
+
+// applyMapping applies a mapping to raw payload, extracting fields.
+func applyMapping(m *mapping.Mapping, payloadRaw string) (map[string]any, map[string]any, error) {
+	parsedFields := map[string]any{}
+	validationErrors := map[string]any{}
+
+	// Parse payload as JSON
+	var payload any
+	if err := json.Unmarshal([]byte(payloadRaw), &payload); err != nil {
+		return parsedFields, map[string]any{"parse_error": err.Error()}, err
+	}
+
+	// Apply each mapping entry to extract fields
+	for _, entry := range m.Fields {
+		value := extractField(payload, entry.SourcePath)
+		if value == nil && entry.DefaultValue != nil {
+			value = *entry.DefaultValue
+		}
+		if value == nil && entry.Required {
+			validationErrors[entry.TargetKey] = "required field missing"
+			continue
+		}
+		if value != nil {
+			parsedFields[entry.TargetKey] = value
+		}
+	}
+
+	return parsedFields, validationErrors, nil
+}
+
+// extractField extracts a value from a nested payload using dot-notation path.
+func extractField(payload any, path string) any {
+	switch p := payload.(type) {
+	case string:
+		var parsed any
+		if err := json.Unmarshal([]byte(p), &parsed); err != nil {
+			return nil
+		}
+		return extractField(parsed, path)
+	case map[string]any:
+		parts := strings.Split(path, ".")
+		current := any(p)
+		for _, part := range parts {
+			c, ok := current.(map[string]any)
+			if !ok {
+				return nil
+			}
+			current, ok = c[part]
+			if !ok {
+				return nil
+			}
+		}
+		return current
+	default:
+		return nil
+	}
+}
+
+// evaluateRule evaluates a rule against parsed fields.
+func evaluateRule(rule rules.Rule, fields map[string]any) (bool, error) {
+	return evaluateConditionGroup(rule.Conditions, rule.ConditionMode, fields)
+}
+
+// evaluateConditionGroup evaluates a condition group against parsed fields.
+func evaluateConditionGroup(group rules.ConditionGroup, mode string, fields map[string]any) (bool, error) {
+	if len(group.Conditions) == 0 && len(group.Groups) == 0 {
+		return true, nil
+	}
+
+	// Evaluate sub-groups
+	var groupResults []bool
+	for _, g := range group.Groups {
+		result, err := evaluateConditionGroup(g, g.Operator, fields)
+		if err != nil {
+			return false, err
+		}
+		groupResults = append(groupResults, result)
+	}
+
+	// Evaluate conditions
+	var condResults []bool
+	for _, cond := range group.Conditions {
+		result := evaluateCondition(cond, fields)
+		condResults = append(condResults, result)
+	}
+
+	// Combine results
+	allResults := append(condResults, groupResults...)
+	if len(allResults) == 0 {
+		return true, nil
+	}
+
+	effectiveMode := mode
+	if effectiveMode == "" {
+		effectiveMode = "and"
+	}
+
+	switch effectiveMode {
+	case "or":
+		for _, r := range allResults {
+			if r {
+				return true, nil
+			}
+		}
+		return false, nil
+	default: // "and"
+		for _, r := range allResults {
+			if !r {
+				return false, nil
+			}
+		}
+		return true, nil
+	}
+}
+
+// evaluateCondition evaluates a single condition against parsed fields.
+func evaluateCondition(cond rules.Condition, fields map[string]any) bool {
+	fieldVal, ok := fields[cond.Field]
+	if !ok {
+		if cond.Operator == "exists" {
+			return cond.Value == "false"
+		}
+		return false
+	}
+
+	switch cond.Operator {
+	case "eq":
+		return fmt.Sprintf("%v", fieldVal) == cond.Value
+	case "neq":
+		return fmt.Sprintf("%v", fieldVal) != cond.Value
+	case "contains":
+		return strings.Contains(fmt.Sprintf("%v", fieldVal), cond.Value)
+	case "exists":
+		return cond.Value != "false"
+	case "gt", "lt", "gte", "lte":
+		return compareValues(fieldVal, cond.Value, cond.Operator)
+	case "regex":
+		// Simplified regex check; in production, use regexp
+		return strings.Contains(fmt.Sprintf("%v", fieldVal), cond.Value)
+	default:
+		return false
+	}
+}
+
+func compareValues(a any, b string, op string) bool {
+	aStr := fmt.Sprintf("%v", a)
+	var aNum, bNum float64
+	_, err1 := fmt.Sscanf(aStr, "%f", &aNum)
+	_, err2 := fmt.Sscanf(b, "%f", &bNum)
+	if err1 == nil && err2 == nil {
+		switch op {
+		case "gt":
+			return aNum > bNum
+		case "lt":
+			return aNum < bNum
+		case "gte":
+			return aNum >= bNum
+		case "lte":
+			return aNum <= bNum
+		}
+	}
+	switch op {
+	case "gt":
+		return aStr > b
+	case "lt":
+		return aStr < b
+	case "gte":
+		return aStr >= b
+	case "lte":
+		return aStr <= b
+	}
+	return false
+}
+
+// renderTemplate renders a template with the given fields.
+func renderTemplate(tmpl *templates.Template, fields map[string]any) (string, string, error) {
+	title := tmpl.TitleTemplate
+	body := tmpl.BodyTemplate
+
+	// Simple placeholder replacement: {{.FieldKey}} -> value
+	for key, val := range fields {
+		placeholder := "{{." + key + "}}"
+		replacement := fmt.Sprintf("%v", val)
+		title = strings.ReplaceAll(title, placeholder, replacement)
+		body = strings.ReplaceAll(body, placeholder, replacement)
+	}
+
+	return title, body, nil
+}
+
+func generateWorkerID() string {
+	b := make([]byte, 8)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}

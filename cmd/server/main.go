@@ -18,9 +18,19 @@ import (
 
 	"zPush/internal/api"
 	"zPush/internal/config"
+	"zPush/internal/delivery"
+	"zPush/internal/destination"
+	"zPush/internal/event"
+	"zPush/internal/ingest"
+	"zPush/internal/mapping"
 	"zPush/internal/observability"
+	"zPush/internal/processor"
+	"zPush/internal/rules"
 	"zPush/internal/secret"
+	"zPush/internal/sender"
+	"zPush/internal/source"
 	"zPush/internal/storage"
+	"zPush/internal/templates"
 )
 
 func main() {
@@ -62,8 +72,57 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Create repositories
+	sourceRepo := source.NewRepository(db)
+	mappingRepo := mapping.NewRepository(db)
+	ruleRepo := rules.NewRepository(db)
+	templateRepo := templates.NewRepository(db)
+	destRepo := destination.NewRepository(db)
+	eventRepo := event.NewRepository(db)
+	deliveryRepo := delivery.NewRepository(db)
+
+	// Create rate limiter
+	globalRate, globalBurst, err := config.ParseGlobalRateLimit(cfg.Ingest.GlobalRateLimit)
+	if err != nil {
+		slog.Warn("invalid global rate limit, using defaults", "error", err)
+		globalRate = 100
+		globalBurst = 200
+	}
+	rateLimiter := ingest.NewRateLimiter(globalRate, globalBurst)
+
+	// Create ingester
+	ingester := ingest.NewIngester(db, sourceRepo, secretSvc, rateLimiter, cfg.Ingest.MaxPayloadBytes)
+
+	// Create sender registry and register adapters
+	senderRegistry := sender.NewRegistry()
+	senderRegistry.Register("dingtalk", sender.NewDingTalkSender())
+	senderRegistry.Register("http_webhook", sender.NewHTTPWebhookSender())
+
+	// Create circuit breaker manager
+	circuitBreaker := delivery.NewCircuitBreakerManager()
+
+	// Create delivery worker
+	deliveryWorker := delivery.NewDeliveryWorker(cfg.Worker, destRepo, deliveryRepo, senderRegistry, circuitBreaker, secretSvc)
+
+	// Create event processor
+	eventProcessor := processor.NewEventProcessor(cfg.Worker, sourceRepo, mappingRepo, ruleRepo, templateRepo, destRepo, eventRepo, deliveryRepo)
+
+	// Create worker context that can be cancelled
+	workerCtx, workerCancel := context.WithCancel(context.Background())
+
+	// Start workers
+	go eventProcessor.Run(workerCtx)
+	slog.Info("event processor started", "concurrency", cfg.Worker.EventProcessorConcurrency)
+
+	go deliveryWorker.Run(workerCtx)
+	slog.Info("delivery worker started", "concurrency", cfg.Worker.DeliveryWorkerConcurrency)
+
+	// Start lease recovery loops
+	go processor.LeaseRecoveryLoop(workerCtx, db, cfg.Worker.LeaseRecoveryInterval)
+	go delivery.LeaseRecoveryLoop(workerCtx, db, cfg.Worker.LeaseRecoveryInterval)
+
 	// Create router
-	router := api.NewRouter(db)
+	router := api.NewRouter(db, secretSvc, sourceRepo, mappingRepo, ruleRepo, templateRepo, destRepo, eventRepo, deliveryRepo, ingester)
 
 	// Start HTTP server
 	srv := &http.Server{
@@ -87,6 +146,10 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	sig := <-quit
 	slog.Info("shutdown signal received", "signal", sig.String())
+
+	// Stop workers first (cancel their context)
+	workerCancel()
+	slog.Info("workers stopped, waiting for in-flight tasks...")
 
 	// Graceful shutdown with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

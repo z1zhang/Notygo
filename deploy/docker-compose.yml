@@ -1,0 +1,30 @@
+services:
+  zpush:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - LISTEN_ADDR=:8080
+      - DATABASE_PATH=/data/zpush.db
+      - ENCRYPTION_MASTER_KEY=v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      - LOG_LEVEL=info
+      - ADMIN_INITIAL_PASSWORD=admin
+      - EVENT_PROCESSOR_CONCURRENCY=4
+      - DELIVERY_WORKER_CONCURRENCY=8
+      - MAX_PAYLOAD_BYTES=1048576
+      - INGEST_GLOBAL_RATE_LIMIT=100/200
+      - EVENT_RETENTION_DAYS=30
+    volumes:
+      - zpush-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  zpush-data:
