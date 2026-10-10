@@ -3,6 +3,8 @@ package api
 import (
 	"database/sql"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
@@ -39,6 +41,15 @@ func NewRouter(
 	r.Use(observability.RequestIDMiddleware)
 	r.Use(RecoveryMiddleware)
 	r.Use(LoggingMiddleware)
+
+	// Root endpoint — welcome / version info
+	r.Get("/", func(w http.ResponseWriter, _ *http.Request) {
+		WriteJSON(w, http.StatusOK, map[string]string{
+			"name":    "zPush",
+			"version": "0.1.0",
+			"status":  "running",
+		})
+	})
 
 	// Health endpoints (no auth)
 	r.Get("/healthz", Healthz)
@@ -135,7 +146,35 @@ func NewRouter(
 		r.Post("/ingest/{source_slug}", ingester.HandleIngest)
 	})
 
+	// Serve frontend static files (if web/dist exists)
+	serveFrontend(r)
+
 	return r
+}
+
+// serveFrontend registers routes to serve the Vue SPA static files.
+// In development, the frontend is served by Vite dev server on port 3000.
+// In production, the built files are served by the Go server.
+func serveFrontend(r chi.Router) {
+	distDir := filepath.Join("web", "dist")
+	if _, err := os.Stat(distDir); os.IsNotExist(err) {
+		return // no frontend build, skip
+	}
+
+	// Serve static assets
+	fileServer := http.FileServer(http.Dir(distDir))
+	r.Handle("/assets/*", http.StripPrefix("/", fileServer))
+
+	// SPA fallback: any non-API, non-health route serves index.html
+	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
+		// Only serve index.html for non-API routes
+		if len(r.URL.Path) >= 5 && r.URL.Path[:5] == "/api/" {
+			WriteError(w, http.StatusNotFound, "CONFIG_001", "endpoint not found")
+			return
+		}
+		indexPath := filepath.Join(distDir, "index.html")
+		http.ServeFile(w, r, indexPath)
+	})
 }
 
 // placeholderHandler returns a temporary handler that returns 501 Not Implemented.

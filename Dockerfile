@@ -1,15 +1,21 @@
-# Build stage
-FROM golang:1.26-alpine AS builder
+# Frontend build stage
+FROM node:22-alpine AS frontend-builder
+
+WORKDIR /web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+COPY web/ .
+RUN npm run build
+
+# Backend build stage
+FROM golang:1.26-alpine AS backend-builder
 
 WORKDIR /app
-
-# Copy go.mod and go.sum first for better caching
 COPY go.mod go.sum ./
 RUN go mod download
-
-# Copy source code
 COPY . .
-
+# Copy frontend dist from builder
+COPY --from=frontend-builder /web/dist /app/web/dist
 # Build the server binary
 RUN CGO_ENABLED=0 GOOS=linux go build -o /zpush ./cmd/server/
 
@@ -24,7 +30,10 @@ RUN addgroup -S zpush && adduser -S zpush -G zpush
 WORKDIR /app
 
 # Copy binary from builder
-COPY --from=builder /zpush /app/zpush
+COPY --from=backend-builder /zpush /app/zpush
+
+# Copy frontend static files
+COPY --from=frontend-builder /web/dist /app/web/dist
 
 # Create data directory
 RUN mkdir -p /data && chown zpush:zpush /data
