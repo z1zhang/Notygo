@@ -4,13 +4,14 @@ services:
       context: ..
       dockerfile: Dockerfile
     ports:
-      - "8080:8080"
+      - "9003:9003"
     environment:
-      - LISTEN_ADDR=:8080
+      - DB_DRIVER=${DB_DRIVER:-sqlite}
       - DATABASE_PATH=/data/zpush.db
-      - ENCRYPTION_MASTER_KEY=v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      - DATABASE_DSN=${DATABASE_DSN:-}
+      - ENCRYPTION_MASTER_KEY=${ENCRYPTION_MASTER_KEY:-v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}
       - LOG_LEVEL=info
-      - ADMIN_INITIAL_PASSWORD=admin
+      - ADMIN_INITIAL_PASSWORD=${ADMIN_INITIAL_PASSWORD:-admin}
       - EVENT_PROCESSOR_CONCURRENCY=4
       - DELIVERY_WORKER_CONCURRENCY=8
       - MAX_PAYLOAD_BYTES=1048576
@@ -19,12 +20,35 @@ services:
     volumes:
       - zpush-data:/data
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/healthz"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9003/healthz"]
       interval: 10s
       timeout: 5s
       retries: 3
       start_period: 5s
     restart: unless-stopped
+    # Uncomment depends_on when using MySQL
+    # depends_on:
+    #   mysql:
+    #     condition: service_healthy
+
+  # MySQL service (uncomment to use instead of SQLite)
+  # mysql:
+  #   image: mysql:8.0
+  #   environment:
+  #     MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-zpush}
+  #     MYSQL_DATABASE: zpush
+  #   ports:
+  #     - "3306:3306"
+  #   volumes:
+  #     - mysql-data:/var/lib/mysql
+  #   healthcheck:
+  #     test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #     start_period: 30s
+  #   restart: unless-stopped
 
 volumes:
   zpush-data:
+  # mysql-data:

@@ -24,7 +24,9 @@ type ServerConfig struct {
 }
 
 type DatabaseConfig struct {
-	Path string
+	Driver string // "sqlite" or "mysql"
+	Path   string // SQLite database file path (used when Driver=sqlite)
+	DSN    string // MySQL data source name (used when Driver=mysql)
 }
 
 type SecretConfig struct {
@@ -61,10 +63,12 @@ type LogConfig struct {
 func Load() (*Config, error) {
 	cfg := &Config{
 		Server: ServerConfig{
-			ListenAddr: getEnv("LISTEN_ADDR", ":8080"),
+			ListenAddr: getEnv("LISTEN_ADDR", ":9003"),
 		},
 		Database: DatabaseConfig{
-			Path: getEnv("DATABASE_PATH", "data/zpush.db"),
+			Driver: getEnv("DB_DRIVER", "sqlite"),
+				Path:   getEnv("DATABASE_PATH", "data/zpush.db"),
+				DSN:    getEnv("DATABASE_DSN", ""),
 		},
 		Secret: SecretConfig{
 			MasterKeyEnv: os.Getenv("ENCRYPTION_MASTER_KEY"),
