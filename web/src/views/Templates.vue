@@ -2,24 +2,24 @@
   <div class="templates-container">
     <div class="page-actions">
       <el-button type="primary" @click="openDialog()">
-        <el-icon><Plus /></el-icon> New Template
+        <el-icon><Plus /></el-icon> {{ $t('templates.newTemplate') }}
       </el-button>
     </div>
 
     <el-card shadow="never" v-loading="loading">
       <el-table :data="tableData" stripe style="width: 100%">
-        <el-table-column prop="name" label="Name" min-width="160" />
-        <el-table-column prop="format" label="Format" width="120">
+        <el-table-column prop="name" :label="$t('common.name')" min-width="160" />
+        <el-table-column prop="format" :label="$t('templates.format')" width="120">
           <template #default="{ row }">
-            <el-tag size="small">{{ row.format }}</el-tag>
+            <el-tag size="small">{{ $t('enums.templateFormat.' + row.format, row.format) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="revision" label="Revision" width="100" />
-        <el-table-column label="Actions" width="200" fixed="right">
+        <el-table-column prop="revision" :label="$t('mappings.revision')" width="100" />
+        <el-table-column :label="$t('common.actions')" width="200" fixed="right">
           <template #default="{ row }">
-            <el-button text type="primary" size="small" @click="openDialog(row)">Edit</el-button>
-            <el-button text type="info" size="small" @click="openPreview(row)">Preview</el-button>
-            <el-button text type="danger" size="small" @click="handleDelete(row)">Delete</el-button>
+            <el-button text type="primary" size="small" @click="openDialog(row)">{{ $t('common.edit') }}</el-button>
+            <el-button text type="info" size="small" @click="openPreview(row)">{{ $t('templates.preview') }}</el-button>
+            <el-button text type="danger" size="small" @click="handleDelete(row)">{{ $t('common.delete') }}</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -38,60 +38,60 @@
 
     <el-dialog
       v-model="dialogVisible"
-      :title="isEditing ? 'Edit Template' : 'New Template'"
-      width="640px"
+      :title="isEditing ? $t('templates.editTemplate') : $t('templates.newTemplate')"
+      width="720px"
       destroy-on-close
     >
       <el-form
         ref="formRef"
         :model="form"
         :rules="formRules"
-        label-width="130px"
-        label-position="right"
+        label-width="auto"
+        label-position="left"
       >
-        <el-form-item label="Name" prop="name">
-          <el-input v-model="form.name" placeholder="Template name" />
+        <el-form-item :label="$t('common.name')" prop="name">
+          <el-input v-model="form.name" :placeholder="$t('templates.newTemplate')" />
         </el-form-item>
-        <el-form-item label="Format" prop="format">
-          <el-select v-model="form.format" placeholder="Select format">
-            <el-option label="Text" value="text" />
-            <el-option label="Markdown" value="markdown" />
-            <el-option label="HTML" value="html" />
+        <el-form-item :label="$t('templates.format')" prop="format">
+          <el-select v-model="form.format" :placeholder="$t('templates.selectFormat')">
+            <el-option :label="$t('templates.text')" value="text" />
+            <el-option :label="$t('templates.markdown')" value="markdown" />
+            <el-option :label="$t('templates.html')" value="html" />
           </el-select>
         </el-form-item>
-        <el-form-item label="Title Template" prop="title_template">
+        <el-form-item :label="$t('templates.titleTemplate')" prop="title_template">
           <el-input
             v-model="form.title_template"
             type="textarea"
             :rows="3"
-            placeholder="Title template using Go syntax, e.g. {{ .event.type }}"
+            :placeholder="$t('templates.titlePlaceholder')"
           />
         </el-form-item>
-        <el-form-item label="Body Template" prop="body_template">
+        <el-form-item :label="$t('templates.bodyTemplate')" prop="body_template">
           <el-input
             v-model="form.body_template"
             type="textarea"
             :rows="10"
-            placeholder="Body template"
+            :placeholder="$t('templates.bodyPlaceholder')"
             class="monospace-input"
           />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">Cancel</el-button>
-        <el-button type="primary" :loading="saving" @click="handleSave">Save</el-button>
+        <el-button @click="dialogVisible = false">{{ $t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="saving" @click="handleSave">{{ $t('common.save') }}</el-button>
       </template>
     </el-dialog>
 
     <el-dialog
       v-model="previewVisible"
-      title="Template Preview"
+      :title="$t('templates.templatePreview')"
       width="640px"
       destroy-on-close
     >
       <div v-loading="previewLoading">
-        <el-form label-width="100px" label-position="right" class="preview-form">
-          <el-form-item label="Sample Data">
+        <el-form label-width="auto" label-position="left" class="preview-form">
+          <el-form-item :label="$t('templates.sampleData')">
             <el-input
               v-model="previewSampleData"
               type="textarea"
@@ -103,24 +103,28 @@
         </el-form>
         <el-divider />
         <div v-if="previewResult">
-          <h4>Title</h4>
-          <pre class="preview-output">{{ previewResult.title ?? '' }}</pre>
-          <h4 style="margin-top: 12px">Body</h4>
-          <pre class="preview-output">{{ previewResult.body ?? '' }}</pre>
+          <h4>{{ $t('templates.title') }}</h4>
+          <div class="preview-output preview-title">{{ previewResult.title ?? '' }}</div>
+          <h4 style="margin-top: 12px">{{ $t('templates.body') }}</h4>
+          <!-- Rendered body: HTML for html/markdown, plain <pre> for text -->
+          <div v-if="previewFormatType === 'html' || previewFormatType === 'markdown'" class="preview-output preview-body-rich" v-html="renderedPreviewBody" />
+          <pre v-else class="preview-output">{{ previewResult.body ?? '' }}</pre>
         </div>
       </div>
       <template #footer>
-        <el-button @click="previewVisible = false">Close</el-button>
-        <el-button type="primary" :loading="previewLoading" @click="runPreview">Render</el-button>
+        <el-button @click="previewVisible = false">{{ $t('common.close') }}</el-button>
+        <el-button type="primary" :loading="previewLoading" @click="runPreview">{{ $t('templates.render') }}</el-button>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useI18n } from 'vue-i18n'
+import { marked } from 'marked'
 import {
   listTemplates,
   createTemplate,
@@ -128,6 +132,8 @@ import {
   deleteTemplate,
   previewTemplate,
 } from '@/api/templates'
+
+const { t } = useI18n()
 
 interface TemplateRow {
   id: string
@@ -148,8 +154,20 @@ const editingId = ref('')
 const previewVisible = ref(false)
 const previewLoading = ref(false)
 const previewTemplateId = ref('')
+const previewFormat = ref('text')
 const previewSampleData = ref('{\n  "event": {\n    "type": "alert",\n    "message": "Test notification"\n  }\n}')
-const previewResult = ref<{ title: string; body: string } | null>(null)
+const previewResult = ref<{ title: string; body: string; format: string } | null>(null)
+
+// Render preview body based on template format
+const renderedPreviewBody = computed(() => {
+  if (!previewResult.value) return ''
+  const { body, format } = previewResult.value
+  if (format === 'html') return body
+  if (format === 'markdown') return marked(body) as string
+  return ''
+})
+
+const previewFormatType = computed(() => previewResult.value?.format ?? previewFormat.value)
 
 const tableData = ref<TemplateRow[]>([])
 const total = ref(0)
@@ -165,8 +183,8 @@ const form = reactive({
 })
 
 const formRules: FormRules = {
-  name: [{ required: true, message: 'Name is required', trigger: 'blur' }],
-  format: [{ required: true, message: 'Format is required', trigger: 'change' }],
+  name: [{ required: true, message: t('templates.nameRequired'), trigger: 'blur' }],
+  format: [{ required: true, message: t('templates.formatRequired'), trigger: 'change' }],
 }
 
 function resetForm() {
@@ -194,6 +212,7 @@ function openDialog(row?: TemplateRow) {
 
 function openPreview(row: TemplateRow) {
   previewTemplateId.value = row.id
+  previewFormat.value = row.format ?? 'text'
   previewSampleData.value = '{\n  "event": {\n    "type": "alert",\n    "message": "Test notification"\n  }\n}'
   previewResult.value = null
   previewVisible.value = true
@@ -203,11 +222,10 @@ async function fetchData() {
   loading.value = true
   try {
     const res = await listTemplates({ page: currentPage.value, size: pageSize.value })
-    tableData.value = res.data?.items ?? []
+    tableData.value = res.data?.data ?? []
     total.value = res.data?.total ?? 0
-  } catch (e: unknown) {
-    const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Failed to load templates'
-    ElMessage.error(msg)
+  } catch {
+    ElMessage.error(t('templates.failedToLoadTemplates'))
   } finally {
     loading.value = false
   }
@@ -228,16 +246,15 @@ async function handleSave() {
     }
     if (isEditing.value) {
       await updateTemplate(editingId.value, payload)
-      ElMessage.success('Template updated')
+      ElMessage.success(t('templates.templateUpdated'))
     } else {
       await createTemplate(payload)
-      ElMessage.success('Template created')
+      ElMessage.success(t('templates.templateCreated'))
     }
     dialogVisible.value = false
     await fetchData()
-  } catch (e: unknown) {
-    const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Failed to save template'
-    ElMessage.error(msg)
+  } catch {
+    ElMessage.error(t('templates.failedToSaveTemplate'))
   } finally {
     saving.value = false
   }
@@ -246,12 +263,12 @@ async function handleSave() {
 async function handleDelete(row: TemplateRow) {
   try {
     await ElMessageBox.confirm(
-      `Are you sure you want to delete template "${row.name}"?`,
-      'Confirm Delete',
+      t('common.confirmDeleteMsg', { entity: t('nav.templates'), name: row.name }),
+      t('common.confirmDelete'),
       { type: 'warning' }
     )
     await deleteTemplate(row.id)
-    ElMessage.success('Template deleted')
+    ElMessage.success(t('templates.templateDeleted'))
     await fetchData()
   } catch {
     // cancelled
@@ -266,7 +283,7 @@ async function runPreview() {
     try {
       sampleData = JSON.parse(previewSampleData.value)
     } catch {
-      ElMessage.error('Invalid JSON in sample data')
+      ElMessage.error(t('templates.invalidJson'))
       return
     }
     const res = await previewTemplate({
@@ -276,10 +293,10 @@ async function runPreview() {
     previewResult.value = {
       title: res.data?.title ?? '',
       body: res.data?.body ?? '',
+      format: res.data?.format ?? previewFormat.value,
     }
-  } catch (e: unknown) {
-    const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Preview failed'
-    ElMessage.error(msg)
+  } catch {
+    ElMessage.error(t('templates.previewFailed'))
   } finally {
     previewLoading.value = false
   }
@@ -317,11 +334,85 @@ onMounted(() => {
     background-color: #f5f7fa;
     padding: 12px;
     border-radius: 4px;
-    font-family: 'Courier New', Courier, monospace;
-    font-size: 13px;
+    font-size: 14px;
     white-space: pre-wrap;
     word-break: break-all;
     margin: 0;
+  }
+
+  .preview-title {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 13px;
+  }
+
+  .preview-body-rich {
+    // Rich rendered content (HTML/Markdown)
+    white-space: normal;
+    word-break: break-word;
+    line-height: 1.6;
+
+    // Markdown styling
+    :deep(h1), :deep(h2), :deep(h3), :deep(h4), :deep(h5), :deep(h6) {
+      margin-top: 8px;
+      margin-bottom: 4px;
+    }
+
+    :deep(p) {
+      margin: 4px 0;
+    }
+
+    :deep(code) {
+      background-color: rgba(0, 0, 0, 0.06);
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 13px;
+    }
+
+    :deep(pre) {
+      background-color: rgba(0, 0, 0, 0.04);
+      padding: 8px 12px;
+      border-radius: 4px;
+      overflow-x: auto;
+
+      code {
+        background: none;
+        padding: 0;
+      }
+    }
+
+    :deep(blockquote) {
+      border-left: 4px solid #d0d0d0;
+      padding-left: 12px;
+      margin: 8px 0;
+      color: #666;
+    }
+
+    :deep(ul), :deep(ol) {
+      padding-left: 20px;
+    }
+
+    :deep(table) {
+      border-collapse: collapse;
+      margin: 8px 0;
+
+      th, td {
+        border: 1px solid #ddd;
+        padding: 6px 12px;
+      }
+
+      th {
+        background-color: #f0f0f0;
+      }
+    }
+
+    :deep(img) {
+      max-width: 100%;
+    }
+
+    :deep(a) {
+      color: #409eff;
+    }
   }
 }
 </style>

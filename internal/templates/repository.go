@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/oklog/ulid/v2"
+	"zPush/internal/storage"
 )
 
 // ErrNotFound is returned when a template is not found.
@@ -16,10 +17,6 @@ var ErrNotFound = errors.New("template not found")
 
 func newID() string {
 	return ulid.MustNew(ulid.Timestamp(time.Now()), rand.Reader).String()
-}
-
-func now() string {
-	return time.Now().UTC().Format(time.RFC3339Nano)
 }
 
 // Repository provides CRUD operations for templates.
@@ -35,7 +32,7 @@ func NewRepository(db *sql.DB) *Repository {
 // Create inserts a new template and returns it.
 func (r *Repository) Create(ctx context.Context, name, format, titleTemplate, bodyTemplate string) (*Template, error) {
 	id := newID()
-	nowStr := now()
+	nowStr := storage.FormatNow()
 
 	_, err := r.db.ExecContext(ctx,
 		`INSERT INTO templates (id, name, format, title_template, body_template, revision, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)`,
@@ -114,7 +111,7 @@ func (r *Repository) Update(ctx context.Context, id string, name *string, format
 	}
 
 	newRevision := existing.Revision + 1
-	nowStr := now()
+	nowStr := storage.FormatNow()
 	_, err = r.db.ExecContext(ctx,
 		`UPDATE templates SET name=?, format=?, title_template=?, body_template=?, revision=?, updated_at=? WHERE id=?`,
 		newName, newFormat, newTitle, newBody, newRevision, nowStr, id,
@@ -149,8 +146,8 @@ func scanTemplate(row *sql.Row) (*Template, error) {
 	if err != nil {
 		return nil, fmt.Errorf("scan template: %w", err)
 	}
-	t.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
-	t.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updatedAt)
+	t.CreatedAt, _ = storage.ParseTime(createdAt)
+	t.UpdatedAt, _ = storage.ParseTime(updatedAt)
 	return &t, nil
 }
 
@@ -161,7 +158,7 @@ func scanTemplateFromRows(rows *sql.Rows) (*Template, error) {
 	if err != nil {
 		return nil, fmt.Errorf("scan template: %w", err)
 	}
-	t.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
-	t.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updatedAt)
+	t.CreatedAt, _ = storage.ParseTime(createdAt)
+	t.UpdatedAt, _ = storage.ParseTime(updatedAt)
 	return &t, nil
 }

@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"zPush/internal/storage"
 )
 
 // RecoveryMiddleware catches panics and returns a 500 error.
@@ -59,9 +61,10 @@ func AdminAuthMiddleware(db *sql.DB) func(http.Handler) http.Handler {
 				return
 			}
 
+			nowCompare := storage.NowCompare()
 			var userID string
 			err := db.QueryRowContext(r.Context(),
-				`SELECT user_id FROM sessions WHERE token = ? AND expires_at > datetime('now')`,
+				"SELECT user_id FROM sessions WHERE token = ? AND expires_at > "+nowCompare,
 				token,
 			).Scan(&userID)
 

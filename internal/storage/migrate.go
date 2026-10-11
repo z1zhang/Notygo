@@ -10,19 +10,37 @@ import (
 
 // MigrationsFS holds the embedded SQL migration files.
 //
-//go:embed migrations/*.sql
-var MigrationsFS embed.FS
+//go:embed migrations/sqlite/*.sql
+var SQLiteMigrationsFS embed.FS
 
-// RunMigrations applies all pending SQL migrations from the embedded FS.
+//go:embed migrations/mysql/*.sql
+var MySQLMigrationsFS embed.FS
+
+// RunMigrations applies all pending SQL migrations based on the current dialect.
 func RunMigrations(db *sql.DB) error {
-	if err := goose.SetDialect("sqlite3"); err != nil {
-		return fmt.Errorf("set goose dialect: %w", err)
+	var dialect string
+	var fs embed.FS
+	var dir string
+
+	switch CurrentDialect {
+	case DialectMySQL:
+		dialect = "mysql"
+		fs = MySQLMigrationsFS
+		dir = "migrations/mysql"
+	default:
+		dialect = "sqlite3"
+		fs = SQLiteMigrationsFS
+		dir = "migrations/sqlite"
 	}
 
-	goose.SetBaseFS(MigrationsFS)
+	if err := goose.SetDialect(dialect); err != nil {
+		return fmt.Errorf("set goose dialect %q: %w", dialect, err)
+	}
 
-	if err := goose.Up(db, "migrations"); err != nil {
-		return fmt.Errorf("run migrations: %w", err)
+	goose.SetBaseFS(fs)
+
+	if err := goose.Up(db, dir); err != nil {
+		return fmt.Errorf("run migrations (%s): %w", dialect, err)
 	}
 
 	return nil

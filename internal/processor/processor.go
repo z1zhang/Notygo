@@ -82,7 +82,9 @@ func (p *EventProcessor) Run(ctx context.Context) {
 			// Try to claim an event
 			evt, err := p.eventRepo.ClaimEvent(ctx, p.workerID, p.cfg.LeaseTimeout)
 			if err != nil {
-				// No events to claim or error
+				if err != event.ErrAlreadyClaimed {
+					slog.Error("failed to claim event", "error", err)
+				}
 				continue
 			}
 
@@ -128,7 +130,10 @@ func (p *EventProcessor) processEvent(ctx context.Context, evt *event.Event) {
 		} else {
 			mappingID = &mapObj.ID
 			mappingRevision = &mapObj.Revision
+			slog.Info("mapping loaded", "event_id", evt.ID, "mapping_id", mapObj.ID, "mapping_name", mapObj.Name, "field_count", len(mapObj.Fields))
 		}
+	} else {
+		slog.Warn("no mapping configured for source", "event_id", evt.ID, "source_id", src.ID, "source_name", src.Name)
 	}
 
 	// 2. Parse the mapping.Fields JSON into []MappingEntry and apply mapping
@@ -141,6 +146,9 @@ func (p *EventProcessor) processEvent(ctx context.Context, evt *event.Event) {
 			slog.Error("failed to apply mapping", "event_id", evt.ID, "error", err)
 			validationErrors["mapping_error"] = err.Error()
 		}
+		slog.Info("mapping applied", "event_id", evt.ID, "parsed_fields", parsedFields, "validation_errors", validationErrors)
+	} else {
+		slog.Info("no mapping applied, parsed_fields empty", "event_id", evt.ID)
 	}
 
 	// 3. Get enabled rules and build rule_set_snapshot
@@ -186,9 +194,10 @@ func (p *EventProcessor) processEvent(ctx context.Context, evt *event.Event) {
 	for _, rule := range enabledRules {
 		matched, err := evaluateRule(rule, parsedFields)
 		if err != nil {
-			slog.Warn("rule evaluation error", "rule_id", rule.ID, "error", err)
+			slog.Warn("rule evaluation error", "rule_id", rule.ID, "rule_name", rule.Name, "error", err)
 			continue
 		}
+		slog.Info("rule evaluated", "event_id", evt.ID, "rule_id", rule.ID, "rule_name", rule.Name, "matched", matched)
 		if matched {
 			matchedRuleIDs = append(matchedRuleIDs, rule.ID)
 
@@ -206,7 +215,7 @@ func (p *EventProcessor) processEvent(ctx context.Context, evt *event.Event) {
 
 // processMatchedRule renders the template and creates deliveries for a matched rule.
 func (p *EventProcessor) processMatchedRule(ctx context.Context, evt *event.Event, run *event.EventRun, rule rules.Rule, fields map[string]any) {
-	var renderedTitle, renderedBody string
+	var renderedTitle, renderedBody, renderedFormat string
 
 	// Render template if rule has one
 	if rule.TemplateID != nil && *rule.TemplateID != "" {
@@ -214,7 +223,7 @@ func (p *EventProcessor) processMatchedRule(ctx context.Context, evt *event.Even
 		if err != nil {
 			slog.Error("failed to fetch template", "template_id", *rule.TemplateID, "error", err)
 		} else {
-			renderedTitle, renderedBody, err = renderTemplate(tmpl, fields)
+			renderedTitle, renderedBody, renderedFormat, err = renderTemplate(tmpl, fields)
 			if err != nil {
 				slog.Error("failed to render template", "template_id", *rule.TemplateID, "error", err)
 			}
@@ -236,6 +245,7 @@ func (p *EventProcessor) processMatchedRule(ctx context.Context, evt *event.Even
 			NextAttemptAt:  time.Now().UTC(),
 			RenderedTitle:  &renderedTitle,
 			RenderedBody:   &renderedBody,
+			RenderedFormat: &renderedFormat,
 		}
 
 		_, err := p.deliveryRepo.Create(ctx, d)
@@ -363,29 +373,43 @@ func evaluateConditionGroup(group rules.ConditionGroup, mode string, fields map[
 func evaluateCondition(cond rules.Condition, fields map[string]any) bool {
 	fieldVal, ok := fields[cond.Field]
 	if !ok {
+		slog.Debug("condition field not found in parsed_fields", "field", cond.Field, "operator", cond.Operator, "value", cond.Value, "available_fields", formatMapKeys(fields))
 		if cond.Operator == "exists" {
 			return cond.Value == "false"
 		}
 		return false
 	}
 
+	fieldStr := fmt.Sprintf("%v", fieldVal)
+	var result bool
 	switch cond.Operator {
 	case "eq":
-		return fmt.Sprintf("%v", fieldVal) == cond.Value
+		result = fieldStr == cond.Value
 	case "neq":
-		return fmt.Sprintf("%v", fieldVal) != cond.Value
+		result = fieldStr != cond.Value
 	case "contains":
-		return strings.Contains(fmt.Sprintf("%v", fieldVal), cond.Value)
+		result = strings.Contains(fieldStr, cond.Value)
 	case "exists":
-		return cond.Value != "false"
+		result = cond.Value != "false"
 	case "gt", "lt", "gte", "lte":
-		return compareValues(fieldVal, cond.Value, cond.Operator)
+		result = compareValues(fieldVal, cond.Value, cond.Operator)
 	case "regex":
 		// Simplified regex check; in production, use regexp
-		return strings.Contains(fmt.Sprintf("%v", fieldVal), cond.Value)
+		result = strings.Contains(fieldStr, cond.Value)
 	default:
-		return false
+		result = false
 	}
+	slog.Debug("condition evaluated", "field", cond.Field, "field_type", fmt.Sprintf("%T", fieldVal), "field_value", fieldStr, "operator", cond.Operator, "compare_value", cond.Value, "result", result)
+	return result
+}
+
+// formatMapKeys returns the keys of a map for logging purposes.
+func formatMapKeys(m map[string]any) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
 }
 
 func compareValues(a any, b string, op string) bool {
@@ -419,7 +443,8 @@ func compareValues(a any, b string, op string) bool {
 }
 
 // renderTemplate renders a template with the given fields.
-func renderTemplate(tmpl *templates.Template, fields map[string]any) (string, string, error) {
+// Returns (title, body, format, error).
+func renderTemplate(tmpl *templates.Template, fields map[string]any) (string, string, string, error) {
 	title := tmpl.TitleTemplate
 	body := tmpl.BodyTemplate
 
@@ -431,7 +456,7 @@ func renderTemplate(tmpl *templates.Template, fields map[string]any) (string, st
 		body = strings.ReplaceAll(body, placeholder, replacement)
 	}
 
-	return title, body, nil
+	return title, body, tmpl.Format, nil
 }
 
 func generateWorkerID() string {

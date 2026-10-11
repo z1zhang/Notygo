@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/oklog/ulid/v2"
+	"zPush/internal/storage"
 )
 
 // ErrNotFound is returned when a mapping is not found.
@@ -17,10 +18,6 @@ var ErrNotFound = errors.New("mapping not found")
 
 func newID() string {
 	return ulid.MustNew(ulid.Timestamp(time.Now()), rand.Reader).String()
-}
-
-func now() string {
-	return time.Now().UTC().Format(time.RFC3339Nano)
 }
 
 // Repository provides CRUD operations for mappings.
@@ -36,7 +33,7 @@ func NewRepository(db *sql.DB) *Repository {
 // Create inserts a new mapping and returns it.
 func (r *Repository) Create(ctx context.Context, name string, fields []MappingEntry) (*Mapping, error) {
 	id := newID()
-	nowStr := now()
+	nowStr := storage.FormatNow()
 	fieldsJSON, err := json.Marshal(fields)
 	if err != nil {
 		return nil, fmt.Errorf("marshal fields: %w", err)
@@ -117,7 +114,7 @@ func (r *Repository) Update(ctx context.Context, id string, name *string, fields
 	}
 
 	newRevision := existing.Revision + 1
-	nowStr := now()
+	nowStr := storage.FormatNow()
 	_, err = r.db.ExecContext(ctx,
 		`UPDATE mappings SET name=?, revision=?, fields=?, updated_at=? WHERE id=?`,
 		newName, newRevision, string(fieldsJSON), nowStr, id,
@@ -156,8 +153,8 @@ func scanMapping(row *sql.Row) (*Mapping, error) {
 	if err := json.Unmarshal([]byte(fieldsJSON), &m.Fields); err != nil {
 		return nil, fmt.Errorf("unmarshal fields: %w", err)
 	}
-	m.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
-	m.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updatedAt)
+	m.CreatedAt, _ = storage.ParseTime(createdAt)
+	m.UpdatedAt, _ = storage.ParseTime(updatedAt)
 	return &m, nil
 }
 
@@ -172,7 +169,7 @@ func scanMappingFromRows(rows *sql.Rows) (*Mapping, error) {
 	if err := json.Unmarshal([]byte(fieldsJSON), &m.Fields); err != nil {
 		return nil, fmt.Errorf("unmarshal fields: %w", err)
 	}
-	m.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
-	m.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updatedAt)
+	m.CreatedAt, _ = storage.ParseTime(createdAt)
+	m.UpdatedAt, _ = storage.ParseTime(updatedAt)
 	return &m, nil
 }

@@ -1,29 +1,29 @@
 <template>
   <div class="audit-container">
     <div class="page-filters">
-      <el-select v-model="filters.action" placeholder="Action" clearable style="width: 160px" @change="fetchData">
-        <el-option label="Create" value="create" />
-        <el-option label="Update" value="update" />
-        <el-option label="Delete" value="delete" />
-        <el-option label="Login" value="login" />
-        <el-option label="Replay" value="replay" />
-        <el-option label="Retry" value="retry" />
+      <el-select v-model="filters.action" :placeholder="$t('audit.action')" clearable style="width: 160px" @change="fetchData">
+        <el-option :label="$t('audit.create')" value="create" />
+        <el-option :label="$t('audit.update')" value="update" />
+        <el-option :label="$t('audit.delete')" value="delete" />
+        <el-option :label="$t('audit.login')" value="login" />
+        <el-option :label="$t('audit.replay')" value="replay" />
+        <el-option :label="$t('audit.retry')" value="retry" />
       </el-select>
-      <el-select v-model="filters.target_type" placeholder="Target Type" clearable style="width: 160px" @change="fetchData">
-        <el-option label="Source" value="source" />
-        <el-option label="Mapping" value="mapping" />
-        <el-option label="Rule" value="rule" />
-        <el-option label="Template" value="template" />
-        <el-option label="Destination" value="destination" />
-        <el-option label="Event" value="event" />
-        <el-option label="Delivery" value="delivery" />
+      <el-select v-model="filters.target_type" :placeholder="$t('audit.targetType')" clearable style="width: 160px" @change="fetchData">
+        <el-option :label="$t('nav.sources')" value="source" />
+        <el-option :label="$t('nav.mappings')" value="mapping" />
+        <el-option :label="$t('nav.rules')" value="rule" />
+        <el-option :label="$t('nav.templates')" value="template" />
+        <el-option :label="$t('nav.destinations')" value="destination" />
+        <el-option :label="$t('nav.events')" value="event" />
+        <el-option :label="$t('nav.deliveries')" value="delivery" />
       </el-select>
       <el-date-picker
         v-model="dateRange"
         type="daterange"
-        range-separator="to"
-        start-placeholder="Start date"
-        end-placeholder="End date"
+        :range-separator="$t('audit.to')"
+        :start-placeholder="$t('audit.startDate')"
+        :end-placeholder="$t('audit.endDate')"
         format="YYYY-MM-DD"
         value-format="YYYY-MM-DD"
         style="width: 280px"
@@ -33,24 +33,28 @@
 
     <el-card shadow="never" v-loading="loading">
       <el-table :data="tableData" stripe style="width: 100%">
-        <el-table-column prop="created_at" label="Time" width="180">
+        <el-table-column prop="created_at" :label="$t('common.time')" width="180">
           <template #default="{ row }">
             {{ formatTime(row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column prop="operator" label="Operator" width="120" />
-        <el-table-column prop="action" label="Action" width="100">
+        <el-table-column prop="operator" :label="$t('audit.operator')" width="120" />
+        <el-table-column prop="action" :label="$t('audit.action')" width="100">
           <template #default="{ row }">
-            <el-tag :type="actionTagType(row.action)" size="small">{{ row.action }}</el-tag>
+            <el-tag :type="actionTagType(row.action)" size="small">{{ $t('audit.' + row.action, row.action) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="target_type" label="Target Type" width="120" />
-        <el-table-column label="Target ID" width="160">
+        <el-table-column prop="target_type" :label="$t('audit.targetType')" width="120">
+          <template #default="{ row }">
+            {{ $t('enums.auditTargetType.' + row.target_type, row.target_type) }}
+          </template>
+        </el-table-column>
+        <el-table-column :label="$t('audit.targetId')" width="160">
           <template #default="{ row }">
             <span class="truncate-id">{{ truncateId(row.target_id) }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="summary" label="Summary" show-overflow-tooltip />
+        <el-table-column prop="summary" :label="$t('audit.summary')" show-overflow-tooltip />
       </el-table>
 
       <div class="pagination-wrap" v-if="total > 0">
@@ -70,7 +74,10 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import { listAuditLogs } from '@/api/audit'
+
+const { t } = useI18n()
 
 interface AuditRow {
   id: string
@@ -131,10 +138,10 @@ async function fetchData() {
       params.end_time = dateRange.value[1]
     }
     const res = await listAuditLogs(params)
-    tableData.value = res.data?.items ?? []
+    tableData.value = res.data?.data ?? []
     total.value = res.data?.total ?? 0
   } catch (e: unknown) {
-    const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Failed to load audit logs'
+    const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message || t('audit.failedToLoadAuditLogs')
     ElMessage.error(msg)
   } finally {
     loading.value = false

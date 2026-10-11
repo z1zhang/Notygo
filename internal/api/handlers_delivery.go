@@ -4,11 +4,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	"zPush/internal/delivery"
+	"zPush/internal/storage"
 )
 
 // ListDeliveries returns a paginated list of deliveries with optional filters.
@@ -52,7 +52,7 @@ func GetDelivery(db *sql.DB) http.HandlerFunc {
 		}
 
 		WriteJSON(w, http.StatusOK, map[string]any{
-			"delivery":         d,
+			"delivery":          d,
 			"delivery_attempts": attempts,
 		})
 	}
@@ -77,9 +77,10 @@ func RetryDelivery(db *sql.DB) http.HandlerFunc {
 		}
 
 		// Reset to pending, clear error fields, set next_attempt_at to now
-		nowStr := time.Now().UTC().Format(time.RFC3339Nano)
+		nowStr := storage.FormatNow()
+		nowExpr := storage.NowExpr()
 		_, err = db.ExecContext(r.Context(),
-			`UPDATE deliveries SET status='pending', last_error_code=NULL, last_error_summary=NULL, next_attempt_at=?, lease_until=NULL, lease_owner=NULL, updated_at=datetime('now') WHERE id=?`,
+			"UPDATE deliveries SET status='pending', last_error_code=NULL, last_error_summary=NULL, next_attempt_at=?, lease_until=NULL, lease_owner=NULL, updated_at="+nowExpr+" WHERE id=?",
 			nowStr, id,
 		)
 		if err != nil {

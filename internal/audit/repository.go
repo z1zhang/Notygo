@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/oklog/ulid/v2"
+	"zPush/internal/storage"
 )
 
 // ErrNotFound is returned when an audit log is not found.
@@ -17,10 +18,6 @@ var ErrNotFound = errors.New("audit log not found")
 
 func newID() string {
 	return ulid.MustNew(ulid.Timestamp(time.Now()), rand.Reader).String()
-}
-
-func nowStr() string {
-	return time.Now().UTC().Format(time.RFC3339Nano)
 }
 
 // Repository provides data access for audit logs.
@@ -50,7 +47,7 @@ func (r *Repository) Insert(ctx context.Context, a *AuditLog) error {
 		`INSERT INTO audit_logs (id, operator, action, target_type, target_id, snapshot_before, summary, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		a.ID, a.Operator, a.Action, a.TargetType, a.TargetID,
-		snapshotBefore, a.Summary, nowStr(),
+		snapshotBefore, a.Summary, storage.FormatNow(),
 	)
 	if err != nil {
 		return fmt.Errorf("insert audit_log: %w", err)
@@ -59,16 +56,24 @@ func (r *Repository) Insert(ctx context.Context, a *AuditLog) error {
 }
 
 // List returns a paginated list of audit logs with optional filtering, and the total count.
-func (r *Repository) List(ctx context.Context, page, size int, targetType, targetID string) ([]AuditLog, int64, error) {
+func (r *Repository) List(ctx context.Context, page, size int, action, targetType, startTime, endTime string) ([]AuditLog, int64, error) {
 	where := "WHERE 1=1"
 	var args []any
+	if action != "" {
+		where += " AND action = ?"
+		args = append(args, action)
+	}
 	if targetType != "" {
 		where += " AND target_type = ?"
 		args = append(args, targetType)
 	}
-	if targetID != "" {
-		where += " AND target_id = ?"
-		args = append(args, targetID)
+	if startTime != "" {
+		where += " AND created_at >= ?"
+		args = append(args, startTime)
+	}
+	if endTime != "" {
+		where += " AND created_at <= ?"
+		args = append(args, endTime+"T23:59:59.999Z")
 	}
 
 	var total int64
@@ -117,7 +122,7 @@ func scanAuditLogFromRows(rows *sql.Rows) (*AuditLog, error) {
 	if err != nil {
 		return nil, fmt.Errorf("scan audit_log: %w", err)
 	}
-	a.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
+	a.CreatedAt, _ = storage.ParseTime(createdAt)
 	return &a, nil
 }
 

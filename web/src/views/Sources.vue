@@ -2,20 +2,20 @@
   <div class="sources-container">
     <div class="page-actions">
       <el-button type="primary" @click="openDialog()">
-        <el-icon><Plus /></el-icon> New Source
+        <el-icon><Plus /></el-icon> {{ $t('sources.newSource') }}
       </el-button>
     </div>
 
     <el-card shadow="never" v-loading="loading">
       <el-table :data="tableData" stripe style="width: 100%">
-        <el-table-column prop="name" label="Name" min-width="140" />
-        <el-table-column prop="slug" label="Slug" min-width="120" />
-        <el-table-column prop="auth_type" label="Auth Type" width="120">
+        <el-table-column prop="name" :label="$t('common.name')" min-width="140" />
+        <el-table-column prop="slug" :label="$t('sources.slug')" min-width="120" />
+        <el-table-column prop="auth_type" :label="$t('sources.authType')" width="120">
           <template #default="{ row }">
-            <el-tag size="small">{{ row.auth_type || 'none' }}</el-tag>
+            <el-tag size="small">{{ $t('enums.authType.' + (row.auth_type || 'none')) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="enabled" label="Enabled" width="100">
+        <el-table-column prop="enabled" :label="$t('common.enabled')" width="100">
           <template #default="{ row }">
             <el-switch
               v-model="row.enabled"
@@ -23,15 +23,15 @@
             />
           </template>
         </el-table-column>
-        <el-table-column prop="mapping_id" label="Mapping" width="140">
+        <el-table-column prop="mapping_id" :label="$t('sources.mapping')" width="140">
           <template #default="{ row }">
             {{ getMappingName(row.mapping_id) }}
           </template>
         </el-table-column>
-        <el-table-column label="Actions" width="160" fixed="right">
+        <el-table-column :label="$t('common.actions')" width="160" fixed="right">
           <template #default="{ row }">
-            <el-button text type="primary" size="small" @click="openDialog(row)">Edit</el-button>
-            <el-button text type="danger" size="small" @click="handleDelete(row)">Delete</el-button>
+            <el-button text type="primary" size="small" @click="openDialog(row)">{{ $t('common.edit') }}</el-button>
+            <el-button text type="danger" size="small" @click="handleDelete(row)">{{ $t('common.delete') }}</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -50,46 +50,46 @@
 
     <el-dialog
       v-model="dialogVisible"
-      :title="isEditing ? 'Edit Source' : 'New Source'"
-      width="560px"
+      :title="isEditing ? $t('sources.editSource') : $t('sources.newSource')"
+      width="680px"
       destroy-on-close
     >
       <el-form
         ref="formRef"
         :model="form"
         :rules="formRules"
-        label-width="130px"
-        label-position="right"
+        label-width="auto"
+        label-position="left"
       >
-        <el-form-item label="Name" prop="name">
-          <el-input v-model="form.name" placeholder="Source name" />
+        <el-form-item :label="$t('common.name')" prop="name">
+          <el-input v-model="form.name" :placeholder="$t('common.name')" />
         </el-form-item>
-        <el-form-item label="Auth Type" prop="auth_type">
-          <el-select v-model="form.auth_type" placeholder="Select auth type">
-            <el-option label="None" value="none" />
-            <el-option label="Bearer" value="bearer" />
-            <el-option label="HMAC" value="hmac" />
+        <el-form-item :label="$t('sources.authType')" prop="auth_type">
+          <el-select v-model="form.auth_type" :placeholder="$t('sources.selectAuthType')">
+            <el-option :label="$t('sources.none')" value="none" />
+            <el-option :label="$t('sources.bearer')" value="bearer" />
+            <el-option :label="$t('sources.hmac')" value="hmac" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="form.auth_type !== 'none'" label="Secret / Token" prop="secret">
+        <el-form-item v-if="form.auth_type !== 'none'" :label="$t('sources.secretToken')" prop="secret">
           <el-input
             v-model="form.secret"
             type="password"
             show-password
-            placeholder="Bearer token or HMAC secret"
+            :placeholder="isEditing ? $t('sources.secretEditPlaceholder') : $t('sources.secretPlaceholder')"
           />
         </el-form-item>
-        <el-form-item label="Max Body Bytes" prop="max_body_bytes">
+        <el-form-item :label="$t('sources.maxBodyBytes')" prop="max_body_bytes">
           <el-input-number v-model="form.max_body_bytes" :min="0" :step="1024" />
         </el-form-item>
-        <el-form-item label="Rate Limit" prop="rate_limit">
+        <el-form-item :label="$t('sources.rateLimit')" prop="rate_limit">
           <el-input
             v-model="form.rate_limit"
             placeholder='{"rate":10,"burst":20}'
           />
         </el-form-item>
-        <el-form-item label="Mapping" prop="mapping_id">
-          <el-select v-model="form.mapping_id" placeholder="Select mapping" clearable>
+        <el-form-item :label="$t('sources.mapping')" prop="mapping_id">
+          <el-select v-model="form.mapping_id" :placeholder="$t('sources.selectMapping')" clearable>
             <el-option
               v-for="m in mappingOptions"
               :key="m.id"
@@ -98,13 +98,13 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="Enabled">
+        <el-form-item :label="$t('common.enabled')">
           <el-switch v-model="form.enabled" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">Cancel</el-button>
-        <el-button type="primary" :loading="saving" @click="handleSave">Save</el-button>
+        <el-button @click="dialogVisible = false">{{ $t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="saving" @click="handleSave">{{ $t('common.save') }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -114,8 +114,11 @@
 import { ref, reactive, onMounted } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import { listSources, createSource, updateSource, deleteSource } from '@/api/sources'
 import { listMappings } from '@/api/mappings'
+
+const { t } = useI18n()
 
 interface SourceRow {
   id: string
@@ -157,8 +160,8 @@ const form = reactive({
 })
 
 const formRules: FormRules = {
-  name: [{ required: true, message: 'Name is required', trigger: 'blur' }],
-  auth_type: [{ required: true, message: 'Auth type is required', trigger: 'change' }],
+  name: [{ required: true, message: () => t('sources.nameRequired'), trigger: 'blur' }],
+  auth_type: [{ required: true, message: () => t('sources.authTypeRequired'), trigger: 'change' }],
 }
 
 function getMappingName(id: string): string {
@@ -200,10 +203,10 @@ async function fetchData() {
   loading.value = true
   try {
     const res = await listSources({ page: currentPage.value, size: pageSize.value })
-    tableData.value = res.data?.items ?? []
+    tableData.value = res.data?.data ?? []
     total.value = res.data?.total ?? 0
   } catch (e: unknown) {
-    const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Failed to load sources'
+    const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message || t('sources.failedToLoadSources')
     ElMessage.error(msg)
   } finally {
     loading.value = false
@@ -213,7 +216,7 @@ async function fetchData() {
 async function fetchMappings() {
   try {
     const res = await listMappings({ page: 1, size: 200 })
-    mappingOptions.value = (res.data?.items ?? []).map(
+    mappingOptions.value = (res.data?.data ?? []).map(
       (m: Record<string, unknown>) => ({ id: String(m.id ?? ''), name: String(m.name ?? '') })
     )
   } catch {
@@ -235,28 +238,36 @@ async function handleSave() {
       enabled: form.enabled,
       mapping_id: form.mapping_id || null,
     }
+
+    // Secret: field name must be "secret_ref" (matches backend UpdateSourceRequest)
+    // Only include if user entered a new value (editing: leave blank = keep existing)
     if (form.auth_type !== 'none' && form.secret) {
-      payload.secret = form.secret
+      payload.secret_ref = form.secret
     }
+
+    // Rate limit: backend expects *string (JSON string), not a parsed object
     if (form.rate_limit) {
+      // Validate it's valid JSON, but send as string
       try {
-        payload.rate_limit = JSON.parse(form.rate_limit)
+        JSON.parse(form.rate_limit)
+        payload.rate_limit = form.rate_limit  // send as string
       } catch {
+        // Not valid JSON, send as-is (backend will handle)
         payload.rate_limit = form.rate_limit
       }
     }
 
     if (isEditing.value) {
       await updateSource(editingId.value, payload)
-      ElMessage.success('Source updated')
+      ElMessage.success(t('sources.sourceUpdated'))
     } else {
       await createSource(payload)
-      ElMessage.success('Source created')
+      ElMessage.success(t('sources.sourceCreated'))
     }
     dialogVisible.value = false
     await fetchData()
   } catch (e: unknown) {
-    const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Failed to save source'
+    const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message || t('sources.failedToSaveSource')
     ElMessage.error(msg)
   } finally {
     saving.value = false
@@ -265,11 +276,13 @@ async function handleSave() {
 
 async function toggleEnabled(row: SourceRow, val: boolean) {
   try {
-    await updateSource(row.id, { ...row, enabled: val })
-    ElMessage.success(`Source ${val ? 'enabled' : 'disabled'}`)
+    // Only send the "enabled" field — do NOT spread the entire row
+    // (which includes encrypted secret_ref that would get re-encrypted)
+    await updateSource(row.id, { enabled: val })
+    ElMessage.success(val ? t('sources.sourceEnabled') : t('sources.sourceDisabled'))
   } catch (e: unknown) {
     row.enabled = !val
-    const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Failed to toggle source'
+    const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message || t('sources.failedToToggleSource')
     ElMessage.error(msg)
   }
 }
@@ -277,12 +290,12 @@ async function toggleEnabled(row: SourceRow, val: boolean) {
 async function handleDelete(row: SourceRow) {
   try {
     await ElMessageBox.confirm(
-      `Are you sure you want to delete source "${row.name}"?`,
-      'Confirm Delete',
+      t('common.confirmDeleteMsg', { entity: t('nav.sources'), name: row.name }),
+      t('common.confirmDelete'),
       { type: 'warning' }
     )
     await deleteSource(row.id)
-    ElMessage.success('Source deleted')
+    ElMessage.success(t('sources.sourceDeleted'))
     await fetchData()
   } catch {
     // cancelled or error already shown

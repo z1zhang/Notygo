@@ -18,6 +18,7 @@ import (
 	"zPush/internal/observability"
 	"zPush/internal/secret"
 	"zPush/internal/source"
+	"zPush/internal/storage"
 )
 
 // Ingester handles incoming webhook ingestion requests.
@@ -140,8 +141,7 @@ func (h *Ingester) HandleIngest(w http.ResponseWriter, r *http.Request) {
 	requestID := observability.GetRequestID(ctx)
 
 	// 12. INSERT INTO events
-	now := time.Now().UTC()
-	receivedAt := now.Format(time.RFC3339Nano)
+	receivedAt := storage.FormatNow()
 
 	var sourceEventID *string
 	if deliveryID != "" {

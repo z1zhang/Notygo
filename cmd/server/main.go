@@ -44,7 +44,7 @@ func main() {
 	slog.Info("starting zPush", "listen_addr", cfg.Server.ListenAddr)
 
 	// Open database
-	db, err := storage.OpenSQLite(cfg.Database.Path)
+	db, err := storage.Open(cfg.Database)
 	if err != nil {
 		slog.Error("open database", "error", err)
 		os.Exit(1)
@@ -96,6 +96,9 @@ func main() {
 	// Create sender registry and register adapters
 	senderRegistry := sender.NewRegistry()
 	senderRegistry.Register("dingtalk", sender.NewDingTalkSender())
+	senderRegistry.Register("feishu", sender.NewFeishuSender())
+	senderRegistry.Register("wecom", sender.NewWeComSender())
+	senderRegistry.Register("email", sender.NewEmailSender())
 	senderRegistry.Register("http_webhook", sender.NewHTTPWebhookSender())
 
 	// Create circuit breaker manager
@@ -107,7 +110,7 @@ func main() {
 	// Create event processor
 	eventProcessor := processor.NewEventProcessor(cfg.Worker, sourceRepo, mappingRepo, ruleRepo, templateRepo, destRepo, eventRepo, deliveryRepo)
 
-	// Create worker context that can be cancelled
+	// Create worker context that can be canceled
 	workerCtx, workerCancel := context.WithCancel(context.Background())
 
 	// Start workers

@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
+
+	"zPush/internal/storage"
 )
 
 // LoginHandler handles admin login with username/password.
@@ -55,9 +57,10 @@ func LoginHandler(db *sql.DB) http.HandlerFunc {
 		// Insert session with 24h expiry
 		expiresAt := time.Now().UTC().Add(24 * time.Hour)
 		sessionID := generateSessionID()
+		nowExpr := storage.NowExpr()
 		_, err = db.ExecContext(r.Context(),
-			`INSERT INTO sessions (id, user_id, token, created_at, expires_at) VALUES (?, ?, ?, datetime('now'), ?)`,
-			sessionID, id, token, expiresAt.Format(time.RFC3339Nano),
+			"INSERT INTO sessions (id, user_id, token, created_at, expires_at) VALUES (?, ?, ?, "+nowExpr+", ?)",
+			sessionID, id, token, storage.FormatTime(expiresAt),
 		)
 		if err != nil {
 			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to create session")

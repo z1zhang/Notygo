@@ -4,12 +4,12 @@ import "time"
 
 // Delivery status constants.
 const (
-	DeliveryStatusPending   = "pending"
-	DeliveryStatusRetryWait = "retry_wait"
+	DeliveryStatusPending    = "pending"
+	DeliveryStatusRetryWait  = "retry_wait"
 	DeliveryStatusProcessing = "processing"
-	DeliveryStatusDelivered = "delivered"
-	DeliveryStatusFailed    = "failed"
-	DeliveryStatusSkipped   = "skipped"
+	DeliveryStatusDelivered  = "delivered"
+	DeliveryStatusFailed     = "failed"
+	DeliveryStatusSkipped    = "skipped"
 )
 
 // Delivery represents a single delivery attempt pipeline for a destination.
@@ -28,6 +28,7 @@ type Delivery struct {
 	LeaseOwner       *string    `json:"lease_owner,omitempty"`
 	RenderedTitle    *string    `json:"rendered_title,omitempty"`
 	RenderedBody     *string    `json:"rendered_body,omitempty"`
+	RenderedFormat   *string    `json:"rendered_format,omitempty"`
 	LastErrorCode    *string    `json:"last_error_code,omitempty"`
 	LastErrorSummary *string    `json:"last_error_summary,omitempty"`
 	CreatedAt        time.Time  `json:"created_at"`

@@ -1,13 +1,13 @@
 <template>
   <div class="events-container">
     <div class="page-filters">
-      <el-select v-model="filters.status" placeholder="Status" clearable style="width: 160px" @change="fetchData">
-        <el-option label="Received" value="received" />
-        <el-option label="Processing" value="processing" />
-        <el-option label="Delivered" value="delivered" />
-        <el-option label="Failed" value="failed" />
+      <el-select v-model="filters.status" :placeholder="$t('common.status')" clearable style="width: 160px" @change="fetchData">
+        <el-option :label="$t('events.received')" value="received" />
+        <el-option :label="$t('events.processing')" value="processing" />
+        <el-option :label="$t('events.completed')" value="completed" />
+        <el-option :label="$t('events.failed')" value="failed" />
       </el-select>
-      <el-select v-model="filters.source_id" placeholder="Source" clearable style="width: 200px" @change="fetchData">
+      <el-select v-model="filters.source_id" :placeholder="$t('events.source')" clearable style="width: 200px" @change="fetchData">
         <el-option
           v-for="s in sourceOptions"
           :key="s.id"
@@ -19,27 +19,31 @@
 
     <el-card shadow="never" v-loading="loading">
       <el-table :data="tableData" stripe style="width: 100%" @row-click="openDetail">
-        <el-table-column label="ID" width="180">
+        <el-table-column :label="$t('common.id')" width="180">
           <template #default="{ row }">
             <span class="truncate-id">{{ truncateId(row.id) }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="source_name" label="Source" width="140">
+        <el-table-column :label="$t('events.source')" width="140">
           <template #default="{ row }">
-            {{ row.source_name || row.source_id || '-' }}
+            {{ getSourceName(row.source_id) }}
           </template>
         </el-table-column>
-        <el-table-column prop="status" label="Status" width="120">
+        <el-table-column prop="status" :label="$t('common.status')" width="120">
           <template #default="{ row }">
-            <el-tag :type="statusTagType(row.status)" size="small">{{ row.status }}</el-tag>
+            <el-tag :type="statusTagType(row.status)" size="small">{{ $t('enums.eventStatus.' + row.status, row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="received_at" label="Received At" width="180">
+        <el-table-column :label="$t('events.receivedAt')" width="180">
           <template #default="{ row }">
-            {{ formatTime(row.received_at ?? row.created_at) }}
+            {{ formatTime(row.received_at) }}
           </template>
         </el-table-column>
-        <el-table-column prop="error" label="Error" show-overflow-tooltip />
+        <el-table-column :label="$t('common.error')" show-overflow-tooltip>
+          <template #default="{ row }">
+            {{ row.error_summary || row.error_code || '-' }}
+          </template>
+        </el-table-column>
       </el-table>
 
       <div class="pagination-wrap" v-if="total > 0">
@@ -56,62 +60,109 @@
 
     <el-drawer
       v-model="drawerVisible"
-      title="Event Detail"
-      size="600px"
+      :title="$t('events.eventDetail')"
+      size="640px"
       destroy-on-close
     >
       <div v-loading="detailLoading">
         <template v-if="detail">
           <el-descriptions :column="2" border class="detail-desc">
-            <el-descriptions-item label="ID">{{ detail.id }}</el-descriptions-item>
-            <el-descriptions-item label="Status">
-              <el-tag :type="statusTagType(detail.status)" size="small">{{ detail.status }}</el-tag>
+            <el-descriptions-item :label="$t('common.id')" :span="2">
+              <span class="monospace-text">{{ detail.id }}</span>
             </el-descriptions-item>
-            <el-descriptions-item label="Source">{{ detail.source_name || detail.source_id || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="Received At">{{ formatTime(detail.received_at ?? detail.created_at) }}</el-descriptions-item>
+            <el-descriptions-item :label="$t('common.status')">
+              <el-tag :type="statusTagType(detail.status)" size="small">{{ $t('enums.eventStatus.' + detail.status, detail.status) }}</el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item :label="$t('events.source')">
+              {{ getSourceName(detail.source_id) }}
+            </el-descriptions-item>
+            <el-descriptions-item :label="$t('events.receivedAt')">
+              {{ formatTime(detail.received_at) }}
+            </el-descriptions-item>
+            <el-descriptions-item :label="$t('events.contentType')">
+              {{ detail.content_type || '-' }}
+            </el-descriptions-item>
+            <el-descriptions-item v-if="detail.error_summary" :label="$t('common.error')" :span="2">
+              <el-text type="danger">{{ detail.error_code }}: {{ detail.error_summary }}</el-text>
+            </el-descriptions-item>
           </el-descriptions>
 
-          <el-divider content-position="left">Raw Payload</el-divider>
+          <el-divider content-position="left">{{ $t('events.rawPayload') }}</el-divider>
           <el-input
-            :model-value="formatJson(detail.payload)"
+            :model-value="payloadDisplay"
             type="textarea"
             :rows="8"
             readonly
             class="monospace-input"
           />
 
-          <el-divider content-position="left">Parsed Fields</el-divider>
-          <el-table :data="parsedFields" size="small" border>
-            <el-table-column prop="key" label="Key" width="180" />
-            <el-table-column prop="value" label="Value" show-overflow-tooltip />
+          <el-divider content-position="left">{{ $t('events.parsedFields') }}</el-divider>
+          <el-table v-if="parsedFields.length" :data="parsedFields" size="small" border>
+            <el-table-column prop="key" :label="$t('events.key')" width="180" />
+            <el-table-column prop="value" :label="$t('events.value')" show-overflow-tooltip />
           </el-table>
+          <el-empty v-else :description="$t('events.noParsedFields')" :image-size="40" />
 
-          <el-divider content-position="left">Matched Rules</el-divider>
-          <el-table :data="detail.matched_rules ?? []" size="small" border>
-            <el-table-column prop="rule_name" label="Rule" min-width="140" />
-            <el-table-column prop="template_name" label="Template" min-width="140" />
+          <el-divider content-position="left">{{ $t('events.eventRun') }}</el-divider>
+          <template v-if="latestRun">
+            <el-descriptions :column="2" border size="small">
+              <el-descriptions-item :label="$t('events.runType')">{{ latestRun.run_type }}</el-descriptions-item>
+              <el-descriptions-item :label="$t('common.status')">
+                <el-tag :type="latestRun.status === 'completed' ? 'success' : latestRun.status === 'failed' ? 'danger' : 'warning'" size="small">
+                  {{ $t('enums.eventStatus.' + latestRun.status, latestRun.status) }}
+                </el-tag>
+              </el-descriptions-item>
+              <el-descriptions-item :label="$t('events.startedAt')">{{ formatTime(latestRun.started_at) }}</el-descriptions-item>
+              <el-descriptions-item :label="$t('events.finishedAt')">{{ latestRun.finished_at ? formatTime(latestRun.finished_at) : '-' }}</el-descriptions-item>
+            </el-descriptions>
+
+            <div v-if="latestRun.error_summary" style="margin-top: 8px">
+              <el-text type="danger" size="small">{{ latestRun.error_code }}: {{ latestRun.error_summary }}</el-text>
+            </div>
+          </template>
+          <el-empty v-else :description="$t('events.noEventRun')" :image-size="40" />
+
+          <el-divider content-position="left">{{ $t('events.matchedRules') }}</el-divider>
+          <el-table v-if="matchedRules.length" :data="matchedRules" size="small" border>
+            <el-table-column prop="name" :label="$t('events.rule')" min-width="140" />
+            <el-table-column prop="priority" :label="$t('rules.priority')" width="90" />
+            <el-table-column :label="$t('rules.destinations')" min-width="160">
+              <template #default="{ row }">
+                <el-tag v-for="dId in (row.destinations ?? []).slice(0, 2)" :key="dId" size="small" style="margin-right: 4px">
+                  {{ truncateId(dId) }}
+                </el-tag>
+                <el-tag v-if="(row.destinations ?? []).length > 2" size="small" type="info">
+                  +{{ row.destinations.length - 2 }}
+                </el-tag>
+              </template>
+            </el-table-column>
           </el-table>
-          <el-empty v-if="!(detail.matched_rules?.length)" description="No matched rules" :image-size="40" />
+          <el-empty v-else :description="$t('events.noMatchedRules')" :image-size="40" />
 
-          <el-divider content-position="left">Related Deliveries</el-divider>
-          <el-table :data="relatedDeliveries" size="small" border>
-            <el-table-column label="ID" width="120">
+          <el-divider content-position="left">{{ $t('events.relatedDeliveries') }}</el-divider>
+          <el-table v-if="relatedDeliveries.length" :data="relatedDeliveries" size="small" border>
+            <el-table-column :label="$t('common.id')" width="120">
               <template #default="{ row }">
                 {{ truncateId(row.id) }}
               </template>
             </el-table-column>
-            <el-table-column prop="destination_name" label="Destination" min-width="120" />
-            <el-table-column prop="status" label="Status" width="110">
+            <el-table-column :label="$t('events.destination')" min-width="120">
               <template #default="{ row }">
-                <el-tag :type="deliveryStatusTagType(row.status)" size="small">{{ row.status }}</el-tag>
+                {{ row.destination_name || truncateId(row.destination_id || '') }}
               </template>
             </el-table-column>
-            <el-table-column prop="attempts" label="Attempts" width="80" />
+            <el-table-column prop="status" :label="$t('common.status')" width="110">
+              <template #default="{ row }">
+                <el-tag :type="deliveryStatusTagType(row.status)" size="small">{{ $t('enums.deliveryStatus.' + row.status, row.status) }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="attempt_count" :label="$t('events.attempts')" width="90" />
           </el-table>
+          <el-empty v-else :description="$t('events.noDeliveries')" :image-size="40" />
 
           <div class="drawer-actions">
             <el-button type="warning" @click="handleReplay">
-              <el-icon><RefreshRight /></el-icon> Replay
+              <el-icon><RefreshRight /></el-icon> {{ $t('events.replay') }}
             </el-button>
           </div>
         </template>
@@ -123,27 +174,48 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
+import { RefreshRight } from '@element-plus/icons-vue'
 import { listEvents, getEvent, replayEvent } from '@/api/events'
 import { listDeliveries } from '@/api/deliveries'
 import { listSources } from '@/api/sources'
 
-interface MatchedRule {
-  rule_name: string
-  template_name: string
-  [key: string]: unknown
+const { t } = useI18n()
+
+interface RuleSnapshot {
+  id: string
+  name: string
+  priority: number
+  conditions: unknown
+  destinations: string[]
 }
 
-interface EventRow {
+interface EventRunData {
+  id: string
+  event_id: string
+  run_type: string
+  status: string
+  started_at: string
+  finished_at?: string | null
+  error_code?: string | null
+  error_summary?: string | null
+  parsed_fields: Record<string, unknown>
+  rule_set_snapshot: RuleSnapshot[]
+  matched_rule_ids: string[]
+}
+
+interface EventData {
   id: string
   source_id: string
-  source_name: string
-  status: string
+  source_event_id?: string | null
+  request_id: string
   received_at: string
-  created_at: string
-  error: string
-  payload: unknown
-  parsed_fields: Record<string, unknown>
-  matched_rules: MatchedRule[]
+  content_type: string
+  payload_raw: string
+  payload_hash: string
+  status: string
+  error_code?: string | null
+  error_summary?: string | null
   [key: string]: unknown
 }
 
@@ -152,13 +224,25 @@ interface KeyValue {
   value: string
 }
 
+interface DeliveryRow {
+  id: string
+  destination_id: string
+  destination_name?: string
+  status: string
+  attempt_count: number
+  [key: string]: unknown
+}
+
 const loading = ref(false)
 const detailLoading = ref(false)
 const drawerVisible = ref(false)
-const detail = ref<EventRow | null>(null)
-const relatedDeliveries = ref<Record<string, unknown>[]>([])
 
-const tableData = ref<EventRow[]>([])
+// Detail state
+const detail = ref<EventData | null>(null)
+const latestRun = ref<EventRunData | null>(null)
+const relatedDeliveries = ref<DeliveryRow[]>([])
+
+const tableData = ref<EventData[]>([])
 const total = ref(0)
 const currentPage = ref(1)
 const pageSize = ref(20)
@@ -175,26 +259,27 @@ function truncateId(id: string): string {
   return id.length > 12 ? id.substring(0, 12) + '...' : id
 }
 
-function formatTime(val: string): string {
+function formatTime(val: string | null | undefined): string {
   if (!val) return '-'
-  return new Date(val).toLocaleString()
+  try {
+    return new Date(val).toLocaleString()
+  } catch {
+    return val
+  }
 }
 
-function formatJson(obj: unknown): string {
-  if (!obj) return ''
-  try {
-    return JSON.stringify(obj, null, 2)
-  } catch {
-    return String(obj)
-  }
+function getSourceName(sourceId: string): string {
+  if (!sourceId) return '-'
+  return sourceOptions.value.find((s) => s.id === sourceId)?.name ?? truncateId(sourceId)
 }
 
 function statusTagType(status: string): 'success' | 'warning' | 'danger' | 'info' {
   const map: Record<string, 'success' | 'warning' | 'danger' | 'info'> = {
     received: 'info',
     processing: 'warning',
-    delivered: 'success',
+    completed: 'success',
     failed: 'danger',
+    expired: 'info',
   }
   return map[status] ?? 'info'
 }
@@ -202,21 +287,41 @@ function statusTagType(status: string): 'success' | 'warning' | 'danger' | 'info
 function deliveryStatusTagType(status: string): 'success' | 'warning' | 'danger' | 'info' {
   const map: Record<string, 'success' | 'warning' | 'danger' | 'info'> = {
     pending: 'info',
-    delivering: 'warning',
-    delivered: 'success',
-    failed: 'danger',
+    sending: 'warning',
+    success: 'success',
+    retry_wait: 'warning',
     dead_letter: 'danger',
   }
   return map[status] ?? 'info'
 }
 
+// Parse payload_raw (JSON string) for display
+const payloadDisplay = computed<string>(() => {
+  if (!detail.value?.payload_raw) return ''
+  try {
+    const parsed = JSON.parse(detail.value.payload_raw)
+    return JSON.stringify(parsed, null, 2)
+  } catch {
+    return detail.value.payload_raw
+  }
+})
+
+// Parse fields from latest run
 const parsedFields = computed<KeyValue[]>(() => {
-  if (!detail.value?.parsed_fields) return []
-  const fields = detail.value.parsed_fields as Record<string, unknown>
+  if (!latestRun.value?.parsed_fields) return []
+  const fields = latestRun.value.parsed_fields
   return Object.entries(fields).map(([key, value]) => ({
     key,
     value: typeof value === 'object' ? JSON.stringify(value) : String(value ?? ''),
   }))
+})
+
+// Build matched rules from rule_set_snapshot filtered by matched_rule_ids
+const matchedRules = computed<RuleSnapshot[]>(() => {
+  if (!latestRun.value) return []
+  const { rule_set_snapshot, matched_rule_ids } = latestRun.value
+  if (!matched_rule_ids?.length || !rule_set_snapshot?.length) return []
+  return rule_set_snapshot.filter((r) => matched_rule_ids.includes(r.id))
 })
 
 async function fetchData() {
@@ -229,10 +334,10 @@ async function fetchData() {
     if (filters.status) params.status = filters.status
     if (filters.source_id) params.source_id = filters.source_id
     const res = await listEvents(params)
-    tableData.value = res.data?.items ?? []
+    tableData.value = res.data?.data ?? []
     total.value = res.data?.total ?? 0
   } catch (e: unknown) {
-    const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Failed to load events'
+    const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message || t('events.failedToLoadEvents')
     ElMessage.error(msg)
   } finally {
     loading.value = false
@@ -242,7 +347,7 @@ async function fetchData() {
 async function fetchSourceOptions() {
   try {
     const res = await listSources({ page: 1, size: 200 })
-    sourceOptions.value = (res.data?.items ?? []).map(
+    sourceOptions.value = (res.data?.data ?? []).map(
       (s: Record<string, unknown>) => ({ id: String(s.id ?? ''), name: String(s.name ?? '') })
     )
   } catch {
@@ -250,19 +355,33 @@ async function fetchSourceOptions() {
   }
 }
 
-async function openDetail(row: EventRow) {
+async function openDetail(row: EventData) {
   drawerVisible.value = true
   detailLoading.value = true
   detail.value = null
+  latestRun.value = null
   relatedDeliveries.value = []
   try {
     const res = await getEvent(row.id)
-    detail.value = res.data ?? null
+    const data = res.data as Record<string, unknown>
+
+    // Backend GetEvent returns: { event: {...}, latest_run: {...}, parsed_fields: {...} }
+    if (data.event) {
+      detail.value = data.event as EventData
+    } else {
+      // Fallback: if the API returns the event directly
+      detail.value = data as unknown as EventData
+    }
+
+    if (data.latest_run) {
+      latestRun.value = data.latest_run as EventRunData
+    }
+
     // Fetch related deliveries
     const delRes = await listDeliveries({ page: 1, size: 50, event_id: row.id })
-    relatedDeliveries.value = delRes.data?.items ?? []
+    relatedDeliveries.value = (delRes.data?.data ?? []) as DeliveryRow[]
   } catch (e: unknown) {
-    const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Failed to load event detail'
+    const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message || t('events.failedToLoadDetail')
     ElMessage.error(msg)
   } finally {
     detailLoading.value = false
@@ -273,9 +392,9 @@ async function handleReplay() {
   if (!detail.value) return
   try {
     await replayEvent(detail.value.id)
-    ElMessage.success('Event replay initiated')
+    ElMessage.success(t('events.replayInitiated'))
   } catch (e: unknown) {
-    const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Replay failed'
+    const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message || t('events.replayFailed')
     ElMessage.error(msg)
   }
 }
@@ -304,6 +423,12 @@ onMounted(() => {
     font-family: monospace;
     font-size: 12px;
     cursor: pointer;
+  }
+
+  .monospace-text {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 12px;
+    word-break: break-all;
   }
 
   :deep(.monospace-input .el-textarea__inner) {

@@ -6,7 +6,7 @@
           <div class="stat-icon stat-icon--blue">
             <el-icon :size="32"><Bell /></el-icon>
           </div>
-          <el-statistic title="Total Events" :value="stats.totalEvents" />
+          <el-statistic :title="$t('dashboard.totalEvents')" :value="stats.totalEvents" />
         </el-card>
       </el-col>
       <el-col :span="6">
@@ -14,7 +14,7 @@
           <div class="stat-icon stat-icon--orange">
             <el-icon :size="32"><Loading /></el-icon>
           </div>
-          <el-statistic title="Processing" :value="stats.processing" />
+          <el-statistic :title="$t('dashboard.processing')" :value="stats.processing" />
         </el-card>
       </el-col>
       <el-col :span="6">
@@ -22,7 +22,7 @@
           <div class="stat-icon stat-icon--green">
             <el-icon :size="32"><Promotion /></el-icon>
           </div>
-          <el-statistic title="Pending Deliveries" :value="stats.pendingDeliveries" />
+          <el-statistic :title="$t('dashboard.pendingDeliveries')" :value="stats.pendingDeliveries" />
         </el-card>
       </el-col>
       <el-col :span="6">
@@ -30,7 +30,7 @@
           <div class="stat-icon stat-icon--red">
             <el-icon :size="32"><CircleClose /></el-icon>
           </div>
-          <el-statistic title="Failed Deliveries" :value="stats.failedDeliveries" />
+          <el-statistic :title="$t('dashboard.failedDeliveries')" :value="stats.failedDeliveries" />
         </el-card>
       </el-col>
     </el-row>
@@ -38,31 +38,31 @@
     <el-card shadow="never" class="errors-card">
       <template #header>
         <div class="card-header">
-          <span>Recent Errors</span>
-          <el-button text type="primary" @click="fetchRecentErrors">Refresh</el-button>
+          <span>{{ $t('dashboard.recentErrors') }}</span>
+          <el-button text type="primary" @click="fetchRecentErrors">{{ $t('dashboard.refresh') }}</el-button>
         </div>
       </template>
       <el-table :data="recentErrors" stripe style="width: 100%">
-        <el-table-column prop="type" label="Type" width="120">
+        <el-table-column prop="type" :label="$t('common.type')" width="120">
           <template #default="{ row }">
             <el-tag :type="row.type === 'event' ? 'warning' : 'danger'" size="small">
-              {{ row.type }}
+              {{ $t('enums.errorType.' + row.type, row.type) }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="id" label="ID" width="180">
+        <el-table-column prop="id" :label="$t('common.id')" width="180">
           <template #default="{ row }">
             <span class="truncate-id">{{ row.id }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="source" label="Source" width="140" />
-        <el-table-column prop="status" label="Status" width="120">
+        <el-table-column prop="source" :label="$t('dashboard.source')" width="140" />
+        <el-table-column prop="status" :label="$t('common.status')" width="120">
           <template #default="{ row }">
-            <el-tag type="danger" size="small">{{ row.status }}</el-tag>
+            <el-tag type="danger" size="small">{{ $t('enums.deliveryStatus.' + row.status, $t('enums.eventStatus.' + row.status, row.status)) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="error" label="Error" show-overflow-tooltip />
-        <el-table-column prop="created_at" label="Time" width="180">
+        <el-table-column prop="error" :label="$t('common.error')" show-overflow-tooltip />
+        <el-table-column prop="created_at" :label="$t('common.time')" width="180">
           <template #default="{ row }">
             {{ formatTime(row.created_at) }}
           </template>
@@ -75,8 +75,11 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import { listEvents } from '@/api/events'
 import { listDeliveries } from '@/api/deliveries'
+
+const { t } = useI18n()
 
 interface ErrorRow {
   type: string
@@ -110,12 +113,12 @@ async function fetchStats() {
       listDeliveries({ page: 1, size: 1, status: 'pending' }),
       listDeliveries({ page: 1, size: 1, status: 'failed' }),
     ])
-    stats.totalEvents = totalRes.data?.total ?? totalRes.data?.items?.length ?? 0
+    stats.totalEvents = totalRes.data?.total ?? totalRes.data?.data?.length ?? 0
     stats.processing = processingRes.data?.total ?? 0
     stats.pendingDeliveries = pendingRes.data?.total ?? 0
     stats.failedDeliveries = failedRes.data?.total ?? 0
   } catch (e: unknown) {
-    const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Failed to load stats'
+    const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message || t('common.failedToLoad', { entity: t('nav.dashboard') })
     ElMessage.error(msg)
   }
 }
@@ -126,7 +129,7 @@ async function fetchRecentErrors() {
       listEvents({ page: 1, size: 5, status: 'failed' }),
       listDeliveries({ page: 1, size: 5, status: 'failed' }),
     ])
-    const eventErrors: ErrorRow[] = (eventsRes.data?.items ?? []).map(
+    const eventErrors: ErrorRow[] = (eventsRes.data?.data ?? []).map(
       (e: Record<string, unknown>) => ({
         type: 'event',
         id: String(e.id ?? ''),
@@ -136,7 +139,7 @@ async function fetchRecentErrors() {
         created_at: String(e.created_at ?? e.received_at ?? ''),
       })
     )
-    const deliveryErrors: ErrorRow[] = (deliveriesRes.data?.items ?? []).map(
+    const deliveryErrors: ErrorRow[] = (deliveriesRes.data?.data ?? []).map(
       (d: Record<string, unknown>) => ({
         type: 'delivery',
         id: String(d.id ?? ''),
@@ -150,7 +153,7 @@ async function fetchRecentErrors() {
     all.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
     recentErrors.value = all.slice(0, 10)
   } catch (e: unknown) {
-    const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Failed to load recent errors'
+    const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message || t('common.failedToLoad', { entity: t('dashboard.recentErrors') })
     ElMessage.error(msg)
   }
 }

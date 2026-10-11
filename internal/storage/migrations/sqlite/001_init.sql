@@ -117,6 +117,7 @@ CREATE TABLE deliveries (
     lease_owner     TEXT,
     rendered_title  TEXT,
     rendered_body   TEXT,
+    rendered_format TEXT,
     last_error_code TEXT,
     last_error_summary TEXT,
     created_at      TEXT NOT NULL DEFAULT (datetime('now')),

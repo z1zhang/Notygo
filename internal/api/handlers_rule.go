@@ -131,8 +131,8 @@ func validateConditions(group rules.ConditionGroup) error {
 			return &ValidationError{Message: "condition field is required"}
 		}
 		validOps := map[string]bool{
-			"eq": true, "neq": true, "contains": true, "regex": true,
-			"gt": true, "lt": true, "gte": true, "lte": true, "exists": true,
+			"eq": true, "neq": true, "ne": true, "contains": true, "not_contains": true, "regex": true,
+			"gt": true, "lt": true, "gte": true, "lte": true, "exists": true, "not_exists": true,
 		}
 		if !validOps[cond.Operator] {
 			return &ValidationError{Message: "invalid condition operator: " + cond.Operator}

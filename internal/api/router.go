@@ -14,11 +14,11 @@ import (
 	"zPush/internal/event"
 	"zPush/internal/ingest"
 	"zPush/internal/mapping"
+	"zPush/internal/observability"
 	"zPush/internal/rules"
 	"zPush/internal/secret"
 	"zPush/internal/source"
 	"zPush/internal/templates"
-	"zPush/internal/observability"
 )
 
 // NewRouter creates the main HTTP router with all routes and middleware.
@@ -134,11 +134,14 @@ func NewRouter(
 				r.Post("/bulk-retry", BulkRetry(db))
 			})
 
+			// Audit logs
+			r.Get("/audit", ListAuditLogs(db))
+
 			// Preview / debug
 			r.Post("/preview/parse", placeholderHandler("preview.parse"))
 			r.Post("/preview/mapping", placeholderHandler("preview.mapping"))
 			r.Post("/preview/rule", placeholderHandler("preview.rule"))
-			r.Post("/preview/template", placeholderHandler("preview.template"))
+			r.Post("/preview/template", PreviewTemplate(db))
 			r.Post("/preview/delivery", placeholderHandler("preview.delivery"))
 		})
 

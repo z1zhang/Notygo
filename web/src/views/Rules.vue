@@ -2,28 +2,41 @@
   <div class="rules-container">
     <div class="page-actions">
       <el-button type="primary" @click="openDialog()">
-        <el-icon><Plus /></el-icon> New Rule
+        <el-icon><Plus /></el-icon> {{ $t('rules.newRule') }}
       </el-button>
     </div>
 
     <el-card shadow="never" v-loading="loading">
       <el-table :data="tableData" stripe style="width: 100%">
-        <el-table-column prop="name" label="Name" min-width="160" />
-        <el-table-column prop="priority" label="Priority" width="100" />
-        <el-table-column prop="enabled" label="Enabled" width="100">
+        <el-table-column prop="name" :label="$t('common.name')" min-width="160" />
+        <el-table-column prop="priority" :label="$t('rules.priority')" width="100" />
+        <el-table-column prop="enabled" :label="$t('common.enabled')" width="100">
           <template #default="{ row }">
             <el-switch v-model="row.enabled" @change="(val: boolean) => toggleEnabled(row, val)" />
           </template>
         </el-table-column>
-        <el-table-column prop="template_id" label="Template" width="140">
+        <el-table-column prop="template_id" :label="$t('rules.template')" width="140">
           <template #default="{ row }">
             {{ getTemplateName(row.template_id) }}
           </template>
         </el-table-column>
-        <el-table-column label="Actions" width="160" fixed="right">
+        <el-table-column :label="$t('rules.destinations')" min-width="140">
           <template #default="{ row }">
-            <el-button text type="primary" size="small" @click="openDialog(row)">Edit</el-button>
-            <el-button text type="danger" size="small" @click="handleDelete(row)">Delete</el-button>
+            <template v-if="(row.destination_ids ?? []).length">
+              <el-tag v-for="dId in (row.destination_ids as string[]).slice(0, 3)" :key="dId" size="small" style="margin-right: 4px">
+                {{ getDestinationName(dId) }}
+              </el-tag>
+              <el-tag v-if="(row.destination_ids as string[]).length > 3" size="small" type="info">
+                +{{ (row.destination_ids as string[]).length - 3 }}
+              </el-tag>
+            </template>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
+        <el-table-column :label="$t('common.actions')" width="160" fixed="right">
+          <template #default="{ row }">
+            <el-button text type="primary" size="small" @click="openDialog(row)">{{ $t('common.edit') }}</el-button>
+            <el-button text type="danger" size="small" @click="handleDelete(row)">{{ $t('common.delete') }}</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -42,96 +55,124 @@
 
     <el-dialog
       v-model="dialogVisible"
-      :title="isEditing ? 'Edit Rule' : 'New Rule'"
-      width="720px"
+      :title="isEditing ? $t('rules.editRule') : $t('rules.newRule')"
+      width="820px"
       destroy-on-close
     >
       <el-form
         ref="formRef"
         :model="form"
         :rules="formRules"
-        label-width="150px"
-        label-position="right"
+        label-width="auto"
+        label-position="left"
       >
-        <el-form-item label="Name" prop="name">
-          <el-input v-model="form.name" placeholder="Rule name" />
+        <el-form-item :label="$t('common.name')" prop="name">
+          <el-input v-model="form.name" :placeholder="$t('rules.ruleName')" />
         </el-form-item>
-        <el-form-item label="Priority" prop="priority">
-          <el-input-number v-model="form.priority" :min="0" :max="9999" />
-        </el-form-item>
-        <el-form-item label="Enabled">
-          <el-switch v-model="form.enabled" />
-        </el-form-item>
-        <el-form-item label="Condition Mode">
+
+        <el-row :gutter="16">
+          <el-col :span="8">
+            <el-form-item :label="$t('rules.priority')" prop="priority">
+              <el-input-number v-model="form.priority" :min="0" :max="9999" style="width: 100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item :label="$t('common.enabled')">
+              <el-switch v-model="form.enabled" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item :label="$t('rules.continueOnMatch')">
+              <el-switch v-model="form.continue_on_match" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-divider content-position="left">{{ $t('rules.conditions') }}</el-divider>
+
+        <el-form-item :label="$t('rules.conditionMode')">
           <el-radio-group v-model="form.condition_mode">
-            <el-radio value="and">AND</el-radio>
-            <el-radio value="or">OR</el-radio>
+            <el-radio value="and">{{ $t('rules.andMode') }}</el-radio>
+            <el-radio value="or">{{ $t('rules.orMode') }}</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="Continue on Match">
-          <el-switch v-model="form.continue_on_match" />
-        </el-form-item>
 
-        <el-divider content-position="left">Conditions</el-divider>
+        <div v-for="(cond, index) in form.conditions" :key="index" class="condition-card">
+          <div class="condition-card-header">
+            <span class="condition-card-title">{{ $t('rules.conditionNo', { n: index + 1 }) }}</span>
+            <el-button text type="danger" size="small" @click="removeCondition(index)">
+              <el-icon><Delete /></el-icon> {{ $t('common.remove') }}
+            </el-button>
+          </div>
 
-        <div v-for="(cond, index) in form.conditions" :key="index" class="condition-row">
-          <el-row :gutter="8" align="middle">
-            <el-col :span="7">
+          <el-row :gutter="16">
+            <el-col :span="12">
               <el-form-item
                 :prop="`conditions.${index}.field`"
-                :rules="[{ required: true, message: 'Required', trigger: 'blur' }]"
-                label=""
+                :rules="[{ required: true, message: t('rules.fieldRequired'), trigger: 'blur' }]"
+                :label="$t('rules.field')"
               >
-                <el-input v-model="cond.field" placeholder="Field" />
+                <el-input v-model="cond.field" :placeholder="$t('rules.fieldPlaceholder')" />
               </el-form-item>
             </el-col>
-            <el-col :span="6">
-              <el-form-item :prop="`conditions.${index}.operator`" label="">
-                <el-select v-model="cond.operator" placeholder="Operator">
-                  <el-option label="Equals" value="eq" />
-                  <el-option label="Not Equals" value="neq" />
-                  <el-option label="Contains" value="contains" />
-                  <el-option label="Starts With" value="starts_with" />
-                  <el-option label="Ends With" value="ends_with" />
-                  <el-option label="Regex" value="regex" />
-                  <el-option label="Greater Than" value="gt" />
-                  <el-option label="Less Than" value="lt" />
-                  <el-option label="Exists" value="exists" />
+            <el-col :span="12">
+              <el-form-item :prop="`conditions.${index}.operator`" :label="$t('rules.operator')">
+                <el-select v-model="cond.operator" :placeholder="$t('rules.selectOperator')" style="width: 100%">
+                  <el-option-group :label="$t('rules.equality')">
+                    <el-option :label="$t('rules.equals')" value="eq" />
+                    <el-option :label="$t('rules.notEquals')" value="neq" />
+                  </el-option-group>
+                  <el-option-group :label="$t('rules.stringGroup')">
+                    <el-option :label="$t('rules.contains')" value="contains" />
+                    <el-option :label="$t('rules.notContains')" value="not_contains" />
+                    <el-option :label="$t('rules.regexMatch')" value="regex" />
+                  </el-option-group>
+                  <el-option-group :label="$t('rules.numericGroup')">
+                    <el-option :label="$t('rules.greaterThan')" value="gt" />
+                    <el-option :label="$t('rules.lessThan')" value="lt" />
+                    <el-option :label="$t('rules.greaterOrEqual')" value="gte" />
+                    <el-option :label="$t('rules.lessOrEqual')" value="lte" />
+                  </el-option-group>
+                  <el-option-group :label="$t('rules.existenceGroup')">
+                    <el-option :label="$t('rules.exists')" value="exists" />
+                    <el-option :label="$t('rules.notExists')" value="not_exists" />
+                  </el-option-group>
                 </el-select>
               </el-form-item>
             </el-col>
-            <el-col :span="8">
-              <el-form-item :prop="`conditions.${index}.value`" label="">
-                <el-input v-model="cond.value" placeholder="Value" />
+          </el-row>
+
+          <el-row :gutter="16" v-if="!isExistenceOp(cond.operator)">
+            <el-col :span="12">
+              <el-form-item :prop="`conditions.${index}.value`" :label="$t('rules.value')">
+                <el-input v-model="cond.value" :placeholder="getValuePlaceholder(cond.operator)" />
               </el-form-item>
-            </el-col>
-            <el-col :span="2">
-              <el-button text type="danger" :icon="Delete" @click="removeCondition(index)" />
             </el-col>
           </el-row>
         </div>
 
         <el-button type="primary" text @click="addCondition">
-          <el-icon><Plus /></el-icon> Add Condition
+          <el-icon><Plus /></el-icon> {{ $t('rules.addCondition') }}
         </el-button>
 
-        <el-divider />
+        <el-divider content-position="left">{{ $t('rules.actionsSection') }}</el-divider>
 
-        <el-form-item label="Template" prop="template_id">
-          <el-select v-model="form.template_id" placeholder="Select template" clearable>
+        <el-form-item :label="$t('rules.template')" prop="template_id">
+          <el-select v-model="form.template_id" :placeholder="$t('rules.selectTemplate')" clearable style="width: 100%">
             <el-option
-              v-for="t in templateOptions"
-              :key="t.id"
-              :label="t.name"
-              :value="t.id"
+              v-for="tpl in templateOptions"
+              :key="tpl.id"
+              :label="tpl.name"
+              :value="tpl.id"
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="Destinations" prop="destination_ids">
+        <el-form-item :label="$t('rules.destinations')" prop="destination_ids">
           <el-select
             v-model="form.destination_ids"
             multiple
-            placeholder="Select destinations"
+            :placeholder="$t('rules.selectDestinations')"
+            style="width: 100%"
           >
             <el-option
               v-for="d in destinationOptions"
@@ -141,11 +182,43 @@
             />
           </el-select>
         </el-form-item>
+
+        <el-divider content-position="left">{{ $t('rules.deduplication') }}</el-divider>
+
+        <el-row :gutter="16">
+          <el-col :span="8">
+            <el-form-item :label="$t('rules.windowSec')" label-width="110px">
+              <el-input-number v-model="form.dedupe_window" :min="0" :max="86400" :placeholder="$t('rules.windowPlaceholder')" style="width: 100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item :label="$t('rules.keyFields')" label-width="110px">
+              <el-select
+                v-model="form.dedupe_key_fields"
+                multiple
+                filterable
+                allow-create
+                default-first-option
+                :placeholder="$t('rules.keyFieldsPlaceholder')"
+                style="width: 100%"
+              >
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item :label="$t('rules.dedupeAction')" label-width="110px">
+              <el-select v-model="form.dedupe_action" :placeholder="$t('rules.actionPlaceholder')" clearable style="width: 100%">
+                <el-option :label="$t('rules.skip')" value="skip" />
+                <el-option :label="$t('rules.queue')" value="queue" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
       </el-form>
 
       <template #footer>
-        <el-button @click="dialogVisible = false">Cancel</el-button>
-        <el-button type="primary" :loading="saving" @click="handleSave">Save</el-button>
+        <el-button @click="dialogVisible = false">{{ $t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="saving" @click="handleSave">{{ $t('common.save') }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -156,9 +229,12 @@ import { ref, reactive, onMounted } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete } from '@element-plus/icons-vue'
+import { useI18n } from 'vue-i18n'
 import { listRules, createRule, updateRule, deleteRule } from '@/api/rules'
 import { listTemplates } from '@/api/templates'
 import { listDestinations } from '@/api/destinations'
+
+const { t } = useI18n()
 
 interface ConditionRow {
   field: string
@@ -176,6 +252,7 @@ interface RuleRow {
   conditions: ConditionRow[]
   template_id: string
   destination_ids: string[]
+  dedupe_config?: { window_seconds: number; key_fields: string[]; action: string } | null
   [key: string]: unknown
 }
 
@@ -208,10 +285,24 @@ const form = reactive({
   conditions: [] as ConditionRow[],
   template_id: '',
   destination_ids: [] as string[],
+  // dedupe
+  dedupe_window: 0,
+  dedupe_key_fields: [] as string[],
+  dedupe_action: '',
 })
 
 const formRules: FormRules = {
-  name: [{ required: true, message: 'Name is required', trigger: 'blur' }],
+  name: [{ required: true, message: t('rules.nameRequired'), trigger: 'blur' }],
+}
+
+function isExistenceOp(op: string): boolean {
+  return op === 'exists' || op === 'not_exists'
+}
+
+function getValuePlaceholder(op: string): string {
+  if (op === 'regex') return t('rules.regexPlaceholder')
+  if (['gt', 'lt', 'gte', 'lte'].includes(op)) return t('rules.numericPlaceholder')
+  return t('rules.comparisonPlaceholder')
 }
 
 function createEmptyCondition(): ConditionRow {
@@ -228,7 +319,12 @@ function removeCondition(index: number) {
 
 function getTemplateName(id: string): string {
   if (!id) return '-'
-  return templateOptions.value.find((t) => t.id === id)?.name ?? id
+  return templateOptions.value.find((tp) => tp.id === id)?.name ?? id
+}
+
+function getDestinationName(id: string): string {
+  if (!id) return id
+  return destinationOptions.value.find((d) => d.id === id)?.name ?? id.slice(0, 8)
 }
 
 function resetForm() {
@@ -240,6 +336,9 @@ function resetForm() {
   form.conditions = [createEmptyCondition()]
   form.template_id = ''
   form.destination_ids = []
+  form.dedupe_window = 0
+  form.dedupe_key_fields = []
+  form.dedupe_action = ''
 }
 
 function openDialog(row?: RuleRow) {
@@ -252,11 +351,36 @@ function openDialog(row?: RuleRow) {
     form.enabled = row.enabled ?? true
     form.condition_mode = row.condition_mode ?? 'and'
     form.continue_on_match = row.continue_on_match ?? false
-    form.conditions = (row.conditions ?? []).length
-      ? (row.conditions as ConditionRow[]).map((c) => ({ ...createEmptyCondition(), ...c }))
-      : [createEmptyCondition()]
+
+    // Backend stores conditions as ConditionGroup { operator, conditions: [...] }
+    // Extract the flat conditions array from the group
+    const rawConds = row.conditions as unknown
+    if (Array.isArray(rawConds)) {
+      // Legacy flat array format
+      form.conditions = (rawConds as ConditionRow[]).map((c) => ({ ...createEmptyCondition(), ...c }))
+    } else if (rawConds && typeof rawConds === 'object') {
+      // ConditionGroup format: { operator, conditions: [...] }
+      const group = rawConds as { operator?: string; conditions?: ConditionRow[] }
+      const groupConds = group.conditions ?? []
+      form.conditions = groupConds.length
+        ? groupConds.map((c) => ({ ...createEmptyCondition(), ...c }))
+        : [createEmptyCondition()]
+      if (group.operator) {
+        form.condition_mode = group.operator
+      }
+    } else {
+      form.conditions = [createEmptyCondition()]
+    }
+
     form.template_id = row.template_id ?? ''
     form.destination_ids = (row.destination_ids ?? []) as string[]
+
+    // Dedupe config
+    if (row.dedupe_config) {
+      form.dedupe_window = row.dedupe_config.window_seconds ?? 0
+      form.dedupe_key_fields = row.dedupe_config.key_fields ?? []
+      form.dedupe_action = row.dedupe_config.action ?? ''
+    }
   } else {
     isEditing.value = false
     editingId.value = ''
@@ -268,11 +392,10 @@ async function fetchData() {
   loading.value = true
   try {
     const res = await listRules({ page: currentPage.value, size: pageSize.value })
-    tableData.value = res.data?.items ?? []
+    tableData.value = res.data?.data ?? []
     total.value = res.data?.total ?? 0
-  } catch (e: unknown) {
-    const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Failed to load rules'
-    ElMessage.error(msg)
+  } catch {
+    ElMessage.error(t('rules.failedToLoadRules'))
   } finally {
     loading.value = false
   }
@@ -284,10 +407,10 @@ async function fetchOptions() {
       listTemplates({ page: 1, size: 200 }),
       listDestinations({ page: 1, size: 200 }),
     ])
-    templateOptions.value = (templatesRes.data?.items ?? []).map(
-      (t: Record<string, unknown>) => ({ id: String(t.id ?? ''), name: String(t.name ?? '') })
+    templateOptions.value = (templatesRes.data?.data ?? []).map(
+      (tp: Record<string, unknown>) => ({ id: String(tp.id ?? ''), name: String(tp.name ?? '') })
     )
-    destinationOptions.value = (destinationsRes.data?.items ?? []).map(
+    destinationOptions.value = (destinationsRes.data?.data ?? []).map(
       (d: Record<string, unknown>) => ({ id: String(d.id ?? ''), name: String(d.name ?? '') })
     )
   } catch {
@@ -302,28 +425,50 @@ async function handleSave() {
 
   saving.value = true
   try {
+    // Build the ConditionGroup structure that the backend expects:
+    // { operator: "and"|"or", conditions: [...] }
+    const conditionGroup = {
+      operator: form.condition_mode,
+      conditions: form.conditions
+        .filter((c) => c.field)
+        .map((c) => ({
+          field: c.field,
+          operator: c.operator,
+          value: isExistenceOp(c.operator) ? '' : c.value,
+        })),
+    }
+
+    // Build dedupe config
+    const dedupeConfig = form.dedupe_window > 0
+      ? {
+          window_seconds: form.dedupe_window,
+          key_fields: form.dedupe_key_fields,
+          action: form.dedupe_action || 'skip',
+        }
+      : null
+
     const payload: Record<string, unknown> = {
       name: form.name,
       priority: form.priority,
       enabled: form.enabled,
       condition_mode: form.condition_mode,
       continue_on_match: form.continue_on_match,
-      conditions: form.conditions.filter((c) => c.field),
+      conditions: conditionGroup,
       template_id: form.template_id || null,
       destination_ids: form.destination_ids,
+      dedupe_config: dedupeConfig,
     }
     if (isEditing.value) {
       await updateRule(editingId.value, payload)
-      ElMessage.success('Rule updated')
+      ElMessage.success(t('rules.ruleUpdated'))
     } else {
       await createRule(payload)
-      ElMessage.success('Rule created')
+      ElMessage.success(t('rules.ruleCreated'))
     }
     dialogVisible.value = false
     await fetchData()
-  } catch (e: unknown) {
-    const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Failed to save rule'
-    ElMessage.error(msg)
+  } catch {
+    ElMessage.error(t('rules.failedToSaveRule'))
   } finally {
     saving.value = false
   }
@@ -331,24 +476,23 @@ async function handleSave() {
 
 async function toggleEnabled(row: RuleRow, val: boolean) {
   try {
-    await updateRule(row.id, { ...row, enabled: val })
-    ElMessage.success(`Rule ${val ? 'enabled' : 'disabled'}`)
-  } catch (e: unknown) {
+    await updateRule(row.id, { enabled: val })
+    ElMessage.success(val ? t('rules.ruleEnabled') : t('rules.ruleDisabled'))
+  } catch {
     row.enabled = !val
-    const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Failed to toggle rule'
-    ElMessage.error(msg)
+    ElMessage.error(t('rules.failedToToggleRule'))
   }
 }
 
 async function handleDelete(row: RuleRow) {
   try {
     await ElMessageBox.confirm(
-      `Are you sure you want to delete rule "${row.name}"?`,
-      'Confirm Delete',
+      t('common.confirmDeleteMsg', { entity: t('nav.rules'), name: row.name }),
+      t('common.confirmDelete'),
       { type: 'warning' }
     )
     await deleteRule(row.id)
-    ElMessage.success('Rule deleted')
+    ElMessage.success(t('rules.ruleDeleted'))
     await fetchData()
   } catch {
     // cancelled
@@ -375,11 +519,25 @@ onMounted(() => {
     justify-content: flex-end;
   }
 
-  .condition-row {
-    margin-bottom: 4px;
-    padding: 8px;
-    background-color: #fafafa;
-    border-radius: 4px;
+  .condition-card {
+    margin-bottom: 12px;
+    padding: 16px;
+    background-color: var(--el-fill-color-lighter, #fafafa);
+    border: 1px solid var(--el-border-color-lighter, #ebeef5);
+    border-radius: 8px;
+
+    .condition-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .condition-card-title {
+      font-weight: 600;
+      font-size: 14px;
+      color: var(--el-text-color-primary, #303133);
+    }
   }
 }
 </style>

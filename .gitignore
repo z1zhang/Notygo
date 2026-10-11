@@ -50,3 +50,5 @@ docker-compose.override.yml
 # Archives
 *.tar.gz
 *.zip
+
+CLAUDE.md

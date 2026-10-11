@@ -6,16 +6,16 @@
           <template #header>
             <div class="card-header">
               <el-icon><Monitor /></el-icon>
-              <span>System Info</span>
+              <span>{{ $t('settings.systemInfo') }}</span>
             </div>
           </template>
           <el-descriptions :column="2" border>
-            <el-descriptions-item label="Version">{{ systemInfo.version || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="Uptime">{{ systemInfo.uptime || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="Database Path">{{ systemInfo.databasePath || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="Status">
+            <el-descriptions-item :label="$t('settings.version')">{{ systemInfo.version || '-' }}</el-descriptions-item>
+            <el-descriptions-item :label="$t('settings.uptime')">{{ systemInfo.uptime || '-' }}</el-descriptions-item>
+            <el-descriptions-item :label="$t('settings.databasePath')">{{ systemInfo.databasePath || '-' }}</el-descriptions-item>
+            <el-descriptions-item :label="$t('settings.status')">
               <el-tag :type="systemInfo.healthy ? 'success' : 'danger'" size="small">
-                {{ systemInfo.healthy ? 'Healthy' : 'Unhealthy' }}
+                {{ systemInfo.healthy ? $t('settings.healthy') : $t('settings.unhealthy') }}
               </el-tag>
             </el-descriptions-item>
           </el-descriptions>
@@ -29,22 +29,22 @@
           <template #header>
             <div class="card-header">
               <el-icon><Calendar /></el-icon>
-              <span>Retention Settings</span>
+              <span>{{ $t('settings.retentionSettings') }}</span>
             </div>
           </template>
           <el-descriptions :column="1" border>
-            <el-descriptions-item label="Event Retention Days">
+            <el-descriptions-item :label="$t('settings.eventRetentionDays')">
               {{ retention.eventRetentionDays ?? '-' }}
-              <el-tag size="small" type="info" class="env-tag">ENV</el-tag>
+              <el-tag size="small" type="info" class="env-tag">{{ $t('settings.env') }}</el-tag>
             </el-descriptions-item>
-            <el-descriptions-item label="Delivery Attempt Retention Days">
+            <el-descriptions-item :label="$t('settings.deliveryAttemptRetentionDays')">
               {{ retention.deliveryAttemptRetentionDays ?? '-' }}
-              <el-tag size="small" type="info" class="env-tag">ENV</el-tag>
+              <el-tag size="small" type="info" class="env-tag">{{ $t('settings.env') }}</el-tag>
             </el-descriptions-item>
           </el-descriptions>
           <div class="settings-note">
             <el-icon><InfoFilled /></el-icon>
-            Retention settings are configured via environment variables and cannot be changed from the UI.
+            {{ $t('settings.retentionNote') }}
           </div>
         </el-card>
       </el-col>
@@ -54,26 +54,26 @@
           <template #header>
             <div class="card-header">
               <el-icon><Cpu /></el-icon>
-              <span>Worker Config</span>
+              <span>{{ $t('settings.workerConfig') }}</span>
             </div>
           </template>
           <el-descriptions :column="1" border>
-            <el-descriptions-item label="Processor Concurrency">
+            <el-descriptions-item :label="$t('settings.processorConcurrency')">
               {{ workerConfig.processorConcurrency ?? '-' }}
-              <el-tag size="small" type="info" class="env-tag">ENV</el-tag>
+              <el-tag size="small" type="info" class="env-tag">{{ $t('settings.env') }}</el-tag>
             </el-descriptions-item>
-            <el-descriptions-item label="Delivery Worker Concurrency">
+            <el-descriptions-item :label="$t('settings.deliveryWorkerConcurrency')">
               {{ workerConfig.deliveryWorkerConcurrency ?? '-' }}
-              <el-tag size="small" type="info" class="env-tag">ENV</el-tag>
+              <el-tag size="small" type="info" class="env-tag">{{ $t('settings.env') }}</el-tag>
             </el-descriptions-item>
-            <el-descriptions-item label="Lease Timeout">
+            <el-descriptions-item :label="$t('settings.leaseTimeout')">
               {{ workerConfig.leaseTimeout ?? '-' }}
-              <el-tag size="small" type="info" class="env-tag">ENV</el-tag>
+              <el-tag size="small" type="info" class="env-tag">{{ $t('settings.env') }}</el-tag>
             </el-descriptions-item>
           </el-descriptions>
           <div class="settings-note">
             <el-icon><InfoFilled /></el-icon>
-            Worker configuration is set via environment variables at startup.
+            {{ $t('settings.workerNote') }}
           </div>
         </el-card>
       </el-col>
@@ -84,7 +84,10 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import { getHealthz, getVersion } from '@/api/system'
+
+const { t } = useI18n()
 
 const loading = ref(false)
 
@@ -134,7 +137,7 @@ async function fetchSystemInfo() {
       workerConfig.leaseTimeout = data?.lease_timeout ?? data?.config?.lease_timeout ?? ''
     }
   } catch (e: unknown) {
-    const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Failed to load system info'
+    const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message || t('settings.failedToLoadSystemInfo')
     ElMessage.error(msg)
   } finally {
     loading.value = false

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/oklog/ulid/v2"
+	"zPush/internal/storage"
 )
 
 // ErrNotFound is returned when a rule is not found.
@@ -17,10 +18,6 @@ var ErrNotFound = errors.New("rule not found")
 
 func newID() string {
 	return ulid.MustNew(ulid.Timestamp(time.Now()), rand.Reader).String()
-}
-
-func now() string {
-	return time.Now().UTC().Format(time.RFC3339Nano)
 }
 
 func boolToInt(b bool) int {
@@ -47,7 +44,7 @@ func NewRepository(db *sql.DB) *Repository {
 // Create inserts a new rule and returns it.
 func (r *Repository) Create(ctx context.Context, rule *Rule) (*Rule, error) {
 	id := newID()
-	nowStr := now()
+	nowStr := storage.FormatNow()
 
 	conditionsJSON, err := json.Marshal(rule.Conditions)
 	if err != nil {
@@ -175,7 +172,7 @@ func (r *Repository) Update(ctx context.Context, id string, rule *Rule) (*Rule, 
 	}
 
 	newRevision := existing.Revision + 1
-	nowStr := now()
+	nowStr := storage.FormatNow()
 	_, err = r.db.ExecContext(ctx,
 		`UPDATE rules SET name=?, enabled=?, priority=?, conditions=?, condition_mode=?, continue_on_match=?, template_id=?, destination_ids=?, dedupe_config=?, revision=?, updated_at=?
 		 WHERE id=?`,
@@ -239,8 +236,8 @@ func scanRule(row *sql.Row) (*Rule, error) {
 		}
 	}
 
-	r.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
-	r.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updatedAt)
+	r.CreatedAt, _ = storage.ParseTime(createdAt)
+	r.UpdatedAt, _ = storage.ParseTime(updatedAt)
 	return &r, nil
 }
 
@@ -277,7 +274,7 @@ func scanRuleFromRows(rows *sql.Rows) (*Rule, error) {
 		}
 	}
 
-	r.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
-	r.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updatedAt)
+	r.CreatedAt, _ = storage.ParseTime(createdAt)
+	r.UpdatedAt, _ = storage.ParseTime(updatedAt)
 	return &r, nil
 }

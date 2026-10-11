@@ -1,6 +1,5 @@
 .idea/
 .git/
-web/
 docs/
 *.md
 .gitignore

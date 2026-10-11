@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/oklog/ulid/v2"
+	"zPush/internal/storage"
 )
 
 // ErrNotFound is returned when a source is not found.
@@ -16,10 +17,6 @@ var ErrNotFound = errors.New("source not found")
 
 func newID() string {
 	return ulid.MustNew(ulid.Timestamp(time.Now()), rand.Reader).String()
-}
-
-func now() string {
-	return time.Now().UTC().Format(time.RFC3339Nano)
 }
 
 func boolToInt(b bool) int {
@@ -46,7 +43,7 @@ func NewRepository(db *sql.DB) *Repository {
 // Create inserts a new source and returns it.
 func (r *Repository) Create(ctx context.Context, req CreateSourceRequest) (*Source, error) {
 	id := newID()
-	nowStr := now()
+	nowStr := storage.FormatNow()
 
 	enabled := true
 	if req.Enabled != nil {
@@ -141,7 +138,7 @@ func (r *Repository) Update(ctx context.Context, id string, req UpdateSourceRequ
 		expectedResponse = req.ExpectedResponse
 	}
 
-	nowStr := now()
+	nowStr := storage.FormatNow()
 	_, err = r.db.ExecContext(ctx,
 		`UPDATE sources SET name=?, slug=?, enabled=?, auth_type=?, secret_ref=?, payload_content_type=?, max_body_bytes=?, rate_limit=?, mapping_id=?, expected_response=?, updated_at=?
 		 WHERE id=?`,
@@ -232,8 +229,8 @@ func scanSource(row *sql.Row) (*Source, error) {
 		return nil, fmt.Errorf("scan source: %w", err)
 	}
 	s.Enabled = intToBool(enabled)
-	s.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
-	s.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updatedAt)
+	s.CreatedAt, _ = storage.ParseTime(createdAt)
+	s.UpdatedAt, _ = storage.ParseTime(updatedAt)
 	return &s, nil
 }
 
@@ -250,7 +247,7 @@ func scanSourceFromRows(rows *sql.Rows) (*Source, error) {
 		return nil, fmt.Errorf("scan source: %w", err)
 	}
 	s.Enabled = intToBool(enabled)
-	s.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
-	s.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updatedAt)
+	s.CreatedAt, _ = storage.ParseTime(createdAt)
+	s.UpdatedAt, _ = storage.ParseTime(updatedAt)
 	return &s, nil
 }

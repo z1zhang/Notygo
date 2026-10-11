@@ -4,7 +4,7 @@
       <template #header>
         <div class="login-header">
           <h2>zPush</h2>
-          <p>Webhook Management Platform</p>
+          <p>{{ $t('login.subtitle') }}</p>
         </div>
       </template>
       <el-form
@@ -14,19 +14,19 @@
         label-position="top"
         @submit.prevent="handleLogin"
       >
-        <el-form-item label="Username" prop="username">
+        <el-form-item :label="$t('login.username')" prop="username">
           <el-input
             v-model="form.username"
-            placeholder="Enter your username"
+            :placeholder="$t('login.enterUsername')"
             prefix-icon="User"
             size="large"
           />
         </el-form-item>
-        <el-form-item label="Password" prop="password">
+        <el-form-item :label="$t('login.password')" prop="password">
           <el-input
             v-model="form.password"
             type="password"
-            placeholder="Enter your password"
+            :placeholder="$t('login.enterPassword')"
             prefix-icon="Lock"
             size="large"
             show-password
@@ -41,7 +41,7 @@
             class="login-btn"
             @click="handleLogin"
           >
-            Login
+            {{ $t('login.submit') }}
           </el-button>
         </el-form-item>
       </el-form>
@@ -53,8 +53,10 @@
 import { ref, reactive } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../stores/auth'
 
+const { t } = useI18n()
 const authStore = useAuthStore()
 const formRef = ref<FormInstance>()
 const loading = ref(false)
@@ -65,8 +67,8 @@ const form = reactive({
 })
 
 const rules: FormRules = {
-  username: [{ required: true, message: 'Please enter username', trigger: 'blur' }],
-  password: [{ required: true, message: 'Please enter password', trigger: 'blur' }],
+  username: [{ required: true, message: () => t('login.usernameRequired'), trigger: 'blur' }],
+  password: [{ required: true, message: () => t('login.passwordRequired'), trigger: 'blur' }],
 }
 
 async function handleLogin() {
@@ -77,11 +79,11 @@ async function handleLogin() {
   loading.value = true
   try {
     await authStore.login(form.username, form.password)
-    ElMessage.success('Login successful')
+    ElMessage.success(t('login.success'))
   } catch (error: unknown) {
     const message =
       (error as { response?: { data?: { message?: string } } })?.response?.data?.message ||
-      'Login failed. Please check your credentials.'
+      t('login.failed')
     ElMessage.error(message)
   } finally {
     loading.value = false

@@ -22,13 +22,14 @@ func ListDestinations(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Mask secrets in response
+		// Convert to response DTOs with masked secrets
+		responses := make([]destination.DestinationResponse, len(result))
 		for i := range result {
-			result[i].SecretRef = maskDestSecretRef(result[i].SecretRef)
+			responses[i] = toDestinationResponse(&result[i])
 		}
 
-		WriteJSON(w, http.StatusOK, PaginatedResponse[destination.Destination]{
-			Data:  result,
+		WriteJSON(w, http.StatusOK, PaginatedResponse[destination.DestinationResponse]{
+			Data:  responses,
 			Total: total,
 			Page:  page,
 			Size:  size,
@@ -40,39 +41,39 @@ func ListDestinations(db *sql.DB) http.HandlerFunc {
 func CreateDestination(db *sql.DB, secretSvc *secret.Service) http.HandlerFunc {
 	repo := destination.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
-		var dest destination.Destination
-		if err := json.NewDecoder(r.Body).Decode(&dest); err != nil {
+		var req destination.CreateDestinationRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "invalid request body")
 			return
 		}
 
-		if dest.Name == "" {
+		if req.Name == nil || *req.Name == "" {
 			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "name is required")
 			return
 		}
-		if dest.Type == "" {
+		if req.Type == nil || *req.Type == "" {
 			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "type is required")
 			return
 		}
 
 		// Encrypt secret if provided
-		if dest.SecretRef != nil && *dest.SecretRef != "" && secretSvc != nil {
-			encrypted, err := secretSvc.Encrypt(*dest.SecretRef)
+		if req.SecretRef != nil && *req.SecretRef != "" && secretSvc != nil {
+			encrypted, err := secretSvc.Encrypt(*req.SecretRef)
 			if err != nil {
 				WriteError(w, http.StatusInternalServerError, ErrSystemKeyInvalid, "failed to encrypt secret")
 				return
 			}
-			dest.SecretRef = &encrypted
+			req.SecretRef = &encrypted
 		}
 
-		created, err := repo.Create(r.Context(), &dest)
+		created, err := repo.Create(r.Context(), req)
 		if err != nil {
 			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to create destination")
 			return
 		}
 
-		created.SecretRef = maskDestSecretRef(created.SecretRef)
-		WriteJSON(w, http.StatusCreated, created)
+		resp := toDestinationResponse(created)
+		WriteJSON(w, http.StatusCreated, resp)
 	}
 }
 
@@ -87,45 +88,41 @@ func GetDestination(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		d.SecretRef = maskDestSecretRef(d.SecretRef)
-		WriteJSON(w, http.StatusOK, d)
+		resp := toDestinationResponse(d)
+		WriteJSON(w, http.StatusOK, resp)
 	}
 }
 
 // UpdateDestination updates an existing destination, incrementing revision.
+// Uses UpdateDestinationRequest with pointer fields for partial updates.
 func UpdateDestination(db *sql.DB, secretSvc *secret.Service) http.HandlerFunc {
 	repo := destination.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
-		var dest destination.Destination
-		if err := json.NewDecoder(r.Body).Decode(&dest); err != nil {
+		var req destination.UpdateDestinationRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "invalid request body")
 			return
 		}
 
-		if dest.Name == "" {
-			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "name is required")
-			return
-		}
-
 		// Encrypt secret if provided
-		if dest.SecretRef != nil && *dest.SecretRef != "" && secretSvc != nil {
-			encrypted, err := secretSvc.Encrypt(*dest.SecretRef)
+		if req.SecretRef != nil && *req.SecretRef != "" && secretSvc != nil {
+			encrypted, err := secretSvc.Encrypt(*req.SecretRef)
 			if err != nil {
 				WriteError(w, http.StatusInternalServerError, ErrSystemKeyInvalid, "failed to encrypt secret")
 				return
 			}
-			dest.SecretRef = &encrypted
+			req.SecretRef = &encrypted
 		}
 
-		updated, err := repo.Update(r.Context(), id, &dest)
+		updated, err := repo.Update(r.Context(), id, req)
 		if err != nil {
 			WriteError(w, http.StatusNotFound, ErrConfigValidation, "destination not found")
 			return
 		}
 
-		updated.SecretRef = maskDestSecretRef(updated.SecretRef)
-		WriteJSON(w, http.StatusOK, updated)
+		resp := toDestinationResponse(updated)
+		WriteJSON(w, http.StatusOK, resp)
 	}
 }
 
@@ -139,6 +136,25 @@ func DeleteDestination(db *sql.DB) http.HandlerFunc {
 			return
 		}
 		WriteJSON(w, http.StatusNoContent, nil)
+	}
+}
+
+// toDestinationResponse converts a Destination to a DestinationResponse, masking the secret.
+func toDestinationResponse(d *destination.Destination) destination.DestinationResponse {
+	maskedSecretRef := maskDestSecretRef(d.SecretRef)
+	return destination.DestinationResponse{
+		ID:             d.ID,
+		Name:           d.Name,
+		Type:           d.Type,
+		Enabled:        d.Enabled,
+		Config:         d.Config,
+		SecretRef:      maskedSecretRef,
+		TimeoutMs:      d.TimeoutMs,
+		RateLimit:      d.RateLimit,
+		CircuitBreaker: d.CircuitBreaker,
+		Revision:       d.Revision,
+		CreatedAt:      d.CreatedAt.Format("2006-01-02T15:04:05.999Z"),
+		UpdatedAt:      d.UpdatedAt.Format("2006-01-02T15:04:05.999Z"),
 	}
 }
 

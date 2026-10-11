@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/oklog/ulid/v2"
+	"zPush/internal/storage"
 )
 
 // ErrNotFound is returned when a delivery is not found.
@@ -20,10 +21,6 @@ var ErrAlreadyClaimed = errors.New("delivery already claimed")
 
 func newID() string {
 	return ulid.MustNew(ulid.Timestamp(time.Now()), rand.Reader).String()
-}
-
-func now() string {
-	return time.Now().UTC().Format(time.RFC3339Nano)
 }
 
 // Repository provides operations for deliveries and delivery attempts.
@@ -42,18 +39,18 @@ func (r *Repository) Create(ctx context.Context, d *Delivery) (*Delivery, error)
 	if d.ID == "" {
 		d.ID = id
 	}
-	nowStr := now()
+	nowStr := storage.FormatNow()
 	if d.NextAttemptAt.IsZero() {
 		d.NextAttemptAt = time.Now().UTC()
 	}
 
 	_, err := r.db.ExecContext(ctx,
-		`INSERT INTO deliveries (id, event_id, event_run_id, rule_id, destination_id, idempotency_key, status, attempt_count, max_attempts, next_attempt_at, rendered_title, rendered_body, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO deliveries (id, event_id, event_run_id, rule_id, destination_id, idempotency_key, status, attempt_count, max_attempts, next_attempt_at, rendered_title, rendered_body, rendered_format, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		d.ID, d.EventID, d.EventRunID, d.RuleID, d.DestinationID,
 		d.IdempotencyKey, d.Status, d.AttemptCount, d.MaxAttempts,
-		d.NextAttemptAt.UTC().Format(time.RFC3339Nano),
-		d.RenderedTitle, d.RenderedBody, nowStr, nowStr,
+		storage.FormatTime(d.NextAttemptAt),
+		d.RenderedTitle, d.RenderedBody, d.RenderedFormat, nowStr, nowStr,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("insert delivery: %w", err)
@@ -65,7 +62,7 @@ func (r *Repository) Create(ctx context.Context, d *Delivery) (*Delivery, error)
 // GetByID retrieves a delivery by its ID.
 func (r *Repository) GetByID(ctx context.Context, id string) (*Delivery, error) {
 	row := r.db.QueryRowContext(ctx,
-		`SELECT id, event_id, event_run_id, rule_id, destination_id, idempotency_key, status, attempt_count, max_attempts, next_attempt_at, lease_until, lease_owner, rendered_title, rendered_body, last_error_code, last_error_summary, created_at, updated_at
+		`SELECT id, event_id, event_run_id, rule_id, destination_id, idempotency_key, status, attempt_count, max_attempts, next_attempt_at, lease_until, lease_owner, rendered_title, rendered_body, rendered_format, last_error_code, last_error_summary, created_at, updated_at
 		 FROM deliveries WHERE id = ?`, id)
 	return scanDelivery(row)
 }
@@ -77,7 +74,7 @@ func (r *Repository) List(ctx context.Context, page, size int, statusFilter, des
 	var args []any
 
 	countQuery := `SELECT COUNT(*) FROM deliveries WHERE 1=1`
-	listQuery := `SELECT id, event_id, event_run_id, rule_id, destination_id, idempotency_key, status, attempt_count, max_attempts, next_attempt_at, lease_until, lease_owner, rendered_title, rendered_body, last_error_code, last_error_summary, created_at, updated_at
+	listQuery := `SELECT id, event_id, event_run_id, rule_id, destination_id, idempotency_key, status, attempt_count, max_attempts, next_attempt_at, lease_until, lease_owner, rendered_title, rendered_body, rendered_format, last_error_code, last_error_summary, created_at, updated_at
 		 FROM deliveries WHERE 1=1`
 
 	if statusFilter != "" {
@@ -126,17 +123,20 @@ func (r *Repository) List(ctx context.Context, page, size int, statusFilter, des
 
 // ClaimDelivery attempts to claim a delivery for sending by the given worker.
 func (r *Repository) ClaimDelivery(ctx context.Context, workerID string, leaseTimeout time.Duration) (*Delivery, error) {
-	leaseUntil := time.Now().UTC().Add(leaseTimeout).Format(time.RFC3339Nano)
+	leaseUntil := storage.FormatTime(time.Now().UTC().Add(leaseTimeout))
+	nowCompare := storage.NowCompare()
 
 	result, err := r.db.ExecContext(ctx,
-		`UPDATE deliveries SET status = ?, lease_until = ?, lease_owner = ?, attempt_count = attempt_count + 1, updated_at = ?
-		 WHERE id = (
-			 SELECT id FROM deliveries
-			 WHERE status IN ('pending', 'retry_wait') AND next_attempt_at <= datetime('now')
-			 ORDER BY next_attempt_at ASC
-			 LIMIT 1
-		 ) AND status IN ('pending', 'retry_wait')`,
-		DeliveryStatusProcessing, leaseUntil, workerID, now(),
+		"UPDATE deliveries SET status = ?, lease_until = ?, lease_owner = ?, attempt_count = attempt_count + 1, updated_at = ?"+
+			" WHERE id = ("+
+			" SELECT id FROM ("+
+			" SELECT id FROM deliveries"+
+			" WHERE status IN ('pending', 'retry_wait') AND next_attempt_at <= "+nowCompare+
+			" ORDER BY next_attempt_at ASC"+
+			" LIMIT 1"+
+			") AS claimable"+
+			") AND status IN ('pending', 'retry_wait')",
+		DeliveryStatusProcessing, leaseUntil, workerID, storage.FormatNow(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("claim delivery: %w", err)
@@ -149,7 +149,7 @@ func (r *Repository) ClaimDelivery(ctx context.Context, workerID string, leaseTi
 
 	var d Delivery
 	row := r.db.QueryRowContext(ctx,
-		`SELECT id, event_id, event_run_id, rule_id, destination_id, idempotency_key, status, attempt_count, max_attempts, next_attempt_at, lease_until, lease_owner, rendered_title, rendered_body, last_error_code, last_error_summary, created_at, updated_at
+		`SELECT id, event_id, event_run_id, rule_id, destination_id, idempotency_key, status, attempt_count, max_attempts, next_attempt_at, lease_until, lease_owner, rendered_title, rendered_body, rendered_format, last_error_code, last_error_summary, created_at, updated_at
 		 FROM deliveries WHERE lease_owner = ? AND status = ? ORDER BY next_attempt_at ASC LIMIT 1`,
 		workerID, DeliveryStatusProcessing,
 	)
@@ -163,8 +163,9 @@ func (r *Repository) ClaimDelivery(ctx context.Context, workerID string, leaseTi
 
 // UpdateStatus updates the delivery status and clears lease fields.
 func (r *Repository) UpdateStatus(ctx context.Context, id string, status string) error {
+	nowExpr := storage.NowExpr()
 	_, err := r.db.ExecContext(ctx,
-		`UPDATE deliveries SET status = ?, lease_until = NULL, lease_owner = NULL, updated_at = datetime('now') WHERE id = ?`,
+		"UPDATE deliveries SET status = ?, lease_until = NULL, lease_owner = NULL, updated_at = "+nowExpr+" WHERE id = ?",
 		status, id,
 	)
 	if err != nil {
@@ -175,8 +176,9 @@ func (r *Repository) UpdateStatus(ctx context.Context, id string, status string)
 
 // ResetToPending resets a delivery back to pending status (e.g., when circuit breaker is open).
 func (r *Repository) ResetToPending(ctx context.Context, id string) error {
+	nowExpr := storage.NowExpr()
 	_, err := r.db.ExecContext(ctx,
-		`UPDATE deliveries SET status = ?, attempt_count = attempt_count - 1, lease_until = NULL, lease_owner = NULL, updated_at = datetime('now') WHERE id = ?`,
+		"UPDATE deliveries SET status = ?, attempt_count = attempt_count - 1, lease_until = NULL, lease_owner = NULL, updated_at = "+nowExpr+" WHERE id = ?",
 		DeliveryStatusPending, id,
 	)
 	if err != nil {
@@ -187,9 +189,10 @@ func (r *Repository) ResetToPending(ctx context.Context, id string) error {
 
 // UpdateNextAttempt sets the next_attempt_at for a delivery.
 func (r *Repository) UpdateNextAttempt(ctx context.Context, id string, nextAttemptAt time.Time) error {
+	nowExpr := storage.NowExpr()
 	_, err := r.db.ExecContext(ctx,
-		`UPDATE deliveries SET next_attempt_at = ?, updated_at = datetime('now') WHERE id = ?`,
-		nextAttemptAt.UTC().Format(time.RFC3339Nano), id,
+		"UPDATE deliveries SET next_attempt_at = ?, updated_at = "+nowExpr+" WHERE id = ?",
+		storage.FormatTime(nextAttemptAt), id,
 	)
 	if err != nil {
 		return fmt.Errorf("update next attempt: %w", err)
@@ -199,8 +202,9 @@ func (r *Repository) UpdateNextAttempt(ctx context.Context, id string, nextAttem
 
 // UpdateError sets the error fields on a delivery.
 func (r *Repository) UpdateError(ctx context.Context, id string, errorCode, errorSummary string) error {
+	nowExpr := storage.NowExpr()
 	_, err := r.db.ExecContext(ctx,
-		`UPDATE deliveries SET last_error_code = ?, last_error_summary = ?, updated_at = datetime('now') WHERE id = ?`,
+		"UPDATE deliveries SET last_error_code = ?, last_error_summary = ?, updated_at = "+nowExpr+" WHERE id = ?",
 		errorCode, errorSummary, id,
 	)
 	if err != nil {
@@ -211,8 +215,9 @@ func (r *Repository) UpdateError(ctx context.Context, id string, errorCode, erro
 
 // MarkDelivered marks a delivery as successfully delivered.
 func (r *Repository) MarkDelivered(ctx context.Context, id string) error {
+	nowExpr := storage.NowExpr()
 	_, err := r.db.ExecContext(ctx,
-		`UPDATE deliveries SET status = ?, lease_until = NULL, lease_owner = NULL, updated_at = datetime('now') WHERE id = ?`,
+		"UPDATE deliveries SET status = ?, lease_until = NULL, lease_owner = NULL, updated_at = "+nowExpr+" WHERE id = ?",
 		DeliveryStatusDelivered, id,
 	)
 	if err != nil {
@@ -234,7 +239,7 @@ func (r *Repository) RecordDeliveryAttempt(ctx context.Context, attempt *Deliver
 		`INSERT INTO delivery_attempts (id, delivery_id, attempt_no, started_at, finished_at, request_summary, response_status, response_summary, error_code, error_summary, duration_ms)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		attempt.ID, attempt.DeliveryID, attempt.AttemptNo,
-		attempt.StartedAt.UTC().Format(time.RFC3339Nano),
+		storage.FormatTime(attempt.StartedAt),
 		nullTime(attempt.FinishedAt), attempt.RequestSummary,
 		attempt.ResponseStatus, attempt.ResponseSummary,
 		attempt.ErrorCode, attempt.ErrorSummary, attempt.DurationMs,
@@ -271,9 +276,9 @@ func (r *Repository) ListDeliveryAttempts(ctx context.Context, deliveryID string
 			return nil, fmt.Errorf("scan delivery_attempt: %w", err)
 		}
 
-		a.StartedAt, _ = time.Parse(time.RFC3339Nano, startedAt)
+		a.StartedAt, _ = storage.ParseTime(startedAt)
 		if finishedAt.Valid {
-			t, _ := time.Parse(time.RFC3339Nano, finishedAt.String)
+			t, _ := storage.ParseTime(finishedAt.String)
 			a.FinishedAt = &t
 		}
 		result = append(result, a)
@@ -287,7 +292,8 @@ func (r *Repository) ListDeliveryAttempts(ctx context.Context, deliveryID string
 
 // BulkResetPending resets multiple deliveries back to pending status based on filters.
 func (r *Repository) BulkResetPending(ctx context.Context, statusFilter, destIDFilter string) (int64, error) {
-	query := `UPDATE deliveries SET status = 'pending', last_error_code = NULL, last_error_summary = NULL, next_attempt_at = datetime('now'), updated_at = datetime('now') WHERE 1=1`
+	nowExpr := storage.NowExpr()
+	query := "UPDATE deliveries SET status = 'pending', last_error_code = NULL, last_error_summary = NULL, next_attempt_at = " + nowExpr + ", updated_at = " + nowExpr + " WHERE 1=1"
 	var args []any
 
 	if statusFilter != "" {
@@ -311,7 +317,7 @@ func nullTime(t *time.Time) any {
 	if t == nil {
 		return nil
 	}
-	return t.UTC().Format(time.RFC3339Nano)
+	return storage.FormatTime(*t)
 }
 
 func scanDelivery(row *sql.Row) (*Delivery, error) {
@@ -325,7 +331,7 @@ func scanDelivery(row *sql.Row) (*Delivery, error) {
 		&d.ID, &d.EventID, &d.EventRunID, &d.RuleID, &d.DestinationID,
 		&d.IdempotencyKey, &d.Status, &d.AttemptCount, &d.MaxAttempts,
 		&nextAttemptAt, &leaseUntil, &leaseOwner,
-		&d.RenderedTitle, &d.RenderedBody,
+		&d.RenderedTitle, &d.RenderedBody, &d.RenderedFormat,
 		&d.LastErrorCode, &d.LastErrorSummary,
 		&createdAt, &updatedAt,
 	)
@@ -336,16 +342,16 @@ func scanDelivery(row *sql.Row) (*Delivery, error) {
 		return nil, fmt.Errorf("scan delivery: %w", err)
 	}
 
-	d.NextAttemptAt, _ = time.Parse(time.RFC3339Nano, nextAttemptAt)
+	d.NextAttemptAt, _ = storage.ParseTime(nextAttemptAt)
 	if leaseUntil.Valid {
-		t, _ := time.Parse(time.RFC3339Nano, leaseUntil.String)
+		t, _ := storage.ParseTime(leaseUntil.String)
 		d.LeaseUntil = &t
 	}
 	if leaseOwner.Valid {
 		d.LeaseOwner = &leaseOwner.String
 	}
-	d.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
-	d.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updatedAt)
+	d.CreatedAt, _ = storage.ParseTime(createdAt)
+	d.UpdatedAt, _ = storage.ParseTime(updatedAt)
 
 	return &d, nil
 }
@@ -369,7 +375,7 @@ func scanDeliveryFromRows(rows *sql.Rows) (*Delivery, error) {
 		&d.ID, &d.EventID, &d.EventRunID, &d.RuleID, &d.DestinationID,
 		&d.IdempotencyKey, &d.Status, &d.AttemptCount, &d.MaxAttempts,
 		&nextAttemptAt, &leaseUntil, &leaseOwner,
-		&d.RenderedTitle, &d.RenderedBody,
+		&d.RenderedTitle, &d.RenderedBody, &d.RenderedFormat,
 		&d.LastErrorCode, &d.LastErrorSummary,
 		&createdAt, &updatedAt,
 	)
@@ -377,16 +383,16 @@ func scanDeliveryFromRows(rows *sql.Rows) (*Delivery, error) {
 		return nil, fmt.Errorf("scan delivery: %w", err)
 	}
 
-	d.NextAttemptAt, _ = time.Parse(time.RFC3339Nano, nextAttemptAt)
+	d.NextAttemptAt, _ = storage.ParseTime(nextAttemptAt)
 	if leaseUntil.Valid {
-		t, _ := time.Parse(time.RFC3339Nano, leaseUntil.String)
+		t, _ := storage.ParseTime(leaseUntil.String)
 		d.LeaseUntil = &t
 	}
 	if leaseOwner.Valid {
 		d.LeaseOwner = &leaseOwner.String
 	}
-	d.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
-	d.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updatedAt)
+	d.CreatedAt, _ = storage.ParseTime(createdAt)
+	d.UpdatedAt, _ = storage.ParseTime(updatedAt)
 
 	return &d, nil
 }

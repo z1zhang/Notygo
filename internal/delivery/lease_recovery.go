@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"log/slog"
 	"time"
+
+	"zPush/internal/storage"
 )
 
 // LeaseRecoveryLoop recovers deliveries whose lease has expired by resetting them
@@ -22,9 +24,10 @@ func LeaseRecoveryLoop(ctx context.Context, db *sql.DB, interval time.Duration) 
 			return
 
 		case <-ticker.C:
+			nowCompare := storage.NowCompare()
 			result, err := db.ExecContext(ctx,
-				`UPDATE deliveries SET status='pending', attempt_count=attempt_count-1, lease_until=NULL, lease_owner=NULL, updated_at=datetime('now')
-				 WHERE status='sending' AND lease_until IS NOT NULL AND lease_until < datetime('now')`)
+				"UPDATE deliveries SET status='pending', attempt_count=attempt_count-1, lease_until=NULL, lease_owner=NULL, updated_at="+nowCompare+
+					" WHERE status='sending' AND lease_until IS NOT NULL AND lease_until < "+nowCompare)
 			if err != nil {
 				slog.Error("delivery lease recovery error", "error", err)
 				continue

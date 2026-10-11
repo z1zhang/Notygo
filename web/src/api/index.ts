@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
+import i18n from '../locales'
 import router from '../router'
 
 const api = axios.create({
@@ -32,7 +33,7 @@ api.interceptors.response.use(
       localStorage.removeItem('token')
       localStorage.removeItem('expiresAt')
       router.push('/login')
-      ElMessage.error('Session expired. Please log in again.')
+      ElMessage.error(i18n.global.t('login.sessionExpired'))
     }
     return Promise.reject(error)
   }

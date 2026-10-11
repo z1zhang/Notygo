@@ -27,8 +27,8 @@ Webhook POST → Ingest (验证 / 限流 / 去重) → events 表
 
 ```bash
 # 克隆仓库
-git clone https://github.com/your-org/zPush.git
-cd zPush
+git clone https://github.com/z1zhang/zpush.git
+cd zpush
 
 # 生成加密主密钥（首次部署务必替换）
 # 格式: v1:base64编码的32字节密钥
@@ -41,7 +41,7 @@ export ADMIN_INITIAL_PASSWORD="your-secure-password"
 cd deploy && docker compose up -d
 ```
 
-服务默认监听 `9003` 端口，访问 `http://localhost:9003` 进入管理界面。
+服务默认监听 `9003` 端口，访问 `http://localhost:9003` 进入管理界面
 
 ### 手动构建
 
@@ -62,7 +62,7 @@ ENCRYPTION_MASTER_KEY="v1:your-base64-key" ./zpush
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `LISTEN_ADDR` | `:8080` | 监听地址 |
+| `LISTEN_ADDR` | `:9003` | 监听地址 |
 | `DB_DRIVER` | `sqlite` | 数据库引擎：`sqlite` 或 `mysql` |
 | `DATABASE_PATH` | `data/zpush.db` | SQLite 数据库路径（`DB_DRIVER=sqlite` 时） |
 | `DATABASE_DSN` | — | MySQL 连接串（`DB_DRIVER=mysql` 时），格式：`user:pass@tcp(host:3306)/zpush?parseTime=true` |

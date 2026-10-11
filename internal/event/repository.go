@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/oklog/ulid/v2"
+	"zPush/internal/storage"
 )
 
 // ErrNotFound is returned when an event is not found.
@@ -20,10 +21,6 @@ var ErrAlreadyClaimed = errors.New("event already claimed")
 
 func newID() string {
 	return ulid.MustNew(ulid.Timestamp(time.Now()), rand.Reader).String()
-}
-
-func now() string {
-	return time.Now().UTC().Format(time.RFC3339Nano)
 }
 
 // Repository provides operations for events and event runs.
@@ -47,7 +44,7 @@ func (r *Repository) Insert(ctx context.Context, e *Event) (*Event, error) {
 
 	var expireAt *string
 	if e.ExpireAt != nil {
-		s := e.ExpireAt.UTC().Format(time.RFC3339Nano)
+		s := storage.FormatTime(*e.ExpireAt)
 		expireAt = &s
 	}
 
@@ -55,7 +52,7 @@ func (r *Repository) Insert(ctx context.Context, e *Event) (*Event, error) {
 		`INSERT INTO events (id, source_id, source_event_id, request_id, received_at, content_type, payload_raw, payload_hash, status, error_code, error_summary, expire_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		e.ID, e.SourceID, e.SourceEventID, e.RequestID,
-		e.ReceivedAt.UTC().Format(time.RFC3339Nano),
+		storage.FormatTime(e.ReceivedAt),
 		e.ContentType, e.PayloadRaw, e.PayloadHash,
 		e.Status, e.ErrorCode, e.ErrorSummary, expireAt,
 	)
@@ -125,16 +122,20 @@ func (r *Repository) List(ctx context.Context, page, size int, statusFilter stri
 // ClaimEvent attempts to claim an event for processing by the given worker.
 // It returns the claimed event or ErrAlreadyClaimed if none available.
 func (r *Repository) ClaimEvent(ctx context.Context, workerID string, leaseTimeout time.Duration) (*Event, error) {
-	leaseUntil := time.Now().UTC().Add(leaseTimeout).Format(time.RFC3339Nano)
+	leaseUntil := storage.FormatTime(time.Now().UTC().Add(leaseTimeout))
 
-	// Find and claim the oldest 'received' event
+	// Find and claim the oldest 'received' event.
+	// Double-nested subquery required for MySQL compatibility:
+	// MySQL does not allow referencing the same table in an UPDATE subquery directly.
 	result, err := r.db.ExecContext(ctx,
 		`UPDATE events SET status = ?, lease_until = ?, lease_owner = ?
 		 WHERE id = (
-			 SELECT id FROM events
-			 WHERE status = 'received'
-			 ORDER BY received_at ASC
-			 LIMIT 1
+			 SELECT id FROM (
+				 SELECT id FROM events
+				 WHERE status = 'received'
+				 ORDER BY received_at ASC
+				 LIMIT 1
+			 ) AS claimable
 		 ) AND status = 'received'`,
 		EventStatusProcessing, leaseUntil, workerID,
 	)
@@ -204,7 +205,7 @@ func (r *Repository) CreateEventRun(ctx context.Context, run *EventRun) (*EventR
 	if run.ID == "" {
 		run.ID = id
 	}
-	nowStr := now()
+	nowStr := storage.FormatNow()
 
 	parsedFieldsJSON, err := json.Marshal(run.ParsedFields)
 	if err != nil {
@@ -255,7 +256,7 @@ func (r *Repository) GetLatestEventRun(ctx context.Context, eventID string) (*Ev
 
 // CompleteEventRun marks an event run as completed.
 func (r *Repository) CompleteEventRun(ctx context.Context, id string, matchedRuleIDs []string) error {
-	nowStr := now()
+	nowStr := storage.FormatNow()
 	matchedJSON, err := json.Marshal(matchedRuleIDs)
 	if err != nil {
 		return fmt.Errorf("marshal matched_rule_ids: %w", err)
@@ -273,7 +274,7 @@ func (r *Repository) CompleteEventRun(ctx context.Context, id string, matchedRul
 
 // FailEventRun marks an event run as failed.
 func (r *Repository) FailEventRun(ctx context.Context, id string, errorCode, errorSummary string) error {
-	nowStr := now()
+	nowStr := storage.FormatNow()
 
 	_, err := r.db.ExecContext(ctx,
 		`UPDATE event_runs SET status = ?, finished_at = ?, error_code = ?, error_summary = ? WHERE id = ?`,
@@ -303,13 +304,13 @@ func scanEvent(row *sql.Row) (*Event, error) {
 		return nil, fmt.Errorf("scan event: %w", err)
 	}
 
-	e.ReceivedAt, _ = time.Parse(time.RFC3339Nano, receivedAt)
+	e.ReceivedAt, _ = storage.ParseTime(receivedAt)
 	if expireAt.Valid {
-		t, _ := time.Parse(time.RFC3339Nano, expireAt.String)
+		t, _ := storage.ParseTime(expireAt.String)
 		e.ExpireAt = &t
 	}
 	if leaseUntil.Valid {
-		t, _ := time.Parse(time.RFC3339Nano, leaseUntil.String)
+		t, _ := storage.ParseTime(leaseUntil.String)
 		e.LeaseUntil = &t
 	}
 	if leaseOwner.Valid {
@@ -342,13 +343,13 @@ func scanEventFromRows(rows *sql.Rows) (*Event, error) {
 		return nil, fmt.Errorf("scan event: %w", err)
 	}
 
-	e.ReceivedAt, _ = time.Parse(time.RFC3339Nano, receivedAt)
+	e.ReceivedAt, _ = storage.ParseTime(receivedAt)
 	if expireAt.Valid {
-		t, _ := time.Parse(time.RFC3339Nano, expireAt.String)
+		t, _ := storage.ParseTime(expireAt.String)
 		e.ExpireAt = &t
 	}
 	if leaseUntil.Valid {
-		t, _ := time.Parse(time.RFC3339Nano, leaseUntil.String)
+		t, _ := storage.ParseTime(leaseUntil.String)
 		e.LeaseUntil = &t
 	}
 	if leaseOwner.Valid {
@@ -376,9 +377,9 @@ func scanEventRun(row *sql.Row) (*EventRun, error) {
 		return nil, fmt.Errorf("scan event_run: %w", err)
 	}
 
-	run.StartedAt, _ = time.Parse(time.RFC3339Nano, startedAt)
+	run.StartedAt, _ = storage.ParseTime(startedAt)
 	if finishedAt.Valid {
-		t, _ := time.Parse(time.RFC3339Nano, finishedAt.String)
+		t, _ := storage.ParseTime(finishedAt.String)
 		run.FinishedAt = &t
 	}
 

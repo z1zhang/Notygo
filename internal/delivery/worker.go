@@ -139,7 +139,7 @@ func (w *DeliveryWorker) sendDelivery(ctx context.Context, d *Delivery) {
 	msg := sender.RenderedMessage{
 		Title:  stringValue(d.RenderedTitle),
 		Body:   stringValue(d.RenderedBody),
-		Format: "markdown",
+		Format: stringValue(d.RenderedFormat),
 	}
 
 	// 4. Get sender
@@ -281,8 +281,8 @@ func classifyHTTPError(statusCode int) string {
 // buildDestinationConfig builds a sender.DestinationConfig from a destination model.
 func buildDestinationConfig(dest *destination.Destination, secretSvc *secret.Service) sender.DestinationConfig {
 	cfg := sender.DestinationConfig{
-		Type:    string(dest.Type),
-		Timeout: time.Duration(dest.TimeoutMs) * time.Millisecond,
+		Type:      string(dest.Type),
+		Timeout:   time.Duration(dest.TimeoutMs) * time.Millisecond,
 		RawConfig: dest.Config,
 	}
 
@@ -312,7 +312,7 @@ func buildDestinationConfig(dest *destination.Destination, secretSvc *secret.Ser
 		decrypted, err := secretSvc.Decrypt(*dest.SecretRef)
 		if err == nil {
 			cfg.Secret = decrypted
-			cfg.SecretRef = *dest.SecretRef
+			cfg.SecretRef = decrypted
 		}
 	}
 
