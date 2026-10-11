@@ -1,0 +1,52 @@
+# Binaries
+/zpush
+/zpush.exe
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Build output
+/dist/
+/build/
+
+# Go
+*.test
+*.out
+*.prof
+debug
+
+# Database
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Frontend
+web/node_modules/
+web/dist/
+web/.vite/
+web/*.tar.gz
+
+# Environment
+.env
+.env.*
+
+# Docker
+docker-compose.override.yml
+
+# Archives
+*.tar.gz
+*.zip
