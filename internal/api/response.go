@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
 )
 
 // WriteJSON writes a JSON response with the given status code.
@@ -54,4 +55,13 @@ func ParsePagination(r *http.Request) (page, size int) {
 // Offset calculates the SQL offset from page and size.
 func Offset(page, size int) int {
 	return (page - 1) * size
+}
+
+// formatTimeOrNil formats a time.Time for JSON responses.
+// Returns empty string for zero time (so omitempty omits it).
+func formatTimeOrNil(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format("2006-01-02T15:04:05.999Z")
 }

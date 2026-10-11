@@ -15,10 +15,10 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/oklog/ulid/v2"
 
-	"zPush/internal/observability"
-	"zPush/internal/secret"
-	"zPush/internal/source"
-	"zPush/internal/storage"
+	"zpush/internal/observability"
+	"zpush/internal/secret"
+	"zpush/internal/source"
+	"zpush/internal/storage"
 )
 
 // Ingester handles incoming webhook ingestion requests.

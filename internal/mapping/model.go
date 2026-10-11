@@ -8,8 +8,8 @@ type Mapping struct {
 	Name      string       `json:"name"`
 	Revision  int          `json:"revision"`
 	Fields    []MappingEntry `json:"fields"`
-	CreatedAt time.Time    `json:"created_at"`
-	UpdatedAt time.Time    `json:"updated_at"`
+	CreatedAt time.Time `json:"created_at,omitempty"`
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
 }
 
 // MappingEntry describes a single field extraction rule within a mapping.

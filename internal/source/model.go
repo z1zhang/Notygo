@@ -15,8 +15,8 @@ type Source struct {
 	RateLimit          *string   `json:"rate_limit,omitempty"`
 	MappingID          *string   `json:"mapping_id,omitempty"`
 	ExpectedResponse   *string   `json:"expected_response,omitempty"`
-	CreatedAt          time.Time `json:"created_at"`
-	UpdatedAt          time.Time `json:"updated_at"`
+	CreatedAt time.Time `json:"created_at,omitempty"`
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
 }
 
 // CreateSourceRequest is the DTO for creating a new source.
@@ -60,6 +60,6 @@ type SourceResponse struct {
 	RateLimit          *string `json:"rate_limit,omitempty"`
 	MappingID          *string `json:"mapping_id,omitempty"`
 	ExpectedResponse   *string `json:"expected_response,omitempty"`
-	CreatedAt          string  `json:"created_at"`
-	UpdatedAt          string  `json:"updated_at"`
+	CreatedAt          string  `json:"created_at,omitempty"`
+	UpdatedAt          string  `json:"updated_at,omitempty"`
 }

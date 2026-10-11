@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	"zPush/internal/templates"
+	"zpush/internal/templates"
 )
 
 // PreviewTemplate renders a template with sample data and returns the result.

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"zPush/internal/storage"
+	"zpush/internal/storage"
 )
 
 // RecoveryMiddleware catches panics and returns a 500 error.

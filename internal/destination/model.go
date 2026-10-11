@@ -25,8 +25,8 @@ type Destination struct {
 	RateLimit      *string               `json:"rate_limit,omitempty"`
 	CircuitBreaker *CircuitBreakerConfig `json:"circuit_breaker,omitempty"`
 	Revision       int                   `json:"revision"`
-	CreatedAt      time.Time             `json:"created_at"`
-	UpdatedAt      time.Time             `json:"updated_at"`
+	CreatedAt time.Time `json:"created_at,omitempty"`
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
 }
 
 // CreateDestinationRequest is the DTO for creating a new destination.
@@ -66,8 +66,8 @@ type DestinationResponse struct {
 	RateLimit      *string               `json:"rate_limit,omitempty"`
 	CircuitBreaker *CircuitBreakerConfig `json:"circuit_breaker,omitempty"`
 	Revision       int                   `json:"revision"`
-	CreatedAt      string                `json:"created_at"`
-	UpdatedAt      string                `json:"updated_at"`
+	CreatedAt      string                `json:"created_at,omitempty"`
+	UpdatedAt      string                `json:"updated_at,omitempty"`
 }
 
 // CircuitBreakerConfig configures circuit breaker behaviour for a destination.

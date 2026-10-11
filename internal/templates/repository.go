@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/oklog/ulid/v2"
-	"zPush/internal/storage"
+	"zpush/internal/storage"
 )
 
 // ErrNotFound is returned when a template is not found.

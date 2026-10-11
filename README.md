@@ -27,8 +27,8 @@ Webhook POST → Ingest (验证 / 限流 / 去重) → events 表
 
 ```bash
 # 克隆仓库
-git clone https://github.com/z1zhang/zpush.git
-cd zpush
+git clone https://github.com/z1zhang/zPush.git
+cd zPush
 
 # 生成加密主密钥（首次部署务必替换）
 # 格式: v1:base64编码的32字节密钥
@@ -50,10 +50,10 @@ cd deploy && docker compose up -d
 cd web && npm ci && npm run build
 
 # 后端
-go build -o zpush ./cmd/server/
+go build -o zPush ./cmd/server/
 
 # 运行
-ENCRYPTION_MASTER_KEY="v1:your-base64-key" ./zpush
+ENCRYPTION_MASTER_KEY="v1:your-base64-key" ./zPush
 ```
 
 ## ⚙️ 配置
@@ -63,7 +63,7 @@ ENCRYPTION_MASTER_KEY="v1:your-base64-key" ./zpush
 | 变量 | 默认值 | 说明 |
 |---|---|---|
 | `LISTEN_ADDR` | `:9003` | 监听地址 |
-| `DATABASE_DSN` | **必填** | MySQL 连接串，格式：`user:pass@tcp(host:3306)/zpush?parseTime=true` |
+| `DATABASE_DSN` | **必填** | MySQL 连接串，格式：`user:pass@tcp(host:3306)/zPush?parseTime=true` |
 | `ENCRYPTION_MASTER_KEY` | **必填** | 加密主密钥，格式 `v1:base64...` |
 | `ADMIN_INITIAL_PASSWORD` | — | 首次启动时创建 admin 用户的密码 |
 | `LOG_LEVEL` | `info` | 日志级别 |
@@ -78,7 +78,7 @@ ENCRYPTION_MASTER_KEY="v1:your-base64-key" ./zpush
 Docker Compose 已默认包含 MySQL 服务，启动即可：
 
 ```bash
-DATABASE_DSN=user:password@tcp(mysql:3306)/zpush?parseTime=true
+DATABASE_DSN=user:password@tcp(mysql:3306)/zPush?parseTime=true
 ```
 
 ## 🛠️ 技术栈
@@ -132,7 +132,7 @@ deploy/               — docker-compose.yml
 ```bash
 go build ./...                # 构建检查
 go test ./...                 # 运行测试
-docker build -t zpush .       # Docker 构建
+docker build -t zPush .       # Docker 构建
 ```
 
 ## 📝 待办

@@ -22,7 +22,7 @@ Webhook POST → Ingest(验证/限流/去重) → events 表
 
 ## 数据库
 
-- **MySQL**: `DATABASE_DSN=user:pass@tcp(host:3306)/zpush?parseTime=true`
+- **MySQL**: `DATABASE_DSN=user:pass@tcp(host:3306)/zPush?parseTime=true`
 - 连接池：MaxOpenConns=25, MaxIdleConns=10, ConnMaxLifetime=5m, ConnMaxIdleTime=2m
 - 迁移文件：`internal/storage/migrations/mysql/`
 
@@ -91,7 +91,7 @@ deploy/              — docker-compose.yml
 ```bash
 go build ./...              # 构建检查
 go test ./...               # 运行测试
-docker build -t zpush .     # Docker 构建
+docker build -t zPush .     # Docker 构建
 ```
 
 ## 设计文档

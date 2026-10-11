@@ -8,8 +8,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"zPush/internal/secret"
-	"zPush/internal/source"
+	"zpush/internal/secret"
+	"zpush/internal/source"
 )
 
 // ListSources returns a paginated list of sources.
@@ -149,8 +149,8 @@ func toSourceResponse(s *source.Source) source.SourceResponse {
 		RateLimit:          s.RateLimit,
 		MappingID:          s.MappingID,
 		ExpectedResponse:   s.ExpectedResponse,
-		CreatedAt:          s.CreatedAt.Format("2006-01-02T15:04:05.999Z"),
-		UpdatedAt:          s.UpdatedAt.Format("2006-01-02T15:04:05.999Z"),
+		CreatedAt:          formatTimeOrNil(s.CreatedAt),
+		UpdatedAt:          formatTimeOrNil(s.UpdatedAt),
 	}
 }
 

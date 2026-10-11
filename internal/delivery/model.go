@@ -23,16 +23,16 @@ type Delivery struct {
 	Status           string     `json:"status"`
 	AttemptCount     int        `json:"attempt_count"`
 	MaxAttempts      int        `json:"max_attempts"`
-	NextAttemptAt    time.Time  `json:"next_attempt_at"`
-	LeaseUntil       *time.Time `json:"lease_until,omitempty"`
+	NextAttemptAt time.Time `json:"next_attempt_at,omitempty"`
+	LeaseUntil       *time.Time  `json:"lease_until,omitempty"`
 	LeaseOwner       *string    `json:"lease_owner,omitempty"`
 	RenderedTitle    *string    `json:"rendered_title,omitempty"`
 	RenderedBody     *string    `json:"rendered_body,omitempty"`
 	RenderedFormat   *string    `json:"rendered_format,omitempty"`
 	LastErrorCode    *string    `json:"last_error_code,omitempty"`
 	LastErrorSummary *string    `json:"last_error_summary,omitempty"`
-	CreatedAt        time.Time  `json:"created_at"`
-	UpdatedAt        time.Time  `json:"updated_at"`
+	CreatedAt time.Time `json:"created_at,omitempty"`
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
 }
 
 // DeliveryAttempt represents a single HTTP delivery attempt.
@@ -40,8 +40,8 @@ type DeliveryAttempt struct {
 	ID              string     `json:"id"`
 	DeliveryID      string     `json:"delivery_id"`
 	AttemptNo       int        `json:"attempt_no"`
-	StartedAt       time.Time  `json:"started_at"`
-	FinishedAt      *time.Time `json:"finished_at,omitempty"`
+	StartedAt time.Time `json:"started_at,omitempty"`
+	FinishedAt      *time.Time  `json:"finished_at,omitempty"`
 	RequestSummary  *string    `json:"request_summary,omitempty"`
 	ResponseStatus  *int       `json:"response_status,omitempty"`
 	ResponseSummary *string    `json:"response_summary,omitempty"`

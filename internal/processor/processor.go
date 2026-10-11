@@ -11,14 +11,14 @@ import (
 	"sync"
 	"time"
 
-	"zPush/internal/config"
-	"zPush/internal/delivery"
-	"zPush/internal/destination"
-	"zPush/internal/event"
-	"zPush/internal/mapping"
-	"zPush/internal/rules"
-	"zPush/internal/source"
-	"zPush/internal/templates"
+	"zpush/internal/config"
+	"zpush/internal/delivery"
+	"zpush/internal/destination"
+	"zpush/internal/event"
+	"zpush/internal/mapping"
+	"zpush/internal/rules"
+	"zpush/internal/source"
+	"zpush/internal/templates"
 )
 
 // EventProcessor processes received events by claiming them, applying mappings,

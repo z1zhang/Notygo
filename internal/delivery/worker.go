@@ -11,10 +11,10 @@ import (
 	"sync"
 	"time"
 
-	"zPush/internal/config"
-	"zPush/internal/destination"
-	"zPush/internal/secret"
-	"zPush/internal/sender"
+	"zpush/internal/config"
+	"zpush/internal/destination"
+	"zpush/internal/secret"
+	"zpush/internal/sender"
 )
 
 // DeliveryWorker processes pending deliveries by claiming them and sending

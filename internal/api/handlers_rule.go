@@ -7,7 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"zPush/internal/rules"
+	"zpush/internal/rules"
 )
 
 // ListRules returns a paginated list of rules.

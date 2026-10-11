@@ -26,8 +26,13 @@ func FormatNow() string {
 }
 
 // ParseTime parses a time string from the database.
-// It tries MySQL DATETIME with fractional seconds first, then without.
+// It tries RFC3339Nano first (the format MySQL driver returns by default),
+// then MySQL DATETIME with fractional seconds, then without.
 func ParseTime(s string) (time.Time, error) {
+	// Try RFC3339Nano (go-sql-driver/mysql default output format)
+	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
+		return t, nil
+	}
 	// Try MySQL DATETIME with fractional seconds
 	if t, err := time.Parse(mysqlDatetimeLayout, s); err == nil {
 		return t, nil

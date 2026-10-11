@@ -7,8 +7,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"zPush/internal/destination"
-	"zPush/internal/secret"
+	"zpush/internal/destination"
+	"zpush/internal/secret"
 )
 
 // ListDestinations returns a paginated list of destinations.
@@ -153,8 +153,8 @@ func toDestinationResponse(d *destination.Destination) destination.DestinationRe
 		RateLimit:      d.RateLimit,
 		CircuitBreaker: d.CircuitBreaker,
 		Revision:       d.Revision,
-		CreatedAt:      d.CreatedAt.Format("2006-01-02T15:04:05.999Z"),
-		UpdatedAt:      d.UpdatedAt.Format("2006-01-02T15:04:05.999Z"),
+		CreatedAt:      formatTimeOrNil(d.CreatedAt),
+		UpdatedAt:      formatTimeOrNil(d.UpdatedAt),
 	}
 }
 

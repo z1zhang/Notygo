@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/oklog/ulid/v2"
-	"zPush/internal/storage"
+	"zpush/internal/storage"
 )
 
 // ErrNotFound is returned when an event is not found.

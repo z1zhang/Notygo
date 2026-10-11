@@ -7,7 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"zPush/internal/mapping"
+	"zpush/internal/mapping"
 )
 
 // ListMappings returns a paginated list of mappings.

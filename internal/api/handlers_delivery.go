@@ -7,8 +7,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"zPush/internal/delivery"
-	"zPush/internal/storage"
+	"zpush/internal/delivery"
+	"zpush/internal/storage"
 )
 
 // ListDeliveries returns a paginated list of deliveries with optional filters.

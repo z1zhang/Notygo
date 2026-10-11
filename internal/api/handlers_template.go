@@ -8,7 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"zPush/internal/templates"
+	"zpush/internal/templates"
 )
 
 // ListTemplates returns a paginated list of templates.

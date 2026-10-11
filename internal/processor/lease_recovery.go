@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"time"
 
-	"zPush/internal/storage"
+	"zpush/internal/storage"
 )
 
 // LeaseRecoveryLoop recovers events whose lease has expired by resetting them

@@ -133,19 +133,19 @@ async function fetchRecentErrors() {
       (e: Record<string, unknown>) => ({
         type: 'event',
         id: String(e.id ?? ''),
-        source: String(e.source_name ?? e.source_id ?? ''),
+        source: String(e.source_id ?? ''),
         status: String(e.status ?? 'failed'),
-        error: String(e.error ?? ''),
-        created_at: String(e.created_at ?? e.received_at ?? ''),
+        error: String(e.error_summary ?? e.error_code ?? ''),
+        created_at: String(e.received_at ?? ''),
       })
     )
     const deliveryErrors: ErrorRow[] = (deliveriesRes.data?.data ?? []).map(
       (d: Record<string, unknown>) => ({
         type: 'delivery',
         id: String(d.id ?? ''),
-        source: String(d.destination_name ?? d.destination_id ?? ''),
+        source: String(d.destination_id ?? ''),
         status: String(d.status ?? 'failed'),
-        error: String(d.error ?? d.last_error ?? ''),
+        error: String(d.last_error_summary ?? d.last_error_code ?? ''),
         created_at: String(d.created_at ?? d.next_attempt_at ?? ''),
       })
     )

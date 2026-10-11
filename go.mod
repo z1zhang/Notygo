@@ -1,4 +1,4 @@
-module zPush
+module zpush
 
 go 1.26.0
 

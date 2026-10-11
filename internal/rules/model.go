@@ -15,8 +15,8 @@ type Rule struct {
 	DestinationIDs  []string      `json:"destination_ids"`
 	DedupeConfig    *DedupeConfig `json:"dedupe_config,omitempty"`
 	Revision        int           `json:"revision"`
-	CreatedAt       time.Time     `json:"created_at"`
-	UpdatedAt       time.Time     `json:"updated_at"`
+	CreatedAt time.Time `json:"created_at,omitempty"`
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
 }
 
 // ConditionGroup is the top-level container for rule conditions.

@@ -24,15 +24,15 @@ type Event struct {
 	SourceID      string     `json:"source_id"`
 	SourceEventID *string    `json:"source_event_id,omitempty"`
 	RequestID     string     `json:"request_id"`
-	ReceivedAt    time.Time  `json:"received_at"`
+	ReceivedAt time.Time `json:"received_at,omitempty"`
 	ContentType   string     `json:"content_type"`
 	PayloadRaw    string     `json:"payload_raw"`
 	PayloadHash   string     `json:"payload_hash"`
 	Status        string     `json:"status"`
 	ErrorCode     *string    `json:"error_code,omitempty"`
 	ErrorSummary  *string    `json:"error_summary,omitempty"`
-	ExpireAt      *time.Time `json:"expire_at,omitempty"`
-	LeaseUntil    *time.Time `json:"lease_until,omitempty"`
+	ExpireAt      *time.Time  `json:"expire_at,omitempty"`
+	LeaseUntil    *time.Time  `json:"lease_until,omitempty"`
 	LeaseOwner    *string    `json:"lease_owner,omitempty"`
 }
 
@@ -48,8 +48,8 @@ type EventRun struct {
 	ValidationResult map[string]any  `json:"validation_result"`
 	MatchedRuleIDs   []string        `json:"matched_rule_ids"`
 	Status           string          `json:"status"`
-	StartedAt        time.Time       `json:"started_at"`
-	FinishedAt       *time.Time      `json:"finished_at,omitempty"`
+	StartedAt time.Time `json:"started_at,omitempty"`
+	FinishedAt       *time.Time  `json:"finished_at,omitempty"`
 	ErrorCode        *string         `json:"error_code,omitempty"`
 	ErrorSummary     *string         `json:"error_summary,omitempty"`
 }

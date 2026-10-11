@@ -9,16 +9,16 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 
-	"zPush/internal/delivery"
-	"zPush/internal/destination"
-	"zPush/internal/event"
-	"zPush/internal/ingest"
-	"zPush/internal/mapping"
-	"zPush/internal/observability"
-	"zPush/internal/rules"
-	"zPush/internal/secret"
-	"zPush/internal/source"
-	"zPush/internal/templates"
+	"zpush/internal/delivery"
+	"zpush/internal/destination"
+	"zpush/internal/event"
+	"zpush/internal/ingest"
+	"zpush/internal/mapping"
+	"zpush/internal/observability"
+	"zpush/internal/rules"
+	"zpush/internal/secret"
+	"zpush/internal/source"
+	"zpush/internal/templates"
 )
 
 // NewRouter creates the main HTTP router with all routes and middleware.

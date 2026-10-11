@@ -6,7 +6,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"zPush/internal/event"
+	"zpush/internal/event"
 )
 
 // ListEvents returns a paginated list of events, with optional status filter.
