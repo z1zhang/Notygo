@@ -51,4 +51,6 @@ docker-compose.override.yml
 *.tar.gz
 *.zip
 
+# Claude Code
 CLAUDE.md
+.claude/
