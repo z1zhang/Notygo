@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -389,13 +390,24 @@ func evaluateCondition(cond rules.Condition, fields map[string]any) bool {
 		result = fieldStr != cond.Value
 	case "contains":
 		result = strings.Contains(fieldStr, cond.Value)
+	case "not_contains":
+		result = !strings.Contains(fieldStr, cond.Value)
 	case "exists":
 		result = cond.Value != "false"
+	case "not_exists":
+		result = cond.Value == "false"
 	case "gt", "lt", "gte", "lte":
 		result = compareValues(fieldVal, cond.Value, cond.Operator)
 	case "regex":
-		// Simplified regex check; in production, use regexp
-		result = strings.Contains(fieldStr, cond.Value)
+		if len(cond.Value) > 256 {
+			slog.Warn("regex pattern exceeds 256 character limit", "pattern_length", len(cond.Value))
+			result = false
+		} else if re, err := regexp.Compile(cond.Value); err != nil {
+			slog.Warn("invalid regex pattern", "pattern", cond.Value, "error", err)
+			result = false
+		} else {
+			result = re.MatchString(fieldStr)
+		}
 	default:
 		result = false
 	}

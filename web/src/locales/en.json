@@ -2,6 +2,7 @@
   "common": {
     "save": "Save",
     "cancel": "Cancel",
+    "confirm": "Confirm",
     "delete": "Delete",
     "edit": "Edit",
     "remove": "Remove",
@@ -24,7 +25,9 @@
     "updated": "{entity} updated",
     "deleted": "{entity} deleted",
     "enabledAction": "{entity} enabled",
-    "disabledAction": "{entity} disabled"
+    "disabledAction": "{entity} disabled",
+    "copied": "Copied",
+    "copyFailed": "Copy failed"
   },
   "nav": {
     "dashboard": "Dashboard",

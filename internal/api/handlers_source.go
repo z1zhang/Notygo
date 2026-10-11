@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -11,6 +12,16 @@ import (
 	"zpush/internal/secret"
 	"zpush/internal/source"
 )
+
+// generateSlug generates a random 32-character UUID slug (no hyphens).
+func generateSlug() string {
+	var uuid [16]byte
+	_, _ = rand.Read(uuid[:])
+	uuid[6] = (uuid[6] & 0x0f) | 0x40 // version 4
+	uuid[8] = (uuid[8] & 0x3f) | 0x80 // variant 10
+	return fmt.Sprintf("%08x%04x%04x%04x%012x",
+		uuid[0:4], uuid[4:6], uuid[6:8], uuid[8:10], uuid[10:16])
+}
 
 // ListSources returns a paginated list of sources.
 func ListSources(db *sql.DB) http.HandlerFunc {
@@ -162,16 +173,4 @@ func maskSecretRef(ref *string) *string {
 	}
 	s := "configured"
 	return &s
-}
-
-// generateSlug generates a random 6-character alphanumeric slug.
-func generateSlug() string {
-	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
-	b := make([]byte, 6)
-	randBytes := make([]byte, 6)
-	_, _ = rand.Read(randBytes)
-	for i := range b {
-		b[i] = charset[int(randBytes[i])%len(charset)]
-	}
-	return string(b)
 }

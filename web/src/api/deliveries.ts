@@ -1,4 +1,10 @@
 import { api } from './index'
+import type { AxiosResponse, ListApiReturn, DeliveryResponse, DeliveryAttemptResponse } from './types'
+
+export interface GetDeliveryResponse {
+  delivery: DeliveryResponse
+  delivery_attempts: DeliveryAttemptResponse[]
+}
 
 export function listDeliveries(params: {
   page?: number
@@ -6,11 +12,11 @@ export function listDeliveries(params: {
   status?: string
   destination_id?: string
   event_id?: string
-}) {
+}): Promise<ListApiReturn<DeliveryResponse>> {
   return api.get('/api/v1/deliveries', { params })
 }
 
-export function getDelivery(id: string) {
+export function getDelivery(id: string): Promise<AxiosResponse<GetDeliveryResponse>> {
   return api.get(`/api/v1/deliveries/${id}`)
 }
 

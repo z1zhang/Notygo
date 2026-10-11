@@ -20,35 +20,37 @@
 
     <el-card shadow="never" v-loading="loading">
       <el-table :data="tableData" stripe style="width: 100%" @row-click="openDetail">
-        <el-table-column :label="$t('common.id')" width="160">
+        <el-table-column :label="$t('common.id')" min-width="220">
           <template #default="{ row }">
-            <span class="truncate-id">{{ truncateId(row.id) }}</span>
+            <TruncatedId :id="row.id" />
           </template>
         </el-table-column>
-        <el-table-column :label="$t('deliveries.eventId')" width="160">
+        <el-table-column :label="$t('deliveries.eventId')" min-width="220">
           <template #default="{ row }">
-            <span class="truncate-id">{{ truncateId(row.event_id) }}</span>
+            <TruncatedId :id="row.event_id" />
           </template>
         </el-table-column>
-        <el-table-column :label="$t('events.destination')" width="140">
+        <el-table-column :label="$t('events.destination')" min-width="140">
           <template #default="{ row }">
-            {{ getDestinationName(row.destination_id) }}
+            <el-tag>{{ lookupName(destinationOptions, row.destination_id) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="status" :label="$t('common.status')" width="120">
+        <el-table-column prop="status" :label="$t('common.status')" min-width="120">
           <template #default="{ row }">
-            <el-tag :type="statusTagType(row.status)" size="small">{{ $t('enums.deliveryStatus.' + row.status, row.status) }}</el-tag>
+            <StatusTag kind="delivery" :status="row.status" />
           </template>
         </el-table-column>
-        <el-table-column prop="attempt_count" :label="$t('events.attempts')" width="90" />
-        <el-table-column :label="$t('deliveries.nextAttempt')" width="180">
+        <el-table-column prop="attempt_count" :label="$t('events.attempts')" min-width="90" />
+        <el-table-column :label="$t('deliveries.nextAttempt')" min-width="180">
           <template #default="{ row }">
             {{ formatTime(row.next_attempt_at) }}
           </template>
         </el-table-column>
-        <el-table-column :label="$t('common.error')" show-overflow-tooltip>
+        <el-table-column :label="$t('common.error')">
           <template #default="{ row }">
-            {{ row.last_error_summary || row.last_error_code || '-' }}
+            <el-tooltip :content="row.last_error_summary || row.last_error_code || '-'" placement="top" :show-after="300">
+              <span class="cell-ellipsis">{{ row.last_error_summary || row.last_error_code || '-' }}</span>
+            </el-tooltip>
           </template>
         </el-table-column>
       </el-table>
@@ -68,26 +70,27 @@
     <el-drawer
       v-model="drawerVisible"
       :title="$t('deliveries.deliveryDetail')"
-      size="640px"
+      :size="drawerWidth"
       destroy-on-close
     >
+      <div class="drawer-resize-handle" @mousedown="onHandleMouseDown" />
       <div v-loading="detailLoading">
         <template v-if="detail">
           <el-descriptions :column="2" border class="detail-desc">
             <el-descriptions-item :label="$t('common.id')" :span="2">
-              <span class="monospace-text">{{ detail.id }}</span>
+              {{ detail.id }}
             </el-descriptions-item>
             <el-descriptions-item :label="$t('common.status')">
-              <el-tag :type="statusTagType(detail.status)" size="small">{{ $t('enums.deliveryStatus.' + detail.status, detail.status) }}</el-tag>
+              <StatusTag kind="delivery" :status="detail.status" />
             </el-descriptions-item>
             <el-descriptions-item :label="$t('events.destination')">
-              {{ getDestinationName(detail.destination_id) }}
+              {{ lookupName(destinationOptions, detail.destination_id) }}
             </el-descriptions-item>
             <el-descriptions-item :label="$t('deliveries.eventId')">
-              <span class="monospace-text">{{ truncateId(detail.event_id) }}</span>
+              <TruncatedId :id="detail.event_id" />
             </el-descriptions-item>
             <el-descriptions-item :label="$t('deliveries.ruleId')">
-              <span class="monospace-text">{{ truncateId(detail.rule_id) }}</span>
+              <TruncatedId :id="detail.rule_id" />
             </el-descriptions-item>
             <el-descriptions-item :label="$t('deliveries.attemptCount')">{{ detail.attempt_count ?? 0 }}</el-descriptions-item>
             <el-descriptions-item :label="$t('deliveries.maxAttempts')">{{ detail.max_attempts ?? '-' }}</el-descriptions-item>
@@ -106,22 +109,22 @@
           <pre v-else class="rendered-output rendered-body">{{ detail.rendered_body || '-' }}</pre>
 
           <el-divider content-position="left">{{ $t('deliveries.deliveryAttempts') }}</el-divider>
-          <el-table v-if="deliveryAttempts.length" :data="deliveryAttempts" size="small" border>
-            <el-table-column prop="attempt_no" label="#" width="60" />
-            <el-table-column :label="$t('deliveries.result')" width="80">
+          <el-table v-if="deliveryAttempts.length" :data="deliveryAttempts" border>
+            <el-table-column prop="attempt_no" label="#" min-width="60" />
+            <el-table-column :label="$t('deliveries.result')" min-width="80">
               <template #default="{ row }">
-                <el-tag :type="row.error_code ? 'danger' : 'success'" size="small">
+                <el-tag :type="row.error_code ? 'danger' : 'success'">
                   {{ row.error_code ? $t('deliveries.failed') : $t('deliveries.ok') }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="response_status" :label="$t('deliveries.http')" width="80" />
-            <el-table-column :label="$t('deliveries.duration')" width="110">
+            <el-table-column prop="response_status" :label="$t('deliveries.http')" min-width="80" />
+            <el-table-column :label="$t('deliveries.duration')" min-width="110">
               <template #default="{ row }">
                 {{ row.duration_ms != null ? `${row.duration_ms}ms` : '-' }}
               </template>
             </el-table-column>
-            <el-table-column :label="$t('common.time')" width="180">
+            <el-table-column :label="$t('common.time')" min-width="180">
               <template #default="{ row }">
                 {{ formatTime(row.started_at) }}
               </template>
@@ -165,90 +168,35 @@ import { useI18n } from 'vue-i18n'
 import { marked } from 'marked'
 import { RefreshRight } from '@element-plus/icons-vue'
 import { listDeliveries, getDelivery, retryDelivery } from '@/api/deliveries'
-import { listDestinations } from '@/api/destinations'
+import type { DeliveryResponse, DeliveryAttemptResponse } from '@/api/types'
+import { formatTime } from '@/utils/time'
+import { getErrorMessage } from '@/utils/helpers'
+import { lookupName } from '@/utils/lookup'
+import { useOptions } from '@/composables/useOptions'
+import { useResizableDrawer } from '@/composables/useResizableDrawer'
+import StatusTag from '@/components/StatusTag.vue'
+import TruncatedId from '@/components/TruncatedId.vue'
 
 const { t } = useI18n()
-
-interface DeliveryData {
-  id: string
-  event_id: string
-  event_run_id: string
-  rule_id: string
-  destination_id: string
-  status: string
-  attempt_count: number
-  max_attempts: number
-  next_attempt_at: string
-  rendered_title: string | null
-  rendered_body: string | null
-  last_error_code: string | null
-  last_error_summary: string | null
-  created_at: string
-  updated_at: string
-  [key: string]: unknown
-}
-
-interface DeliveryAttemptData {
-  id: string
-  attempt_no: number
-  started_at: string
-  finished_at: string | null
-  response_status: number | null
-  response_summary: string | null
-  error_code: string | null
-  error_summary: string | null
-  duration_ms: number | null
-}
+const { drawerWidth, onHandleMouseDown } = useResizableDrawer(800)
+const { destinationOptions, fetchDestinationOptions } = useOptions()
 
 const loading = ref(false)
 const detailLoading = ref(false)
 const drawerVisible = ref(false)
 
-const detail = ref<DeliveryData | null>(null)
-const deliveryAttempts = ref<DeliveryAttemptData[]>([])
+const detail = ref<DeliveryResponse | null>(null)
+const deliveryAttempts = ref<DeliveryAttemptResponse[]>([])
 
-const tableData = ref<DeliveryData[]>([])
+const tableData = ref<DeliveryResponse[]>([])
 const total = ref(0)
 const currentPage = ref(1)
 const pageSize = ref(20)
-
-const destinationOptions = ref<{ id: string; name: string }[]>([])
 
 const filters = reactive({
   status: '',
   destination_id: '',
 })
-
-function truncateId(id: string): string {
-  if (!id) return '-'
-  return id.length > 12 ? id.substring(0, 12) + '...' : id
-}
-
-function formatTime(val: string | null | undefined): string {
-  if (!val) return '-'
-  try {
-    return new Date(val).toLocaleString()
-  } catch {
-    return val
-  }
-}
-
-function getDestinationName(destId: string): string {
-  if (!destId) return '-'
-  return destinationOptions.value.find((d) => d.id === destId)?.name ?? truncateId(destId)
-}
-
-function statusTagType(status: string): 'success' | 'warning' | 'danger' | 'info' {
-  const map: Record<string, 'success' | 'warning' | 'danger' | 'info'> = {
-    pending: 'info',
-    processing: 'warning',
-    delivered: 'success',
-    retry_wait: 'warning',
-    failed: 'danger',
-    dead_letter: 'danger',
-  }
-  return map[status] ?? 'info'
-}
 
 const canRetry = computed(() => {
   if (!detail.value) return false
@@ -270,7 +218,7 @@ const renderedBodyHtml = computed(() => {
   if (!detail.value) return ''
   const body = detail.value.rendered_body ?? ''
   if (!body) return ''
-  const format = (detail.value as Record<string, unknown>).rendered_format as string ?? 'text'
+  const format = detail.value.rendered_format ?? 'text'
   if (format === 'html') return body
   if (format === 'markdown') return marked(body) as string
   return ''
@@ -289,46 +237,26 @@ async function fetchData() {
     tableData.value = res.data?.data ?? []
     total.value = res.data?.total ?? 0
   } catch (e: unknown) {
-    const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message || t('deliveries.failedToLoadDeliveries')
-    ElMessage.error(msg)
+    ElMessage.error(getErrorMessage(e, t('deliveries.failedToLoadDeliveries')))
   } finally {
     loading.value = false
   }
 }
 
-async function fetchDestinationOptions() {
-  try {
-    const res = await listDestinations({ page: 1, size: 200 })
-    destinationOptions.value = (res.data?.data ?? []).map(
-      (d: Record<string, unknown>) => ({ id: String(d.id ?? ''), name: String(d.name ?? '') })
-    )
-  } catch {
-    // silent
-  }
-}
-
-async function openDetail(row: DeliveryData) {
+async function openDetail(row: DeliveryResponse) {
   drawerVisible.value = true
   detailLoading.value = true
   detail.value = null
   deliveryAttempts.value = []
   try {
     const res = await getDelivery(row.id)
-    const data = res.data as Record<string, unknown>
-
-    // Backend GetDelivery returns: { delivery: {...}, delivery_attempts: [...] }
-    if (data.delivery) {
-      detail.value = data.delivery as DeliveryData
-    } else {
-      detail.value = data as unknown as DeliveryData
-    }
-
-    if (data.delivery_attempts && Array.isArray(data.delivery_attempts)) {
-      deliveryAttempts.value = data.delivery_attempts as DeliveryAttemptData[]
+    const data = res.data
+    detail.value = data.delivery
+    if (data.delivery_attempts) {
+      deliveryAttempts.value = data.delivery_attempts
     }
   } catch (e: unknown) {
-    const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message || t('deliveries.failedToLoadDetail')
-    ElMessage.error(msg)
+    ElMessage.error(getErrorMessage(e, t('deliveries.failedToLoadDetail')))
   } finally {
     detailLoading.value = false
   }
@@ -340,11 +268,10 @@ async function handleRetry() {
     await retryDelivery(detail.value.id)
     ElMessage.success(t('deliveries.retryInitiated'))
     // Refresh detail by re-fetching the same row
-    const row = { ...detail.value } as DeliveryData
+    const row = { ...detail.value }
     await openDetail(row)
   } catch (e: unknown) {
-    const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message || t('deliveries.retryFailed')
-    ElMessage.error(msg)
+    ElMessage.error(getErrorMessage(e, t('deliveries.retryFailed')))
   }
 }
 
@@ -356,32 +283,23 @@ onMounted(() => {
 
 <style lang="scss" scoped>
 .deliveries-container {
-  .page-filters {
-    margin-bottom: 16px;
-    display: flex;
-    gap: 12px;
-  }
-
-  .pagination-wrap {
-    margin-top: 16px;
-    display: flex;
-    justify-content: flex-end;
-  }
-
-  .truncate-id {
-    font-family: monospace;
-    font-size: 12px;
-    cursor: pointer;
-  }
-
-  .monospace-text {
-    font-family: 'Courier New', Courier, monospace;
-    font-size: 12px;
-    word-break: break-all;
-  }
-
   .detail-desc {
     margin-bottom: 12px;
+
+    :deep(.el-descriptions__table) {
+      table-layout: fixed;
+      width: 100%;
+    }
+
+    :deep(.el-descriptions__label) {
+      width: 100px;
+    }
+
+    :deep(.el-descriptions__content) {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
   }
 
   .rendered-output {
@@ -394,7 +312,6 @@ onMounted(() => {
   }
 
   .rendered-body {
-    font-family: 'Courier New', Courier, monospace;
     font-size: 13px;
   }
 
@@ -414,7 +331,6 @@ onMounted(() => {
       background-color: rgba(0, 0, 0, 0.06);
       padding: 2px 6px;
       border-radius: 3px;
-      font-family: 'Courier New', Courier, monospace;
       font-size: 13px;
     }
 
@@ -470,6 +386,21 @@ onMounted(() => {
     justify-content: flex-end;
   }
 
+  .drawer-resize-handle {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    cursor: col-resize;
+    z-index: 10;
+
+    &:hover,
+    &:active {
+      background-color: var(--el-color-primary, #409eff);
+    }
+  }
+
   .attempt-detail {
     padding: 8px 16px;
   }
@@ -489,7 +420,6 @@ onMounted(() => {
     background-color: var(--el-fill-color-lighter, #f5f7fa);
     padding: 8px 12px;
     border-radius: 4px;
-    font-family: 'Courier New', Courier, monospace;
     font-size: 12px;
     white-space: pre-wrap;
     word-break: break-all;

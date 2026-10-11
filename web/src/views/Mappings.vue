@@ -1,7 +1,7 @@
 <template>
   <div class="mappings-container">
     <div class="page-actions">
-      <el-button type="primary" @click="openDialog()">
+      <el-button type="primary" @click="openCreateDialog(); resetForm()">
         <el-icon><Plus /></el-icon> {{ $t('mappings.newMapping') }}
       </el-button>
     </div>
@@ -12,13 +12,15 @@
         <el-table-column prop="revision" :label="$t('mappings.revision')" width="100" />
         <el-table-column :label="$t('mappings.fieldsCount')" width="120">
           <template #default="{ row }">
-            <el-tag size="small">{{ (row.fields ?? []).length }}</el-tag>
+            <el-tag>{{ (row.fields ?? []).length }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column :label="$t('common.actions')" width="160" fixed="right">
+        <el-table-column :label="$t('common.actions')" width="180" fixed="right">
           <template #default="{ row }">
-            <el-button text type="primary" size="small" @click="openDialog(row)">{{ $t('common.edit') }}</el-button>
-            <el-button text type="danger" size="small" @click="handleDelete(row)">{{ $t('common.delete') }}</el-button>
+            <div class="action-buttons">
+              <el-button type="primary" @click="openEditDialog(row.id); fillForm(row)">{{ $t('common.edit') }}</el-button>
+              <el-button type="danger" @click="handleDelete(row.id, row.name)">{{ $t('common.delete') }}</el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -57,7 +59,7 @@
         <div v-for="(field, index) in form.fields" :key="index" class="field-card">
           <div class="field-card-header">
             <span class="field-card-title">{{ $t('mappings.fieldNo', { n: index + 1 }) }}</span>
-            <el-button text type="danger" size="small" @click="removeField(index)">
+            <el-button text type="danger" @click="removeField(index)">
               <el-icon><Delete /></el-icon> {{ $t('common.remove') }}
             </el-button>
           </div>
@@ -140,7 +142,7 @@
       </el-form>
 
       <template #footer>
-        <el-button @click="dialogVisible = false">{{ $t('common.cancel') }}</el-button>
+        <el-button @click="closeDialog">{{ $t('common.cancel') }}</el-button>
         <el-button type="primary" :loading="saving" @click="handleSave">{{ $t('common.save') }}</el-button>
       </template>
     </el-dialog>
@@ -150,13 +152,38 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { Delete } from '@element-plus/icons-vue'
 import { listMappings, createMapping, updateMapping, deleteMapping } from '@/api/mappings'
+import { useCrudPage } from '@/composables/useCrudPage'
+import { getErrorMessage } from '@/utils/helpers'
+import type { MappingResponse, MappingEntry } from '@/api/types'
 
 const { t } = useI18n()
 
+const {
+  loading,
+  saving,
+  dialogVisible,
+  isEditing,
+  editingId,
+  tableData,
+  total,
+  currentPage,
+  pageSize,
+  fetchData,
+  handleDelete,
+  openCreateDialog,
+  openEditDialog,
+  closeDialog,
+} = useCrudPage<MappingResponse>({
+  listApi: listMappings,
+  deleteApi: (id) => deleteMapping(id),
+  entityI18nKey: 'nav.mappings',
+})
+
+// Use MappingEntry as the form field type; local mutable version for the form
 interface FieldRow {
   source_path: string
   target_key: string
@@ -167,25 +194,6 @@ interface FieldRow {
   multi_result_mode: string
   description: string
 }
-
-interface MappingRow {
-  id: string
-  name: string
-  revision: number
-  fields: FieldRow[]
-  [key: string]: unknown
-}
-
-const loading = ref(false)
-const saving = ref(false)
-const dialogVisible = ref(false)
-const isEditing = ref(false)
-const editingId = ref('')
-
-const tableData = ref<MappingRow[]>([])
-const total = ref(0)
-const currentPage = ref(1)
-const pageSize = ref(20)
 
 const formRef = ref<FormInstance>()
 const form = reactive({
@@ -220,42 +228,19 @@ function removeField(index: number) {
 
 function resetForm() {
   form.name = ''
-  form.fields = [createEmptyField()]
+  form.fields = []
 }
 
-function openDialog(row?: MappingRow) {
-  resetForm()
-  if (row) {
-    isEditing.value = true
-    editingId.value = row.id
-    form.name = row.name ?? ''
-    form.fields = (row.fields ?? []).length
-      ? (row.fields as FieldRow[]).map((f) => ({ ...createEmptyField(), ...f }))
-      : [createEmptyField()]
-  } else {
-    isEditing.value = false
-    editingId.value = ''
-  }
-  dialogVisible.value = true
+function fillForm(row: MappingResponse) {
+  form.name = row.name ?? ''
+  form.fields = (row.fields ?? []).length
+    ? (row.fields as MappingEntry[]).map((f) => ({ ...createEmptyField(), ...f }))
+    : []
 }
 
 // toNullableStr returns null for empty strings (matches backend *string with omitempty)
 function toNullableStr(val: string): string | null {
   return val || null
-}
-
-async function fetchData() {
-  loading.value = true
-  try {
-    const res = await listMappings({ page: currentPage.value, size: pageSize.value })
-    tableData.value = res.data?.data ?? []
-    total.value = res.data?.total ?? 0
-  } catch (e: unknown) {
-    const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message || t('mappings.failedToLoadMappings')
-    ElMessage.error(msg)
-  } finally {
-    loading.value = false
-  }
 }
 
 async function handleSave() {
@@ -287,28 +272,12 @@ async function handleSave() {
       await createMapping(payload)
       ElMessage.success(t('mappings.mappingCreated'))
     }
-    dialogVisible.value = false
+    closeDialog()
     await fetchData()
   } catch (e: unknown) {
-    const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message || t('mappings.failedToSaveMapping')
-    ElMessage.error(msg)
+    ElMessage.error(getErrorMessage(e, t('mappings.failedToSaveMapping')))
   } finally {
     saving.value = false
-  }
-}
-
-async function handleDelete(row: MappingRow) {
-  try {
-    await ElMessageBox.confirm(
-      t('common.confirmDeleteMsg', { entity: t('nav.mappings'), name: row.name }),
-      t('common.confirmDelete'),
-      { type: 'warning' }
-    )
-    await deleteMapping(row.id)
-    ElMessage.success(t('mappings.mappingDeleted'))
-    await fetchData()
-  } catch {
-    // cancelled
   }
 }
 
@@ -319,17 +288,7 @@ onMounted(() => {
 
 <style lang="scss" scoped>
 .mappings-container {
-  .page-actions {
-    margin-bottom: 16px;
-    display: flex;
-    justify-content: flex-end;
-  }
-
-  .pagination-wrap {
-    margin-top: 16px;
-    display: flex;
-    justify-content: flex-end;
-  }
+  // page-actions, pagination-wrap, action-buttons — provided by global.scss
 
   .field-card {
     margin-bottom: 12px;

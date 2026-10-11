@@ -50,19 +50,25 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="id" :label="$t('common.id')" width="180">
+        <el-table-column prop="id" :label="$t('common.id')" min-width="180">
           <template #default="{ row }">
-            <span class="truncate-id">{{ row.id }}</span>
+            <TruncatedId :id="row.id" />
           </template>
         </el-table-column>
-        <el-table-column prop="source" :label="$t('dashboard.source')" width="140" />
+        <el-table-column prop="source" :label="$t('dashboard.source')" min-width="140" />
         <el-table-column prop="status" :label="$t('common.status')" width="120">
           <template #default="{ row }">
-            <el-tag type="danger" size="small">{{ $t('enums.deliveryStatus.' + row.status, $t('enums.eventStatus.' + row.status, row.status)) }}</el-tag>
+            <StatusTag :kind="row.type === 'event' ? 'event' : 'delivery'" :status="row.status" />
           </template>
         </el-table-column>
-        <el-table-column prop="error" :label="$t('common.error')" show-overflow-tooltip />
-        <el-table-column prop="created_at" :label="$t('common.time')" width="180">
+        <el-table-column :label="$t('common.error')">
+          <template #default="{ row }">
+            <el-tooltip :content="row.error" placement="top" :show-after="300">
+              <span class="cell-ellipsis">{{ row.error }}</span>
+            </el-tooltip>
+          </template>
+        </el-table-column>
+        <el-table-column prop="created_at" :label="$t('common.time')" min-width="180">
           <template #default="{ row }">
             {{ formatTime(row.created_at) }}
           </template>
@@ -78,6 +84,11 @@ import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { listEvents } from '@/api/events'
 import { listDeliveries } from '@/api/deliveries'
+import { formatTime } from '@/utils/time'
+import { getErrorMessage } from '@/utils/helpers'
+import StatusTag from '@/components/StatusTag.vue'
+import TruncatedId from '@/components/TruncatedId.vue'
+import type { EventResponse, DeliveryResponse } from '@/api/types'
 
 const { t } = useI18n()
 
@@ -100,11 +111,6 @@ const stats = reactive({
   failedDeliveries: 0,
 })
 
-function formatTime(val: string): string {
-  if (!val) return '-'
-  return new Date(val).toLocaleString()
-}
-
 async function fetchStats() {
   try {
     const [totalRes, processingRes, pendingRes, failedRes] = await Promise.all([
@@ -113,13 +119,12 @@ async function fetchStats() {
       listDeliveries({ page: 1, size: 1, status: 'pending' }),
       listDeliveries({ page: 1, size: 1, status: 'failed' }),
     ])
-    stats.totalEvents = totalRes.data?.total ?? totalRes.data?.data?.length ?? 0
+    stats.totalEvents = totalRes.data?.total ?? 0
     stats.processing = processingRes.data?.total ?? 0
     stats.pendingDeliveries = pendingRes.data?.total ?? 0
     stats.failedDeliveries = failedRes.data?.total ?? 0
   } catch (e: unknown) {
-    const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message || t('common.failedToLoad', { entity: t('nav.dashboard') })
-    ElMessage.error(msg)
+    ElMessage.error(getErrorMessage(e, t('common.failedToLoad', { entity: t('nav.dashboard') })))
   }
 }
 
@@ -130,31 +135,30 @@ async function fetchRecentErrors() {
       listDeliveries({ page: 1, size: 5, status: 'failed' }),
     ])
     const eventErrors: ErrorRow[] = (eventsRes.data?.data ?? []).map(
-      (e: Record<string, unknown>) => ({
+      (e: EventResponse) => ({
         type: 'event',
-        id: String(e.id ?? ''),
-        source: String(e.source_id ?? ''),
-        status: String(e.status ?? 'failed'),
-        error: String(e.error_summary ?? e.error_code ?? ''),
-        created_at: String(e.received_at ?? ''),
+        id: e.id,
+        source: e.source_id,
+        status: e.status,
+        error: e.error_summary ?? e.error_code ?? '',
+        created_at: e.received_at ?? '',
       })
     )
     const deliveryErrors: ErrorRow[] = (deliveriesRes.data?.data ?? []).map(
-      (d: Record<string, unknown>) => ({
+      (d: DeliveryResponse) => ({
         type: 'delivery',
-        id: String(d.id ?? ''),
-        source: String(d.destination_id ?? ''),
-        status: String(d.status ?? 'failed'),
-        error: String(d.last_error_summary ?? d.last_error_code ?? ''),
-        created_at: String(d.created_at ?? d.next_attempt_at ?? ''),
+        id: d.id,
+        source: d.destination_id,
+        status: d.status,
+        error: d.last_error_summary ?? d.last_error_code ?? '',
+        created_at: d.created_at ?? d.next_attempt_at ?? '',
       })
     )
     const all = [...eventErrors, ...deliveryErrors]
     all.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
     recentErrors.value = all.slice(0, 10)
   } catch (e: unknown) {
-    const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message || t('common.failedToLoad', { entity: t('dashboard.recentErrors') })
-    ElMessage.error(msg)
+    ElMessage.error(getErrorMessage(e, t('common.failedToLoad', { entity: t('dashboard.recentErrors') })))
   }
 }
 
@@ -215,11 +219,6 @@ onMounted(async () => {
     justify-content: space-between;
     align-items: center;
     font-weight: 600;
-  }
-
-  .truncate-id {
-    font-family: monospace;
-    font-size: 12px;
   }
 }
 </style>

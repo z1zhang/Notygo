@@ -106,10 +106,10 @@ func NewRouter(
 			})
 
 			r.Route("/destinations", func(r chi.Router) {
-				r.Get("/", ListDestinations(db))
+				r.Get("/", ListDestinations(db, secretSvc))
 				r.Post("/", CreateDestination(db, secretSvc))
 				r.Route("/{id}", func(r chi.Router) {
-					r.Get("/", GetDestination(db))
+					r.Get("/", GetDestination(db, secretSvc))
 					r.Put("/", UpdateDestination(db, secretSvc))
 					r.Delete("/", DeleteDestination(db))
 					r.Post("/test", placeholderHandler("destination.test"))

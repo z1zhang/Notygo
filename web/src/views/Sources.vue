@@ -9,10 +9,17 @@
     <el-card shadow="never" v-loading="loading">
       <el-table :data="tableData" stripe style="width: 100%">
         <el-table-column prop="name" :label="$t('common.name')" min-width="140" />
-        <el-table-column prop="slug" :label="$t('sources.slug')" min-width="120" />
+        <el-table-column prop="slug" :label="$t('sources.slug')" min-width="260">
+          <template #default="{ row }">
+            <span class="copyable" @click.stop="copyWebhookUrl(row.slug)">
+              {{ row.slug }}
+              <el-icon class="copy-icon" :size="12"><CopyDocument /></el-icon>
+            </span>
+          </template>
+        </el-table-column>
         <el-table-column prop="auth_type" :label="$t('sources.authType')" width="120">
           <template #default="{ row }">
-            <el-tag size="small">{{ $t('enums.authType.' + (row.auth_type || 'none')) }}</el-tag>
+            <el-tag>{{ $t('enums.authType.' + (row.auth_type || 'none')) }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="enabled" :label="$t('common.enabled')" width="100">
@@ -23,15 +30,17 @@
             />
           </template>
         </el-table-column>
-        <el-table-column prop="mapping_id" :label="$t('sources.mapping')" width="140">
+        <el-table-column prop="mapping_id" :label="$t('sources.mapping')" min-width="140">
           <template #default="{ row }">
-            {{ getMappingName(row.mapping_id) }}
+            {{ row.mapping_id ? lookupName(mappingOptions, row.mapping_id) : '-' }}
           </template>
         </el-table-column>
-        <el-table-column :label="$t('common.actions')" width="160" fixed="right">
+        <el-table-column :label="$t('common.actions')" width="180" fixed="right">
           <template #default="{ row }">
-            <el-button text type="primary" size="small" @click="openDialog(row)">{{ $t('common.edit') }}</el-button>
-            <el-button text type="danger" size="small" @click="handleDelete(row)">{{ $t('common.delete') }}</el-button>
+            <div class="action-buttons">
+              <el-button type="primary" @click="openDialog(row)">{{ $t('common.edit') }}</el-button>
+              <el-button type="danger" @click="handleDelete(row.id, row.name)">{{ $t('common.delete') }}</el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -103,7 +112,7 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">{{ $t('common.cancel') }}</el-button>
+        <el-button @click="closeDialog">{{ $t('common.cancel') }}</el-button>
         <el-button type="primary" :loading="saving" @click="handleSave">{{ $t('common.save') }}</el-button>
       </template>
     </el-dialog>
@@ -113,40 +122,38 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
+import { CopyDocument } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
-import { listSources, createSource, updateSource, deleteSource } from '@/api/sources'
-import { listMappings } from '@/api/mappings'
+import { createSource, updateSource, deleteSource, listSources } from '@/api/sources'
+import type { SourceResponse } from '@/api/types'
+import { getErrorMessage } from '@/utils/helpers'
+import { lookupName } from '@/utils/lookup'
+import { useCrudPage } from '@/composables/useCrudPage'
+import { useOptions } from '@/composables/useOptions'
 
 const { t } = useI18n()
 
-interface SourceRow {
-  id: string
-  name: string
-  slug: string
-  auth_type: string
-  enabled: boolean
-  mapping_id: string
-  [key: string]: unknown
-}
+const {
+  loading,
+  saving,
+  dialogVisible,
+  isEditing,
+  editingId,
+  tableData,
+  total,
+  currentPage,
+  pageSize,
+  fetchData,
+  handleDelete,
+  closeDialog,
+} = useCrudPage<SourceResponse>({
+  listApi: listSources,
+  deleteApi: (id) => deleteSource(id),
+  entityI18nKey: 'nav.sources',
+})
 
-interface MappingOption {
-  id: string
-  name: string
-}
-
-const loading = ref(false)
-const saving = ref(false)
-const dialogVisible = ref(false)
-const isEditing = ref(false)
-const editingId = ref('')
-
-const tableData = ref<SourceRow[]>([])
-const total = ref(0)
-const currentPage = ref(1)
-const pageSize = ref(20)
-
-const mappingOptions = ref<MappingOption[]>([])
+const { mappingOptions, fetchMappingOptions } = useOptions()
 
 const formRef = ref<FormInstance>()
 const form = reactive({
@@ -164,12 +171,6 @@ const formRules: FormRules = {
   auth_type: [{ required: true, message: () => t('sources.authTypeRequired'), trigger: 'change' }],
 }
 
-function getMappingName(id: string): string {
-  if (!id) return '-'
-  const found = mappingOptions.value.find((m) => m.id === id)
-  return found ? found.name : id
-}
-
 function resetForm() {
   form.name = ''
   form.auth_type = 'none'
@@ -180,7 +181,7 @@ function resetForm() {
   form.enabled = true
 }
 
-function openDialog(row?: SourceRow) {
+function openDialog(row?: SourceResponse) {
   resetForm()
   if (row) {
     isEditing.value = true
@@ -188,8 +189,8 @@ function openDialog(row?: SourceRow) {
     form.name = row.name ?? ''
     form.auth_type = row.auth_type ?? 'none'
     form.secret = ''
-    form.max_body_bytes = (row.max_body_bytes as number) ?? 1048576
-    form.rate_limit = typeof row.rate_limit === 'string' ? row.rate_limit : JSON.stringify(row.rate_limit ?? {})
+    form.max_body_bytes = row.max_body_bytes ?? 1048576
+    form.rate_limit = row.rate_limit ?? ''
     form.mapping_id = row.mapping_id ?? ''
     form.enabled = row.enabled ?? true
   } else {
@@ -197,31 +198,6 @@ function openDialog(row?: SourceRow) {
     editingId.value = ''
   }
   dialogVisible.value = true
-}
-
-async function fetchData() {
-  loading.value = true
-  try {
-    const res = await listSources({ page: currentPage.value, size: pageSize.value })
-    tableData.value = res.data?.data ?? []
-    total.value = res.data?.total ?? 0
-  } catch (e: unknown) {
-    const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message || t('sources.failedToLoadSources')
-    ElMessage.error(msg)
-  } finally {
-    loading.value = false
-  }
-}
-
-async function fetchMappings() {
-  try {
-    const res = await listMappings({ page: 1, size: 200 })
-    mappingOptions.value = (res.data?.data ?? []).map(
-      (m: Record<string, unknown>) => ({ id: String(m.id ?? ''), name: String(m.name ?? '') })
-    )
-  } catch {
-    // silent - mappings are optional reference data
-  }
 }
 
 async function handleSave() {
@@ -267,14 +243,13 @@ async function handleSave() {
     dialogVisible.value = false
     await fetchData()
   } catch (e: unknown) {
-    const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message || t('sources.failedToSaveSource')
-    ElMessage.error(msg)
+    ElMessage.error(getErrorMessage(e, t('sources.failedToSaveSource')))
   } finally {
     saving.value = false
   }
 }
 
-async function toggleEnabled(row: SourceRow, val: boolean) {
+async function toggleEnabled(row: SourceResponse, val: boolean) {
   try {
     // Only send the "enabled" field — do NOT spread the entire row
     // (which includes encrypted secret_ref that would get re-encrypted)
@@ -282,44 +257,46 @@ async function toggleEnabled(row: SourceRow, val: boolean) {
     ElMessage.success(val ? t('sources.sourceEnabled') : t('sources.sourceDisabled'))
   } catch (e: unknown) {
     row.enabled = !val
-    const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message || t('sources.failedToToggleSource')
-    ElMessage.error(msg)
+    ElMessage.error(getErrorMessage(e, t('sources.failedToToggleSource')))
   }
 }
 
-async function handleDelete(row: SourceRow) {
+function buildWebhookUrl(slug: string): string {
+  // In production the frontend and API share the same origin;
+  // in dev, Vite proxies /api to the backend, so location.origin works.
+  const base = window.location.origin
+  return `${base}/api/v1/ingest/${slug}`
+}
+
+async function copyWebhookUrl(slug: string) {
   try {
-    await ElMessageBox.confirm(
-      t('common.confirmDeleteMsg', { entity: t('nav.sources'), name: row.name }),
-      t('common.confirmDelete'),
-      { type: 'warning' }
-    )
-    await deleteSource(row.id)
-    ElMessage.success(t('sources.sourceDeleted'))
-    await fetchData()
+    await navigator.clipboard.writeText(buildWebhookUrl(slug))
+    ElMessage.success(t('common.copied'))
   } catch {
-    // cancelled or error already shown
+    ElMessage.error(t('common.copyFailed'))
   }
 }
 
 onMounted(() => {
   fetchData()
-  fetchMappings()
+  fetchMappingOptions()
 })
 </script>
 
 <style lang="scss" scoped>
-.sources-container {
-  .page-actions {
-    margin-bottom: 16px;
-    display: flex;
-    justify-content: flex-end;
+.copyable {
+  cursor: pointer;
+
+  .copy-icon {
+    margin-left: 4px;
+    color: var(--el-text-color-placeholder, #a8abb2);
+    opacity: 0;
+    transition: color 0.2s, opacity 0.2s;
   }
 
-  .pagination-wrap {
-    margin-top: 16px;
-    display: flex;
-    justify-content: flex-end;
+  &:hover .copy-icon {
+    opacity: 1;
+    color: var(--el-color-primary, #409eff);
   }
 }
 </style>

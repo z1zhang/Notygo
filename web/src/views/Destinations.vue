@@ -11,7 +11,7 @@
         <el-table-column prop="name" :label="$t('common.name')" min-width="160" />
         <el-table-column prop="type" :label="$t('common.type')" width="140">
           <template #default="{ row }">
-            <el-tag size="small">{{ $t('enums.destType.' + row.type, row.type) }}</el-tag>
+            <el-tag>{{ $t('enums.destType.' + row.type, row.type) }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="enabled" :label="$t('common.enabled')" width="100">
@@ -19,10 +19,12 @@
             <el-switch v-model="row.enabled" @change="(val: boolean) => toggleEnabled(row, val)" />
           </template>
         </el-table-column>
-        <el-table-column :label="$t('common.actions')" width="160" fixed="right">
+        <el-table-column :label="$t('common.actions')" width="180" fixed="right">
           <template #default="{ row }">
-            <el-button text type="primary" size="small" @click="openDialog(row)">{{ $t('common.edit') }}</el-button>
-            <el-button text type="danger" size="small" @click="handleDelete(row)">{{ $t('common.delete') }}</el-button>
+            <div class="action-buttons">
+              <el-button type="primary" @click="openDialog(row)">{{ $t('common.edit') }}</el-button>
+              <el-button type="danger" @click="handleDelete(row.id, row.name)">{{ $t('common.delete') }}</el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -141,11 +143,11 @@
               <div v-for="(h, idx) in typeConfig.headers" :key="idx" class="header-row">
                 <el-input v-model="h.key" :placeholder="$t('destinations.headerKey')" class="header-input" />
                 <el-input v-model="h.value" :placeholder="$t('destinations.headerValue')" class="header-input" />
-                <el-button text type="danger" size="small" @click="removeHeader(idx)">
+                <el-button text type="danger" @click="removeHeader(idx)">
                   <el-icon><Delete /></el-icon>
                 </el-button>
               </div>
-              <el-button type="primary" text size="small" @click="addHeader">
+              <el-button type="primary" text @click="addHeader">
                 <el-icon><Plus /></el-icon> {{ $t('destinations.addHeader') }}
               </el-button>
             </div>
@@ -155,7 +157,6 @@
               v-model="typeConfig.body_template"
               type="textarea"
               :rows="4"
-              class="monospace-input"
             />
           </el-form-item>
         </template>
@@ -187,7 +188,7 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">{{ $t('common.cancel') }}</el-button>
+        <el-button @click="closeDialog">{{ $t('common.cancel') }}</el-button>
         <el-button type="primary" :loading="saving" @click="handleSave">{{ $t('common.save') }}</el-button>
       </template>
     </el-dialog>
@@ -197,7 +198,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Delete } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import {
@@ -206,27 +207,32 @@ import {
   updateDestination,
   deleteDestination,
 } from '@/api/destinations'
+import type { DestinationResponse } from '@/api/types'
+import { getErrorMessage } from '@/utils/helpers'
+import { useCrudPage } from '@/composables/useCrudPage'
 
 const { t } = useI18n()
 
-interface DestinationRow {
-  id: string
-  name: string
-  type: string
-  enabled: boolean
-  [key: string]: unknown
-}
+const {
+  loading,
+  saving,
+  dialogVisible,
+  isEditing,
+  editingId,
+  tableData,
+  total,
+  currentPage,
+  pageSize,
+  fetchData,
+  handleDelete,
+  closeDialog,
+} = useCrudPage<DestinationResponse>({
+  listApi: listDestinations,
+  deleteApi: (id) => deleteDestination(id),
+  entityI18nKey: 'nav.destinations',
+})
 
-const loading = ref(false)
-const saving = ref(false)
-const dialogVisible = ref(false)
-const isEditing = ref(false)
-const editingId = ref('')
-
-const tableData = ref<DestinationRow[]>([])
-const total = ref(0)
-const currentPage = ref(1)
-const pageSize = ref(20)
+const originalSecretRef = ref('')
 
 const formRef = ref<FormInstance>()
 const form = reactive({
@@ -401,15 +407,16 @@ function resetForm() {
   resetTypeConfig()
 }
 
-function openDialog(row?: DestinationRow) {
+function openDialog(row?: DestinationResponse) {
   resetForm()
   if (row) {
     isEditing.value = true
     editingId.value = row.id
     form.name = row.name ?? ''
     form.type = row.type ?? 'http_webhook'
-    form.secret_ref = ''
-    form.timeout_ms = (row.timeout_ms as number) ?? 10000
+    form.secret_ref = (row.secret_ref as string) ?? ''
+    originalSecretRef.value = form.secret_ref
+    form.timeout_ms = row.timeout_ms ?? 10000
     form.circuit_breaker =
       typeof row.circuit_breaker === 'string'
         ? row.circuit_breaker
@@ -424,22 +431,9 @@ function openDialog(row?: DestinationRow) {
   } else {
     isEditing.value = false
     editingId.value = ''
+    originalSecretRef.value = ''
   }
   dialogVisible.value = true
-}
-
-async function fetchData() {
-  loading.value = true
-  try {
-    const res = await listDestinations({ page: currentPage.value, size: pageSize.value })
-    tableData.value = res.data?.data ?? []
-    total.value = res.data?.total ?? 0
-  } catch (e: unknown) {
-    const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message || t('destinations.failedToLoadDestinations')
-    ElMessage.error(msg)
-  } finally {
-    loading.value = false
-  }
 }
 
 async function handleSave() {
@@ -469,7 +463,7 @@ async function handleSave() {
       circuit_breaker: cbParsed,
       enabled: form.enabled,
     }
-    if (form.secret_ref) {
+    if (form.secret_ref && form.secret_ref !== originalSecretRef.value) {
       payload.secret_ref = form.secret_ref
     }
     if (isEditing.value) {
@@ -482,36 +476,19 @@ async function handleSave() {
     dialogVisible.value = false
     await fetchData()
   } catch (e: unknown) {
-    const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message || t('destinations.failedToSaveDestination')
-    ElMessage.error(msg)
+    ElMessage.error(getErrorMessage(e, t('destinations.failedToSaveDestination')))
   } finally {
     saving.value = false
   }
 }
 
-async function toggleEnabled(row: DestinationRow, val: boolean) {
+async function toggleEnabled(row: DestinationResponse, val: boolean) {
   try {
     await updateDestination(row.id, { enabled: val })
     ElMessage.success(val ? t('destinations.destinationEnabled') : t('destinations.destinationDisabled'))
   } catch (e: unknown) {
     row.enabled = !val
-    const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message || t('destinations.failedToToggleDestination')
-    ElMessage.error(msg)
-  }
-}
-
-async function handleDelete(row: DestinationRow) {
-  try {
-    await ElMessageBox.confirm(
-      t('common.confirmDeleteMsg', { entity: t('nav.destinations'), name: row.name }),
-      t('common.confirmDelete'),
-      { type: 'warning' }
-    )
-    await deleteDestination(row.id)
-    ElMessage.success(t('destinations.destinationDeleted'))
-    await fetchData()
-  } catch {
-    // cancelled
+    ElMessage.error(getErrorMessage(e, t('destinations.failedToToggleDestination')))
   }
 }
 
@@ -522,18 +499,6 @@ onMounted(() => {
 
 <style lang="scss" scoped>
 .destinations-container {
-  .page-actions {
-    margin-bottom: 16px;
-    display: flex;
-    justify-content: flex-end;
-  }
-
-  .pagination-wrap {
-    margin-top: 16px;
-    display: flex;
-    justify-content: flex-end;
-  }
-
   .headers-list {
     width: 100%;
 
@@ -547,11 +512,6 @@ onMounted(() => {
         flex: 1;
       }
     }
-  }
-
-  :deep(.monospace-input .el-textarea__inner) {
-    font-family: 'Courier New', Courier, monospace;
-    font-size: 13px;
   }
 }
 </style>

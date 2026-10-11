@@ -12,7 +12,7 @@ import (
 )
 
 // ListDestinations returns a paginated list of destinations.
-func ListDestinations(db *sql.DB) http.HandlerFunc {
+func ListDestinations(db *sql.DB, secretSvc *secret.Service) http.HandlerFunc {
 	repo := destination.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		page, size := ParsePagination(r)
@@ -25,7 +25,7 @@ func ListDestinations(db *sql.DB) http.HandlerFunc {
 		// Convert to response DTOs with masked secrets
 		responses := make([]destination.DestinationResponse, len(result))
 		for i := range result {
-			responses[i] = toDestinationResponse(&result[i])
+			responses[i] = toDestinationResponse(&result[i], secretSvc)
 		}
 
 		WriteJSON(w, http.StatusOK, PaginatedResponse[destination.DestinationResponse]{
@@ -72,13 +72,13 @@ func CreateDestination(db *sql.DB, secretSvc *secret.Service) http.HandlerFunc {
 			return
 		}
 
-		resp := toDestinationResponse(created)
+		resp := toDestinationResponse(created, secretSvc)
 		WriteJSON(w, http.StatusCreated, resp)
 	}
 }
 
 // GetDestination returns a single destination by ID.
-func GetDestination(db *sql.DB) http.HandlerFunc {
+func GetDestination(db *sql.DB, secretSvc *secret.Service) http.HandlerFunc {
 	repo := destination.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
@@ -88,7 +88,7 @@ func GetDestination(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		resp := toDestinationResponse(d)
+		resp := toDestinationResponse(d, secretSvc)
 		WriteJSON(w, http.StatusOK, resp)
 	}
 }
@@ -121,7 +121,7 @@ func UpdateDestination(db *sql.DB, secretSvc *secret.Service) http.HandlerFunc {
 			return
 		}
 
-		resp := toDestinationResponse(updated)
+		resp := toDestinationResponse(updated, secretSvc)
 		WriteJSON(w, http.StatusOK, resp)
 	}
 }
@@ -140,8 +140,8 @@ func DeleteDestination(db *sql.DB) http.HandlerFunc {
 }
 
 // toDestinationResponse converts a Destination to a DestinationResponse, masking the secret.
-func toDestinationResponse(d *destination.Destination) destination.DestinationResponse {
-	maskedSecretRef := maskDestSecretRef(d.SecretRef)
+func toDestinationResponse(d *destination.Destination, secretSvc *secret.Service) destination.DestinationResponse {
+	maskedSecretRef := maskDestSecretRef(d.SecretRef, secretSvc)
 	return destination.DestinationResponse{
 		ID:             d.ID,
 		Name:           d.Name,
@@ -158,12 +158,24 @@ func toDestinationResponse(d *destination.Destination) destination.DestinationRe
 	}
 }
 
-// maskDestSecretRef masks the destination secret reference for display.
-func maskDestSecretRef(ref *string) *string {
+// maskDestSecretRef returns the decrypted secret for display.
+// The frontend uses type="password" to mask it visually; the user can click
+// the eye icon to reveal the full value. Falls back to a status label if
+// decryption fails.
+func maskDestSecretRef(ref *string, secretSvc *secret.Service) *string {
 	if ref == nil || *ref == "" {
 		s := "not_configured"
 		return &s
 	}
+
+	// Decrypt the secret so the frontend can display it (masked by <input type="password">)
+	if secretSvc != nil {
+		decrypted, err := secretSvc.Decrypt(*ref)
+		if err == nil && decrypted != "" {
+			return &decrypted
+		}
+	}
+
 	s := "configured"
 	return &s
 }

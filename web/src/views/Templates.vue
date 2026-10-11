@@ -1,7 +1,7 @@
 <template>
   <div class="templates-container">
     <div class="page-actions">
-      <el-button type="primary" @click="openDialog()">
+      <el-button type="primary" @click="openCreateDialog()">
         <el-icon><Plus /></el-icon> {{ $t('templates.newTemplate') }}
       </el-button>
     </div>
@@ -11,15 +11,17 @@
         <el-table-column prop="name" :label="$t('common.name')" min-width="160" />
         <el-table-column prop="format" :label="$t('templates.format')" width="120">
           <template #default="{ row }">
-            <el-tag size="small">{{ $t('enums.templateFormat.' + row.format, row.format) }}</el-tag>
+            <el-tag>{{ $t('enums.templateFormat.' + row.format, row.format) }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="revision" :label="$t('mappings.revision')" width="100" />
-        <el-table-column :label="$t('common.actions')" width="200" fixed="right">
+        <el-table-column :label="$t('common.actions')" width="260" fixed="right">
           <template #default="{ row }">
-            <el-button text type="primary" size="small" @click="openDialog(row)">{{ $t('common.edit') }}</el-button>
-            <el-button text type="info" size="small" @click="openPreview(row)">{{ $t('templates.preview') }}</el-button>
-            <el-button text type="danger" size="small" @click="handleDelete(row)">{{ $t('common.delete') }}</el-button>
+            <div class="action-buttons">
+              <el-button type="primary" @click="openDialog(row)">{{ $t('common.edit') }}</el-button>
+              <el-button type="info" @click="openPreview(row)">{{ $t('templates.preview') }}</el-button>
+              <el-button type="danger" @click="handleDelete(row.id, row.name)">{{ $t('common.delete') }}</el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -73,12 +75,11 @@
             type="textarea"
             :rows="10"
             :placeholder="$t('templates.bodyPlaceholder')"
-            class="monospace-input"
           />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">{{ $t('common.cancel') }}</el-button>
+        <el-button @click="closeDialog">{{ $t('common.cancel') }}</el-button>
         <el-button type="primary" :loading="saving" @click="handleSave">{{ $t('common.save') }}</el-button>
       </template>
     </el-dialog>
@@ -97,7 +98,6 @@
               type="textarea"
               :rows="4"
               placeholder='{"event": {"type": "alert", "message": "test"}}'
-              class="monospace-input"
             />
           </el-form-item>
         </el-form>
@@ -122,7 +122,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { marked } from 'marked'
 import {
@@ -132,24 +132,34 @@ import {
   deleteTemplate,
   previewTemplate,
 } from '@/api/templates'
+import { getErrorMessage } from '@/utils/helpers'
+import { useCrudPage } from '@/composables/useCrudPage'
+import type { TemplateResponse } from '@/api/types'
 
 const { t } = useI18n()
 
-interface TemplateRow {
-  id: string
-  name: string
-  format: string
-  revision: number
-  title_template: string
-  body_template: string
-  [key: string]: unknown
-}
+const {
+  loading,
+  saving,
+  dialogVisible,
+  isEditing,
+  editingId,
+  tableData,
+  total,
+  currentPage,
+  pageSize,
+  fetchData,
+  handleDelete,
+  openCreateDialog,
+  openEditDialog,
+  closeDialog,
+} = useCrudPage<TemplateResponse>({
+  listApi: listTemplates,
+  deleteApi: (id) => deleteTemplate(id),
+  entityI18nKey: 'nav.templates',
+})
 
-const loading = ref(false)
-const saving = ref(false)
-const dialogVisible = ref(false)
-const isEditing = ref(false)
-const editingId = ref('')
+// ── Preview state ────────────────────────────────────────
 
 const previewVisible = ref(false)
 const previewLoading = ref(false)
@@ -169,10 +179,7 @@ const renderedPreviewBody = computed(() => {
 
 const previewFormatType = computed(() => previewResult.value?.format ?? previewFormat.value)
 
-const tableData = ref<TemplateRow[]>([])
-const total = ref(0)
-const currentPage = ref(1)
-const pageSize = ref(20)
+// ── Form ─────────────────────────────────────────────────
 
 const formRef = ref<FormInstance>()
 const form = reactive({
@@ -183,8 +190,8 @@ const form = reactive({
 })
 
 const formRules: FormRules = {
-  name: [{ required: true, message: t('templates.nameRequired'), trigger: 'blur' }],
-  format: [{ required: true, message: t('templates.formatRequired'), trigger: 'change' }],
+  name: [{ required: true, message: () => t('templates.nameRequired'), trigger: 'blur' }],
+  format: [{ required: true, message: () => t('templates.formatRequired'), trigger: 'change' }],
 }
 
 function resetForm() {
@@ -194,41 +201,25 @@ function resetForm() {
   form.body_template = ''
 }
 
-function openDialog(row?: TemplateRow) {
+function openDialog(row?: TemplateResponse) {
   resetForm()
   if (row) {
-    isEditing.value = true
-    editingId.value = row.id
+    openEditDialog(row.id)
     form.name = row.name ?? ''
     form.format = row.format ?? 'text'
     form.title_template = row.title_template ?? ''
     form.body_template = row.body_template ?? ''
   } else {
-    isEditing.value = false
-    editingId.value = ''
+    openCreateDialog()
   }
-  dialogVisible.value = true
 }
 
-function openPreview(row: TemplateRow) {
+function openPreview(row: TemplateResponse) {
   previewTemplateId.value = row.id
   previewFormat.value = row.format ?? 'text'
   previewSampleData.value = '{\n  "event": {\n    "type": "alert",\n    "message": "Test notification"\n  }\n}'
   previewResult.value = null
   previewVisible.value = true
-}
-
-async function fetchData() {
-  loading.value = true
-  try {
-    const res = await listTemplates({ page: currentPage.value, size: pageSize.value })
-    tableData.value = res.data?.data ?? []
-    total.value = res.data?.total ?? 0
-  } catch {
-    ElMessage.error(t('templates.failedToLoadTemplates'))
-  } finally {
-    loading.value = false
-  }
 }
 
 async function handleSave() {
@@ -238,7 +229,7 @@ async function handleSave() {
 
   saving.value = true
   try {
-    const payload: Record<string, unknown> = {
+    const payload: Partial<TemplateResponse> = {
       name: form.name,
       format: form.format,
       title_template: form.title_template,
@@ -251,27 +242,12 @@ async function handleSave() {
       await createTemplate(payload)
       ElMessage.success(t('templates.templateCreated'))
     }
-    dialogVisible.value = false
+    closeDialog()
     await fetchData()
-  } catch {
-    ElMessage.error(t('templates.failedToSaveTemplate'))
+  } catch (e: unknown) {
+    ElMessage.error(getErrorMessage(e, t('templates.failedToSaveTemplate')))
   } finally {
     saving.value = false
-  }
-}
-
-async function handleDelete(row: TemplateRow) {
-  try {
-    await ElMessageBox.confirm(
-      t('common.confirmDeleteMsg', { entity: t('nav.templates'), name: row.name }),
-      t('common.confirmDelete'),
-      { type: 'warning' }
-    )
-    await deleteTemplate(row.id)
-    ElMessage.success(t('templates.templateDeleted'))
-    await fetchData()
-  } catch {
-    // cancelled
   }
 }
 
@@ -295,8 +271,8 @@ async function runPreview() {
       body: res.data?.body ?? '',
       format: res.data?.format ?? previewFormat.value,
     }
-  } catch {
-    ElMessage.error(t('templates.previewFailed'))
+  } catch (e: unknown) {
+    ElMessage.error(getErrorMessage(e, t('templates.previewFailed')))
   } finally {
     previewLoading.value = false
   }
@@ -309,22 +285,7 @@ onMounted(() => {
 
 <style lang="scss" scoped>
 .templates-container {
-  .page-actions {
-    margin-bottom: 16px;
-    display: flex;
-    justify-content: flex-end;
-  }
-
-  .pagination-wrap {
-    margin-top: 16px;
-    display: flex;
-    justify-content: flex-end;
-  }
-
-  :deep(.monospace-input .el-textarea__inner) {
-    font-family: 'Courier New', Courier, monospace;
-    font-size: 13px;
-  }
+  // page-actions, pagination-wrap, action-buttons — provided by global.scss
 
   .preview-form {
     margin-bottom: 8px;
@@ -341,7 +302,6 @@ onMounted(() => {
   }
 
   .preview-title {
-    font-family: 'Courier New', Courier, monospace;
     font-size: 13px;
   }
 
@@ -365,7 +325,6 @@ onMounted(() => {
       background-color: rgba(0, 0, 0, 0.06);
       padding: 2px 6px;
       border-radius: 3px;
-      font-family: 'Courier New', Courier, monospace;
       font-size: 13px;
     }
 

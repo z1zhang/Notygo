@@ -15,28 +15,30 @@
             <el-switch v-model="row.enabled" @change="(val: boolean) => toggleEnabled(row, val)" />
           </template>
         </el-table-column>
-        <el-table-column prop="template_id" :label="$t('rules.template')" width="140">
+        <el-table-column prop="template_id" :label="$t('rules.template')" min-width="140">
           <template #default="{ row }">
-            {{ getTemplateName(row.template_id) }}
+            {{ lookupName(templateOptions, row.template_id ?? '') }}
           </template>
         </el-table-column>
         <el-table-column :label="$t('rules.destinations')" min-width="140">
           <template #default="{ row }">
             <template v-if="(row.destination_ids ?? []).length">
-              <el-tag v-for="dId in (row.destination_ids as string[]).slice(0, 3)" :key="dId" size="small" style="margin-right: 4px">
-                {{ getDestinationName(dId) }}
+              <el-tag v-for="dId in (row.destination_ids as string[]).slice(0, 3)" :key="dId" style="margin-right: 4px">
+                {{ lookupName(destinationOptions, dId) }}
               </el-tag>
-              <el-tag v-if="(row.destination_ids as string[]).length > 3" size="small" type="info">
+              <el-tag v-if="(row.destination_ids as string[]).length > 3" type="info">
                 +{{ (row.destination_ids as string[]).length - 3 }}
               </el-tag>
             </template>
             <span v-else>-</span>
           </template>
         </el-table-column>
-        <el-table-column :label="$t('common.actions')" width="160" fixed="right">
+        <el-table-column :label="$t('common.actions')" width="180" fixed="right">
           <template #default="{ row }">
-            <el-button text type="primary" size="small" @click="openDialog(row)">{{ $t('common.edit') }}</el-button>
-            <el-button text type="danger" size="small" @click="handleDelete(row)">{{ $t('common.delete') }}</el-button>
+            <div class="action-buttons">
+              <el-button type="primary" @click="openDialog(row)">{{ $t('common.edit') }}</el-button>
+              <el-button type="danger" @click="handleDelete(row.id, row.name)">{{ $t('common.delete') }}</el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -100,7 +102,7 @@
         <div v-for="(cond, index) in form.conditions" :key="index" class="condition-card">
           <div class="condition-card-header">
             <span class="condition-card-title">{{ $t('rules.conditionNo', { n: index + 1 }) }}</span>
-            <el-button text type="danger" size="small" @click="removeCondition(index)">
+            <el-button text type="danger" @click="removeCondition(index)">
               <el-icon><Delete /></el-icon> {{ $t('common.remove') }}
             </el-button>
           </div>
@@ -217,7 +219,7 @@
       </el-form>
 
       <template #footer>
-        <el-button @click="dialogVisible = false">{{ $t('common.cancel') }}</el-button>
+        <el-button @click="closeDialog">{{ $t('common.cancel') }}</el-button>
         <el-button type="primary" :loading="saving" @click="handleSave">{{ $t('common.save') }}</el-button>
       </template>
     </el-dialog>
@@ -227,53 +229,44 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Delete } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { listRules, createRule, updateRule, deleteRule } from '@/api/rules'
-import { listTemplates } from '@/api/templates'
-import { listDestinations } from '@/api/destinations'
+import type { RuleResponse, Condition } from '@/api/types'
+import { getErrorMessage } from '@/utils/helpers'
+import { lookupName } from '@/utils/lookup'
+import { useCrudPage } from '@/composables/useCrudPage'
+import { useOptions } from '@/composables/useOptions'
 
 const { t } = useI18n()
+
+const {
+  loading,
+  saving,
+  dialogVisible,
+  isEditing,
+  editingId,
+  tableData,
+  total,
+  currentPage,
+  pageSize,
+  fetchData,
+  handleDelete,
+  closeDialog,
+} = useCrudPage<RuleResponse>({
+  listApi: listRules,
+  deleteApi: (id) => deleteRule(id),
+  entityI18nKey: 'nav.rules',
+})
+
+const { templateOptions, destinationOptions, fetchTemplateOptions, fetchDestinationOptions } = useOptions()
 
 interface ConditionRow {
   field: string
   operator: string
   value: string
 }
-
-interface RuleRow {
-  id: string
-  name: string
-  priority: number
-  enabled: boolean
-  condition_mode: string
-  continue_on_match: boolean
-  conditions: ConditionRow[]
-  template_id: string
-  destination_ids: string[]
-  dedupe_config?: { window_seconds: number; key_fields: string[]; action: string } | null
-  [key: string]: unknown
-}
-
-interface NameOption {
-  id: string
-  name: string
-}
-
-const loading = ref(false)
-const saving = ref(false)
-const dialogVisible = ref(false)
-const isEditing = ref(false)
-const editingId = ref('')
-
-const tableData = ref<RuleRow[]>([])
-const total = ref(0)
-const currentPage = ref(1)
-const pageSize = ref(20)
-
-const templateOptions = ref<NameOption[]>([])
-const destinationOptions = ref<NameOption[]>([])
 
 const formRef = ref<FormInstance>()
 const form = reactive({
@@ -292,7 +285,7 @@ const form = reactive({
 })
 
 const formRules: FormRules = {
-  name: [{ required: true, message: t('rules.nameRequired'), trigger: 'blur' }],
+  name: [{ required: true, message: () => t('rules.nameRequired'), trigger: 'blur' }],
 }
 
 function isExistenceOp(op: string): boolean {
@@ -317,23 +310,13 @@ function removeCondition(index: number) {
   form.conditions.splice(index, 1)
 }
 
-function getTemplateName(id: string): string {
-  if (!id) return '-'
-  return templateOptions.value.find((tp) => tp.id === id)?.name ?? id
-}
-
-function getDestinationName(id: string): string {
-  if (!id) return id
-  return destinationOptions.value.find((d) => d.id === id)?.name ?? id.slice(0, 8)
-}
-
 function resetForm() {
   form.name = ''
   form.priority = 0
   form.enabled = true
   form.condition_mode = 'and'
   form.continue_on_match = false
-  form.conditions = [createEmptyCondition()]
+  form.conditions = []
   form.template_id = ''
   form.destination_ids = []
   form.dedupe_window = 0
@@ -341,7 +324,7 @@ function resetForm() {
   form.dedupe_action = ''
 }
 
-function openDialog(row?: RuleRow) {
+function openDialog(row?: RuleResponse) {
   resetForm()
   if (row) {
     isEditing.value = true
@@ -360,16 +343,16 @@ function openDialog(row?: RuleRow) {
       form.conditions = (rawConds as ConditionRow[]).map((c) => ({ ...createEmptyCondition(), ...c }))
     } else if (rawConds && typeof rawConds === 'object') {
       // ConditionGroup format: { operator, conditions: [...] }
-      const group = rawConds as { operator?: string; conditions?: ConditionRow[] }
+      const group = rawConds as { operator?: string; conditions?: Condition[] }
       const groupConds = group.conditions ?? []
       form.conditions = groupConds.length
         ? groupConds.map((c) => ({ ...createEmptyCondition(), ...c }))
-        : [createEmptyCondition()]
+        : []
       if (group.operator) {
         form.condition_mode = group.operator
       }
     } else {
-      form.conditions = [createEmptyCondition()]
+      form.conditions = []
     }
 
     form.template_id = row.template_id ?? ''
@@ -386,36 +369,6 @@ function openDialog(row?: RuleRow) {
     editingId.value = ''
   }
   dialogVisible.value = true
-}
-
-async function fetchData() {
-  loading.value = true
-  try {
-    const res = await listRules({ page: currentPage.value, size: pageSize.value })
-    tableData.value = res.data?.data ?? []
-    total.value = res.data?.total ?? 0
-  } catch {
-    ElMessage.error(t('rules.failedToLoadRules'))
-  } finally {
-    loading.value = false
-  }
-}
-
-async function fetchOptions() {
-  try {
-    const [templatesRes, destinationsRes] = await Promise.all([
-      listTemplates({ page: 1, size: 200 }),
-      listDestinations({ page: 1, size: 200 }),
-    ])
-    templateOptions.value = (templatesRes.data?.data ?? []).map(
-      (tp: Record<string, unknown>) => ({ id: String(tp.id ?? ''), name: String(tp.name ?? '') })
-    )
-    destinationOptions.value = (destinationsRes.data?.data ?? []).map(
-      (d: Record<string, unknown>) => ({ id: String(d.id ?? ''), name: String(d.name ?? '') })
-    )
-  } catch {
-    // silent
-  }
 }
 
 async function handleSave() {
@@ -465,59 +418,35 @@ async function handleSave() {
       await createRule(payload)
       ElMessage.success(t('rules.ruleCreated'))
     }
-    dialogVisible.value = false
+    closeDialog()
     await fetchData()
-  } catch {
-    ElMessage.error(t('rules.failedToSaveRule'))
+  } catch (e: unknown) {
+    ElMessage.error(getErrorMessage(e, t('rules.failedToSaveRule')))
   } finally {
     saving.value = false
   }
 }
 
-async function toggleEnabled(row: RuleRow, val: boolean) {
+async function toggleEnabled(row: RuleResponse, val: boolean) {
   try {
     await updateRule(row.id, { enabled: val })
     ElMessage.success(val ? t('rules.ruleEnabled') : t('rules.ruleDisabled'))
-  } catch {
+  } catch (e: unknown) {
     row.enabled = !val
-    ElMessage.error(t('rules.failedToToggleRule'))
-  }
-}
-
-async function handleDelete(row: RuleRow) {
-  try {
-    await ElMessageBox.confirm(
-      t('common.confirmDeleteMsg', { entity: t('nav.rules'), name: row.name }),
-      t('common.confirmDelete'),
-      { type: 'warning' }
-    )
-    await deleteRule(row.id)
-    ElMessage.success(t('rules.ruleDeleted'))
-    await fetchData()
-  } catch {
-    // cancelled
+    ElMessage.error(getErrorMessage(e, t('rules.failedToToggleRule')))
   }
 }
 
 onMounted(() => {
   fetchData()
-  fetchOptions()
+  fetchTemplateOptions()
+  fetchDestinationOptions()
 })
 </script>
 
 <style lang="scss" scoped>
 .rules-container {
-  .page-actions {
-    margin-bottom: 16px;
-    display: flex;
-    justify-content: flex-end;
-  }
-
-  .pagination-wrap {
-    margin-top: 16px;
-    display: flex;
-    justify-content: flex-end;
-  }
+  // page-actions, pagination-wrap, action-buttons — provided by global.scss
 
   .condition-card {
     margin-bottom: 12px;

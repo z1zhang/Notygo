@@ -1,0 +1,50 @@
+// Global table row height — ensures consistent row height across all views
+// regardless of cell content (el-switch, el-tag, etc.)
+.el-table {
+  .el-table__cell {
+    padding: 10px 0;
+  }
+
+  // min-height accommodates el-switch / el-button (32px default height)
+  // so plain-text rows match rows with interactive controls
+  .cell {
+    display: flex;
+    align-items: center;
+    min-height: 32px;
+  }
+}
+
+// Shared page layout styles (extracted from all views)
+.page-actions {
+  margin-bottom: 16px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.page-filters {
+  margin-bottom: 16px;
+  display: flex;
+  gap: 12px;
+}
+
+.pagination-wrap {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.action-buttons {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+// Cell text truncation that works inside flex .cell
+// Use with <el-tooltip :content="text"><span class="cell-ellipsis">{{ text }}</span></el-tooltip>
+.cell-ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+}
