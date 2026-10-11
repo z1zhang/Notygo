@@ -61,10 +61,10 @@ func AdminAuthMiddleware(db *sql.DB) func(http.Handler) http.Handler {
 				return
 			}
 
-			nowCompare := storage.NowCompare()
+			nowExpr := storage.NowExpr()
 			var userID string
 			err := db.QueryRowContext(r.Context(),
-				"SELECT user_id FROM sessions WHERE token = ? AND expires_at > "+nowCompare,
+				"SELECT user_id FROM sessions WHERE token = ? AND expires_at > "+nowExpr,
 				token,
 			).Scan(&userID)
 

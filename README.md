@@ -6,7 +6,7 @@
 
 - 🔄 **事件路由** — Webhook 接入 → 字段映射 → 规则匹配 → 模板渲染 → 多目标投递，完整的事件处理管线
 - 📨 **多通道推送** — 内置钉钉、飞书、企业微信、Email、自定义 HTTP Webhook 五种发送器
-- 🗄️ **双数据库引擎** — 开箱即用 SQLite，生产环境可切换 MySQL
+- 🗄️ **MySQL 数据库** — MySQL 8.0，InnoDB 引擎，JSON 列类型
 - 🔐 **安全设计** — 密钥加密存储、JWT 认证、请求限流、Payload 去重
 - 🛡️ **可靠投递** — 基于 Lease 的任务认领、指数退避重试、熔断器、超时租约回收
 - 🌐 **Web 管理界面** — Vue 3 + Element Plus，支持 i18n 国际化
@@ -63,9 +63,7 @@ ENCRYPTION_MASTER_KEY="v1:your-base64-key" ./zpush
 | 变量 | 默认值 | 说明 |
 |---|---|---|
 | `LISTEN_ADDR` | `:9003` | 监听地址 |
-| `DB_DRIVER` | `sqlite` | 数据库引擎：`sqlite` 或 `mysql` |
-| `DATABASE_PATH` | `data/zpush.db` | SQLite 数据库路径（`DB_DRIVER=sqlite` 时） |
-| `DATABASE_DSN` | — | MySQL 连接串（`DB_DRIVER=mysql` 时），格式：`user:pass@tcp(host:3306)/zpush?parseTime=true` |
+| `DATABASE_DSN` | **必填** | MySQL 连接串，格式：`user:pass@tcp(host:3306)/zpush?parseTime=true` |
 | `ENCRYPTION_MASTER_KEY` | **必填** | 加密主密钥，格式 `v1:base64...` |
 | `ADMIN_INITIAL_PASSWORD` | — | 首次启动时创建 admin 用户的密码 |
 | `LOG_LEVEL` | `info` | 日志级别 |
@@ -75,12 +73,11 @@ ENCRYPTION_MASTER_KEY="v1:your-base64-key" ./zpush
 | `INGEST_GLOBAL_RATE_LIMIT` | `100/200` | 全局限流（rate/burst 格式） |
 | `EVENT_RETENTION_DAYS` | `30` | 事件保留天数 |
 
-### MySQL 模式
+### MySQL 配置
 
-在 `docker-compose.yml` 中取消 MySQL 服务和 `depends_on` 的注释，然后设置：
+Docker Compose 已默认包含 MySQL 服务，启动即可：
 
 ```bash
-DB_DRIVER=mysql
 DATABASE_DSN=user:password@tcp(mysql:3306)/zpush?parseTime=true
 ```
 
@@ -91,7 +88,6 @@ DATABASE_DSN=user:password@tcp(mysql:3306)/zpush?parseTime=true
 - Go 1.26
 - [chi/v5](https://github.com/go-chi/chi) — HTTP 路由
 - [goose/v3](https://github.com/pressly/goose) — 数据库迁移
-- [modernc.org/sqlite](https://modernc.org/sqlite/) — 纯 Go SQLite 驱动
 - [go-sql-driver/mysql](https://github.com/go-sql-driver/mysql) — MySQL 驱动
 - [tidwall/gjson](https://github.com/tidwall/gjson) — JSON 路径查询
 - [sethvargo/go-retry](https://github.com/sethvargo/go-retry) — 重试策略
@@ -121,8 +117,7 @@ internal/
   rules/              — 规则模型 / 仓库
   sender/             — 发送器：dingtalk, feishu, wecom, email, http_webhook
   source/             — Webhook 来源
-  storage/            — 数据库打开 / 迁移 / 方言抽象
-    migrations/sqlite/  — SQLite 迁移脚本
+  storage/            — 数据库打开 / 迁移 / 时间格式化
     migrations/mysql/   — MySQL 迁移脚本
   templates/          — 模板
   secret/             — 加解密服务

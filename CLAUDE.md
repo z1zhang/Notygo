@@ -7,7 +7,7 @@ zPush 是自托管的 Webhook 事件路由与通知推送系统。接收外部 W
 ## 技术栈
 
 - **后端**: Go 1.26, chi/v5, goose 迁移
-- **数据库**: SQLite（modernc.org/sqlite）或 MySQL（go-sql-driver/mysql）
+- **数据库**: MySQL（go-sql-driver/mysql）
 - **前端**: Vue 3 + TypeScript + Element Plus + vue-i18n + Pinia + Vite + marked
 - **部署**: Docker 多阶段构建，单端口服务前后端
 
@@ -20,14 +20,13 @@ Webhook POST → Ingest(验证/限流/去重) → events 表
   → Lease Recovery 定时回收超时 claim
 ```
 
-## 数据库双引擎
+## 数据库
 
-- **SQLite**（默认）: `DB_DRIVER=sqlite`, `DATABASE_PATH=/data/zpush.db`, MaxOpenConns=1
-- **MySQL**: `DB_DRIVER=mysql`, `DATABASE_DSN=user:pass@tcp(host:3306)/zpush?parseTime=true`
+- **MySQL**: `DATABASE_DSN=user:pass@tcp(host:3306)/zpush?parseTime=true`
+- 连接池：MaxOpenConns=25, MaxIdleConns=10, ConnMaxLifetime=5m, ConnMaxIdleTime=2m
+- 迁移文件：`internal/storage/migrations/mysql/`
 
-方言抽象在 `internal/storage/dialect.go`：`NowExpr()`, `FormatTime()`, `ParseTime()`, `FormatNow()`
-
-### MySQL 兼容要点（踩过的坑）
+### MySQL 踩坑要点
 
 1. **UPDATE 子查询不能直接引用同表**，必须双层嵌套：
    ```sql
@@ -56,8 +55,7 @@ internal/
   rules/             — 规则模型/仓库
   sender/            — 发送器：dingtalk, feishu, wecom, email, http_webhook
   source/            — Webhook 来源
-  storage/           — 数据库打开/迁移/方言抽象
-    migrations/sqlite/  — SQLite 迁移
+  storage/           — 数据库打开/迁移/时间格式化
     migrations/mysql/   — MySQL 迁移
   templates/         — 模板
   secret/            — 加解密服务
@@ -72,9 +70,7 @@ deploy/              — docker-compose.yml
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | LISTEN_ADDR | :9003 | 监听地址 |
-| DB_DRIVER | sqlite | sqlite 或 mysql |
-| DATABASE_PATH | data/zpush.db | SQLite 路径 |
-| DATABASE_DSN | | MySQL DSN |
+| DATABASE_DSN | 必填 | MySQL 连接串 |
 | ENCRYPTION_MASTER_KEY | 必填 | v1:base64... |
 | ADMIN_INITIAL_PASSWORD | | 首次启动创建 admin |
 | LOG_LEVEL | info | |

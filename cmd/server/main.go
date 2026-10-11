@@ -44,7 +44,7 @@ func main() {
 	slog.Info("starting zPush", "listen_addr", cfg.Server.ListenAddr)
 
 	// Open database
-	db, err := storage.Open(cfg.Database)
+	db, err := storage.Open(cfg.Database.DSN)
 	if err != nil {
 		slog.Error("open database", "error", err)
 		os.Exit(1)

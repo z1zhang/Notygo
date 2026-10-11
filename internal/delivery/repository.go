@@ -124,14 +124,14 @@ func (r *Repository) List(ctx context.Context, page, size int, statusFilter, des
 // ClaimDelivery attempts to claim a delivery for sending by the given worker.
 func (r *Repository) ClaimDelivery(ctx context.Context, workerID string, leaseTimeout time.Duration) (*Delivery, error) {
 	leaseUntil := storage.FormatTime(time.Now().UTC().Add(leaseTimeout))
-	nowCompare := storage.NowCompare()
+	nowExpr := storage.NowExpr()
 
 	result, err := r.db.ExecContext(ctx,
 		"UPDATE deliveries SET status = ?, lease_until = ?, lease_owner = ?, attempt_count = attempt_count + 1, updated_at = ?"+
 			" WHERE id = ("+
 			" SELECT id FROM ("+
 			" SELECT id FROM deliveries"+
-			" WHERE status IN ('pending', 'retry_wait') AND next_attempt_at <= "+nowCompare+
+			" WHERE status IN ('pending', 'retry_wait') AND next_attempt_at <= "+nowExpr+
 			" ORDER BY next_attempt_at ASC"+
 			" LIMIT 1"+
 			") AS claimable"+

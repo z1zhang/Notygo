@@ -24,10 +24,10 @@ func LeaseRecoveryLoop(ctx context.Context, db *sql.DB, interval time.Duration) 
 			return
 
 		case <-ticker.C:
-			nowCompare := storage.NowCompare()
+			nowExpr := storage.NowExpr()
 			result, err := db.ExecContext(ctx,
-				"UPDATE deliveries SET status='pending', attempt_count=attempt_count-1, lease_until=NULL, lease_owner=NULL, updated_at="+nowCompare+
-					" WHERE status='sending' AND lease_until IS NOT NULL AND lease_until < "+nowCompare)
+				"UPDATE deliveries SET status='pending', attempt_count=attempt_count-1, lease_until=NULL, lease_owner=NULL, updated_at="+nowExpr+
+					" WHERE status='sending' AND lease_until IS NOT NULL AND lease_until < "+nowExpr)
 			if err != nil {
 				slog.Error("delivery lease recovery error", "error", err)
 				continue
