@@ -1,7 +1,7 @@
 <template>
   <div class="templates-container">
     <div class="page-actions">
-      <el-button type="primary" @click="openCreateDialog()">
+      <el-button type="primary" @click="openDialog()">
         <el-icon><Plus /></el-icon> {{ $t('templates.newTemplate') }}
       </el-button>
     </div>

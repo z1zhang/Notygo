@@ -1,3 +1,9 @@
+// Reset browser default body margin (causes white border around the page)
+body {
+  margin: 0;
+  padding: 0;
+}
+
 // Global table row height — ensures consistent row height across all views
 // regardless of cell content (el-switch, el-tag, etc.)
 .el-table {
