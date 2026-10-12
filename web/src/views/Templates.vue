@@ -15,11 +15,10 @@
           </template>
         </el-table-column>
         <el-table-column prop="revision" :label="$t('mappings.revision')" width="100" />
-        <el-table-column :label="$t('common.actions')" width="260" fixed="right">
+        <el-table-column :label="$t('common.actions')" width="180" fixed="right">
           <template #default="{ row }">
             <div class="action-buttons">
               <el-button type="primary" @click="openDialog(row)">{{ $t('common.edit') }}</el-button>
-              <el-button type="info" @click="openPreview(row)">{{ $t('templates.preview') }}</el-button>
               <el-button type="danger" @click="handleDelete(row.id, row.name)">{{ $t('common.delete') }}</el-button>
             </div>
           </template>
@@ -78,42 +77,31 @@
           />
         </el-form-item>
       </el-form>
+
+      <!-- Preview section inside the dialog -->
+      <el-divider content-position="left">{{ $t('templates.templatePreview') }}</el-divider>
+      <el-form label-width="auto" label-position="left" class="preview-form">
+        <el-form-item :label="$t('templates.sampleData')">
+          <el-input
+            v-model="previewSampleData"
+            type="textarea"
+            :rows="4"
+            placeholder='{"event": {"type": "alert", "message": "test"}}'
+          />
+        </el-form-item>
+      </el-form>
+      <div v-if="previewResult">
+        <h4>{{ $t('templates.title') }}</h4>
+        <div class="preview-output preview-title">{{ previewResult.title ?? '' }}</div>
+        <h4 style="margin-top: 12px">{{ $t('templates.body') }}</h4>
+        <div v-if="previewFormatType === 'html' || previewFormatType === 'markdown'" class="preview-output preview-body-rich" v-html="renderedPreviewBody" />
+        <pre v-else class="preview-output">{{ previewResult.body ?? '' }}</pre>
+      </div>
+
       <template #footer>
         <el-button @click="closeDialog">{{ $t('common.cancel') }}</el-button>
         <el-button type="primary" :loading="saving" @click="handleSave">{{ $t('common.save') }}</el-button>
-      </template>
-    </el-dialog>
-
-    <el-dialog
-      v-model="previewVisible"
-      :title="$t('templates.templatePreview')"
-      width="640px"
-      destroy-on-close
-    >
-      <div v-loading="previewLoading">
-        <el-form label-width="auto" label-position="left" class="preview-form">
-          <el-form-item :label="$t('templates.sampleData')">
-            <el-input
-              v-model="previewSampleData"
-              type="textarea"
-              :rows="4"
-              placeholder='{"event": {"type": "alert", "message": "test"}}'
-            />
-          </el-form-item>
-        </el-form>
-        <el-divider />
-        <div v-if="previewResult">
-          <h4>{{ $t('templates.title') }}</h4>
-          <div class="preview-output preview-title">{{ previewResult.title ?? '' }}</div>
-          <h4 style="margin-top: 12px">{{ $t('templates.body') }}</h4>
-          <!-- Rendered body: HTML for html/markdown, plain <pre> for text -->
-          <div v-if="previewFormatType === 'html' || previewFormatType === 'markdown'" class="preview-output preview-body-rich" v-html="renderedPreviewBody" />
-          <pre v-else class="preview-output">{{ previewResult.body ?? '' }}</pre>
-        </div>
-      </div>
-      <template #footer>
-        <el-button @click="previewVisible = false">{{ $t('common.close') }}</el-button>
-        <el-button type="primary" :loading="previewLoading" @click="runPreview">{{ $t('templates.render') }}</el-button>
+        <el-button type="info" :loading="previewLoading || saving" @click="handleSaveAndPreview">{{ $t('templates.render') }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -161,10 +149,7 @@ const {
 
 // ── Preview state ────────────────────────────────────────
 
-const previewVisible = ref(false)
 const previewLoading = ref(false)
-const previewTemplateId = ref('')
-const previewFormat = ref('text')
 const previewSampleData = ref('{\n  "event": {\n    "type": "alert",\n    "message": "Test notification"\n  }\n}')
 const previewResult = ref<{ title: string; body: string; format: string } | null>(null)
 
@@ -177,7 +162,7 @@ const renderedPreviewBody = computed(() => {
   return ''
 })
 
-const previewFormatType = computed(() => previewResult.value?.format ?? previewFormat.value)
+const previewFormatType = computed(() => previewResult.value?.format ?? form.format)
 
 // ── Form ─────────────────────────────────────────────────
 
@@ -199,6 +184,8 @@ function resetForm() {
   form.format = 'text'
   form.title_template = ''
   form.body_template = ''
+  previewSampleData.value = '{\n  "event": {\n    "type": "alert",\n    "message": "Test notification"\n  }\n}'
+  previewResult.value = null
 }
 
 function openDialog(row?: TemplateResponse) {
@@ -212,14 +199,6 @@ function openDialog(row?: TemplateResponse) {
   } else {
     openCreateDialog()
   }
-}
-
-function openPreview(row: TemplateResponse) {
-  previewTemplateId.value = row.id
-  previewFormat.value = row.format ?? 'text'
-  previewSampleData.value = '{\n  "event": {\n    "type": "alert",\n    "message": "Test notification"\n  }\n}'
-  previewResult.value = null
-  previewVisible.value = true
 }
 
 async function handleSave() {
@@ -251,25 +230,61 @@ async function handleSave() {
   }
 }
 
+async function handleSaveAndPreview() {
+  if (!formRef.value) return
+  const valid = await formRef.value.validate().catch(() => false)
+  if (!valid) return
+
+  saving.value = true
+  try {
+    const payload: Partial<TemplateResponse> = {
+      name: form.name,
+      format: form.format,
+      title_template: form.title_template,
+      body_template: form.body_template,
+    }
+    if (isEditing.value) {
+      await updateTemplate(editingId.value, payload)
+    } else {
+      const res = await createTemplate(payload)
+      editingId.value = (res.data as TemplateResponse)?.id ?? editingId.value
+      isEditing.value = true
+    }
+    await fetchData()
+    // Now run preview without closing the dialog
+    await runPreview()
+  } catch (e: unknown) {
+    ElMessage.error(getErrorMessage(e, t('templates.failedToSaveTemplate')))
+  } finally {
+    saving.value = false
+  }
+}
+
 async function runPreview() {
+  if (!editingId.value) {
+    ElMessage.warning(t('templates.previewFailed'))
+    return
+  }
+
+  let sampleData: Record<string, unknown>
+  try {
+    sampleData = JSON.parse(previewSampleData.value)
+  } catch {
+    ElMessage.error(t('templates.invalidJson'))
+    return
+  }
+
   previewLoading.value = true
   previewResult.value = null
   try {
-    let sampleData: Record<string, unknown>
-    try {
-      sampleData = JSON.parse(previewSampleData.value)
-    } catch {
-      ElMessage.error(t('templates.invalidJson'))
-      return
-    }
     const res = await previewTemplate({
-      template_id: previewTemplateId.value,
+      template_id: editingId.value,
       sample_data: sampleData,
     })
     previewResult.value = {
       title: res.data?.title ?? '',
       body: res.data?.body ?? '',
-      format: res.data?.format ?? previewFormat.value,
+      format: res.data?.format ?? form.format,
     }
   } catch (e: unknown) {
     ElMessage.error(getErrorMessage(e, t('templates.previewFailed')))

@@ -536,3 +536,149 @@ func TestApply_DefaultValueInvalidNumber(t *testing.T) {
 		t.Errorf("expected PARSE_003 for invalid number default, got: %v", errs)
 	}
 }
+
+func TestApply_MultiResultMode_ArrayOfBooleans(t *testing.T) {
+	// Regression: #.image.tag.semver returns [false, false, false, true] from Diun
+	// When multi_result_mode is "array", value_type must be "array" (not "boolean")
+	arrMode := "array"
+	m := &Mapping{
+		Fields: []MappingEntry{
+			{SourcePath: "#.tag.semver", TargetKey: "tag_semvers", ValueType: "array", MultiResultMode: &arrMode},
+		},
+	}
+	payload := `[{"tag":{"semver":false}},{"tag":{"semver":false}},{"tag":{"semver":true}}]`
+
+	fields, errs, err := Apply(m, payload)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(errs) != 0 {
+		t.Fatalf("unexpected validation errors: %v", errs)
+	}
+	arr, ok := fields["tag_semvers"].([]any)
+	if !ok {
+		t.Fatalf("tag_semvers is not []any, got %T", fields["tag_semvers"])
+	}
+	if len(arr) != 3 {
+		t.Errorf("tag_semvers length = %d, want 3", len(arr))
+	}
+}
+
+func TestApply_MultiResultMode_JoinArrayOfBooleans(t *testing.T) {
+	// join(, ) on boolean elements produces string output, so value_type must be "string"
+	joinMode := "join(, )"
+	m := &Mapping{
+		Fields: []MappingEntry{
+			{SourcePath: "#.tag.semver", TargetKey: "tag_semvers_joined", ValueType: "string", MultiResultMode: &joinMode},
+		},
+	}
+	payload := `[{"tag":{"semver":false}},{"tag":{"semver":true}}]`
+
+	fields, errs, err := Apply(m, payload)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(errs) != 0 {
+		t.Fatalf("unexpected validation errors: %v", errs)
+	}
+	if fields["tag_semvers_joined"] != "false, true" {
+		t.Errorf("tag_semvers_joined = %v, want 'false, true'", fields["tag_semvers_joined"])
+	}
+}
+
+func TestApply_MultiResultMode_FirstArrayOfBooleans(t *testing.T) {
+	// "first" mode extracts one boolean element, so value_type "boolean" is correct
+	firstMode := "first"
+	m := &Mapping{
+		Fields: []MappingEntry{
+			{SourcePath: "#.tag.semver", TargetKey: "first_semver", ValueType: "boolean", MultiResultMode: &firstMode},
+		},
+	}
+	payload := `[{"tag":{"semver":false}},{"tag":{"semver":true}}]`
+
+	fields, errs, err := Apply(m, payload)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(errs) != 0 {
+		t.Fatalf("unexpected validation errors: %v", errs)
+	}
+	if fields["first_semver"] != false {
+		t.Errorf("first_semver = %v, want false", fields["first_semver"])
+	}
+}
+
+func TestApply_HashPath_WholeArray(t *testing.T) {
+	// Regression: gjson "#" returns array count (a number), not the array itself.
+	// We must use gjson.Parse for bare "#" to get the root array.
+	arrMode := "array"
+	m := &Mapping{
+		Fields: []MappingEntry{
+			{SourcePath: "#", TargetKey: "items", ValueType: "array", MultiResultMode: &arrMode},
+		},
+	}
+	payload := `[{"name":"dbx"},{"name":"redis"},{"name":"mysql"},{"name":"piclist"}]`
+
+	fields, errs, err := Apply(m, payload)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(errs) != 0 {
+		t.Fatalf("unexpected validation errors: %v", errs)
+	}
+	arr, ok := fields["items"].([]any)
+	if !ok {
+		t.Fatalf("items is not []any, got %T", fields["items"])
+	}
+	if len(arr) != 4 {
+		t.Errorf("items length = %d, want 4", len(arr))
+	}
+}
+
+func TestApply_HashPath_Count(t *testing.T) {
+	// "#" with count mode should still return the array length
+	countMode := "count"
+	m := &Mapping{
+		Fields: []MappingEntry{
+			{SourcePath: "#", TargetKey: "item_count", ValueType: "number", MultiResultMode: &countMode},
+		},
+	}
+	payload := `[{"name":"dbx"},{"name":"redis"},{"name":"mysql"}]`
+
+	fields, errs, err := Apply(m, payload)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(errs) != 0 {
+		t.Fatalf("unexpected validation errors: %v", errs)
+	}
+	if fields["item_count"] != float64(3) {
+		t.Errorf("item_count = %v, want 3", fields["item_count"])
+	}
+}
+
+func TestApply_HashPath_First(t *testing.T) {
+	// "#" with first mode should return the first element
+	firstMode := "first"
+	m := &Mapping{
+		Fields: []MappingEntry{
+			{SourcePath: "#", TargetKey: "first_item", ValueType: "object", MultiResultMode: &firstMode},
+		},
+	}
+	payload := `[{"name":"dbx"},{"name":"redis"}]`
+
+	fields, errs, err := Apply(m, payload)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(errs) != 0 {
+		t.Fatalf("unexpected validation errors: %v", errs)
+	}
+	obj, ok := fields["first_item"].(map[string]any)
+	if !ok {
+		t.Fatalf("first_item is not map[string]any, got %T", fields["first_item"])
+	}
+	if obj["name"] != "dbx" {
+		t.Errorf("first_item.name = %v, want dbx", obj["name"])
+	}
+}

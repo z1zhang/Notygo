@@ -10,13 +10,11 @@ func TestRender_BasicFields(t *testing.T) {
 		ID:            "t1",
 		Name:          "test",
 		Format:        "markdown",
-		TitleTemplate: "Alert: {{.Fields.name}}",
-		BodyTemplate:  "Status is {{.Fields.status}}",
+		TitleTemplate: "Alert: {{.name}}",
+		BodyTemplate:  "Status is {{.status}}",
 		Revision:      1,
 	}
-	data := TemplateData{
-		Fields: map[string]any{"name": "web-server", "status": "critical"},
-	}
+	data := map[string]any{"name": "web-server", "status": "critical"}
 
 	result, err := Render(tmpl, data)
 	if err != nil {
@@ -42,11 +40,11 @@ func TestRender_EventMeta(t *testing.T) {
 		BodyTemplate:  "Received at {{.Event.ReceivedAt}} from {{.Event.SourceName}}",
 		Revision:      1,
 	}
-	data := TemplateData{
-		Event: EventMeta{
-			ID:         "evt-123",
-			ReceivedAt: "2025-01-01T00:00:00Z",
-			SourceName: "monitoring",
+	data := map[string]any{
+		"Event": map[string]any{
+			"ID":         "evt-123",
+			"ReceivedAt": "2025-01-01T00:00:00Z",
+			"SourceName": "monitoring",
 		},
 	}
 
@@ -65,10 +63,10 @@ func TestRender_EventMeta(t *testing.T) {
 func TestRender_FuncMap_Upper(t *testing.T) {
 	tmpl := &Template{
 		Format:        "text",
-		TitleTemplate: "{{upper .Fields.name}}",
+		TitleTemplate: "{{upper .name}}",
 		BodyTemplate:  "",
 	}
-	data := TemplateData{Fields: map[string]any{"name": "alice"}}
+	data := map[string]any{"name": "alice"}
 
 	result, err := Render(tmpl, data)
 	if err != nil {
@@ -82,10 +80,10 @@ func TestRender_FuncMap_Upper(t *testing.T) {
 func TestRender_FuncMap_Lower(t *testing.T) {
 	tmpl := &Template{
 		Format:        "text",
-		TitleTemplate: "{{lower .Fields.name}}",
+		TitleTemplate: "{{lower .name}}",
 		BodyTemplate:  "",
 	}
-	data := TemplateData{Fields: map[string]any{"name": "ALICE"}}
+	data := map[string]any{"name": "ALICE"}
 
 	result, err := Render(tmpl, data)
 	if err != nil {
@@ -99,10 +97,10 @@ func TestRender_FuncMap_Lower(t *testing.T) {
 func TestRender_FuncMap_Trim(t *testing.T) {
 	tmpl := &Template{
 		Format:        "text",
-		TitleTemplate: "{{trim .Fields.name}}",
+		TitleTemplate: "{{trim .name}}",
 		BodyTemplate:  "",
 	}
-	data := TemplateData{Fields: map[string]any{"name": "  alice  "}}
+	data := map[string]any{"name": "  alice  "}
 
 	result, err := Render(tmpl, data)
 	if err != nil {
@@ -116,10 +114,10 @@ func TestRender_FuncMap_Trim(t *testing.T) {
 func TestRender_FuncMap_Title(t *testing.T) {
 	tmpl := &Template{
 		Format:        "text",
-		TitleTemplate: "{{title .Fields.name}}",
+		TitleTemplate: "{{title .name}}",
 		BodyTemplate:  "",
 	}
-	data := TemplateData{Fields: map[string]any{"name": "hello world"}}
+	data := map[string]any{"name": "hello world"}
 
 	result, err := Render(tmpl, data)
 	if err != nil {
@@ -133,10 +131,10 @@ func TestRender_FuncMap_Title(t *testing.T) {
 func TestRender_FuncMap_Len(t *testing.T) {
 	tmpl := &Template{
 		Format:        "text",
-		TitleTemplate: "Count: {{len .Fields.items}}",
+		TitleTemplate: "Count: {{len .items}}",
 		BodyTemplate:  "",
 	}
-	data := TemplateData{Fields: map[string]any{"items": []any{"a", "b", "c"}}}
+	data := map[string]any{"items": []any{"a", "b", "c"}}
 
 	result, err := Render(tmpl, data)
 	if err != nil {
@@ -150,12 +148,12 @@ func TestRender_FuncMap_Len(t *testing.T) {
 func TestRender_FuncMap_Default(t *testing.T) {
 	tmpl := &Template{
 		Format:        "text",
-		TitleTemplate: `{{default "unknown" .Fields.name}}`,
+		TitleTemplate: `{{default "unknown" .name}}`,
 		BodyTemplate:  "",
 	}
 
 	// With missing field
-	data := TemplateData{Fields: map[string]any{}}
+	data := map[string]any{}
 	result, err := Render(tmpl, data)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -165,7 +163,7 @@ func TestRender_FuncMap_Default(t *testing.T) {
 	}
 
 	// With existing field
-	data = TemplateData{Fields: map[string]any{"name": "alice"}}
+	data = map[string]any{"name": "alice"}
 	result, err = Render(tmpl, data)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -178,10 +176,10 @@ func TestRender_FuncMap_Default(t *testing.T) {
 func TestRender_SyntaxError(t *testing.T) {
 	tmpl := &Template{
 		Format:        "text",
-		TitleTemplate: "{{.Fields.missing",
+		TitleTemplate: "{{.missing",
 		BodyTemplate:  "ok",
 	}
-	data := TemplateData{Fields: map[string]any{}}
+	data := map[string]any{}
 
 	_, err := Render(tmpl, data)
 	if err == nil {
@@ -192,14 +190,12 @@ func TestRender_SyntaxError(t *testing.T) {
 func TestRender_NestedFields(t *testing.T) {
 	tmpl := &Template{
 		Format:        "markdown",
-		TitleTemplate: "Container: {{.Fields.container_name}}",
-		BodyTemplate:  "Image: {{.Fields.image}}",
+		TitleTemplate: "Container: {{.container_name}}",
+		BodyTemplate:  "Image: {{.image}}",
 	}
-	data := TemplateData{
-		Fields: map[string]any{
-			"container_name": "web-app",
-			"image":          "nginx:latest",
-		},
+	data := map[string]any{
+		"container_name": "web-app",
+		"image":          "nginx:latest",
 	}
 
 	result, err := Render(tmpl, data)
@@ -218,10 +214,10 @@ func TestRender_TemplateCaching(t *testing.T) {
 	// Render the same template twice; the second render should use the cached template
 	tmpl := &Template{
 		Format:        "text",
-		TitleTemplate: "Hello {{.Fields.name}}",
+		TitleTemplate: "Hello {{.name}}",
 		BodyTemplate:  "World",
 	}
-	data := TemplateData{Fields: map[string]any{"name": "test"}}
+	data := map[string]any{"name": "test"}
 
 	result1, err := Render(tmpl, data)
 	if err != nil {
@@ -244,7 +240,7 @@ func TestRender_NoUnsafeFunctions(t *testing.T) {
 		name string
 		tmpl string
 	}{
-		{"call", `{{call .Fields.fn}}`},
+		{"call", `{{call .fn}}`},
 		{"printf_system", `{{printf "rm -rf /"}}`},
 	}
 
@@ -254,12 +250,12 @@ func TestRender_NoUnsafeFunctions(t *testing.T) {
 			TitleTemplate: tc.tmpl,
 			BodyTemplate:  "",
 		}
-		data := TemplateData{Fields: map[string]any{}}
+		data := map[string]any{}
 
 		// These should either fail at parse or not execute dangerous operations
 		// The key point is that our FuncMap does NOT expose os/exec, file, or network funcs
 		_, err := Render(tmpl, data)
-		// call would fail because .Fields.fn doesn't exist as a callable
+		// call would fail because .fn doesn't exist as a callable
 		if err == nil {
 			// If no error, at least verify the output isn't doing anything harmful
 			// This is acceptable since our safeFuncMap doesn't expose dangerous functions
@@ -270,10 +266,10 @@ func TestRender_NoUnsafeFunctions(t *testing.T) {
 func TestRender_LenString(t *testing.T) {
 	tmpl := &Template{
 		Format:        "text",
-		TitleTemplate: `Length: {{len .Fields.text}}`,
+		TitleTemplate: `Length: {{len .text}}`,
 		BodyTemplate:  "",
 	}
-	data := TemplateData{Fields: map[string]any{"text": "hello"}}
+	data := map[string]any{"text": "hello"}
 
 	result, err := Render(tmpl, data)
 	if err != nil {
@@ -287,10 +283,10 @@ func TestRender_LenString(t *testing.T) {
 func TestRender_DefaultWithEmptyString(t *testing.T) {
 	tmpl := &Template{
 		Format:        "text",
-		TitleTemplate: `{{default "fallback" .Fields.val}}`,
+		TitleTemplate: `{{default "fallback" .val}}`,
 		BodyTemplate:  "",
 	}
-	data := TemplateData{Fields: map[string]any{"val": ""}}
+	data := map[string]any{"val": ""}
 
 	result, err := Render(tmpl, data)
 	if err != nil {
@@ -305,14 +301,12 @@ func TestRender_MultipleFieldsInBody(t *testing.T) {
 	tmpl := &Template{
 		Format:        "markdown",
 		TitleTemplate: "Alert",
-		BodyTemplate:  "- Host: {{.Fields.host}}\n- CPU: {{.Fields.cpu}}%\n- Status: {{upper .Fields.status}}",
+		BodyTemplate:  "- Host: {{.host}}\n- CPU: {{.cpu}}%\n- Status: {{upper .status}}",
 	}
-	data := TemplateData{
-		Fields: map[string]any{
-			"host":   "server-01",
-			"cpu":    "85",
-			"status": "critical",
-		},
+	data := map[string]any{
+		"host":   "server-01",
+		"cpu":    "85",
+		"status": "critical",
 	}
 
 	result, err := Render(tmpl, data)

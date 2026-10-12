@@ -138,11 +138,10 @@ func NewRouter(
 			r.Get("/audit", ListAuditLogs(db))
 
 			// Preview / debug
-			r.Post("/preview/parse", placeholderHandler("preview.parse"))
-			r.Post("/preview/mapping", placeholderHandler("preview.mapping"))
-			r.Post("/preview/rule", placeholderHandler("preview.rule"))
+			r.Post("/preview/parse", PreviewParse())
+			r.Post("/preview/mapping", PreviewMapping())
 			r.Post("/preview/template", PreviewTemplate(db))
-			r.Post("/preview/delivery", placeholderHandler("preview.delivery"))
+			r.Post("/preview/delivery", PreviewDelivery())
 		})
 
 		// Webhook ingest (source-level auth, not admin auth)

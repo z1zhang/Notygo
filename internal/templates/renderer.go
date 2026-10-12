@@ -17,12 +17,6 @@ type EventMeta struct {
 	SourceName string
 }
 
-// TemplateData is the data object passed to templates.
-type TemplateData struct {
-	Event  EventMeta
-	Fields map[string]any
-}
-
 // RenderedMessage holds the output of template rendering.
 type RenderedMessage struct {
 	Title  string
@@ -100,8 +94,10 @@ func getOrParseTemplate(key, content string) (*template.Template, error) {
 }
 
 // Render executes a Template with the given data and returns the rendered message.
+// The data map is passed directly to the Go template engine, so template authors
+// can access any key directly: {{ .tag_values }}, {{ .Event.ID }}, etc.
 // Template execution is limited to 5 seconds via context timeout.
-func Render(tmpl *Template, data TemplateData) (*RenderedMessage, error) {
+func Render(tmpl *Template, data map[string]any) (*RenderedMessage, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 

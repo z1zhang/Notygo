@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"regexp"
@@ -142,10 +141,16 @@ func (p *EventProcessor) processEvent(ctx context.Context, evt *event.Event) {
 	validationErrors := map[string]any{}
 
 	if mapObj != nil {
-		parsedFields, validationErrors, err = applyMapping(mapObj, evt.PayloadRaw)
+		var valErrs []mapping.ValidationError
+		parsedFields, valErrs, err = mapping.Apply(mapObj, evt.PayloadRaw)
 		if err != nil {
 			slog.Error("failed to apply mapping", "event_id", evt.ID, "error", err)
 			validationErrors["mapping_error"] = err.Error()
+		}
+		if len(valErrs) > 0 {
+			for _, ve := range valErrs {
+				validationErrors[ve.Field] = ve.Detail
+			}
 		}
 		slog.Info("mapping applied", "event_id", evt.ID, "parsed_fields", parsedFields, "validation_errors", validationErrors)
 	} else {
@@ -224,9 +229,23 @@ func (p *EventProcessor) processMatchedRule(ctx context.Context, evt *event.Even
 		if err != nil {
 			slog.Error("failed to fetch template", "template_id", *rule.TemplateID, "error", err)
 		} else {
-			renderedTitle, renderedBody, renderedFormat, err = renderTemplate(tmpl, fields)
-			if err != nil {
-				slog.Error("failed to render template", "template_id", *rule.TemplateID, "error", err)
+			// Build template data: mapped fields at top level + Event metadata
+			templateData := make(map[string]any, len(fields)+1)
+			for k, v := range fields {
+				templateData[k] = v
+			}
+			templateData["Event"] = map[string]any{
+				"ID":         evt.ID,
+				"ReceivedAt": evt.ReceivedAt.Format(time.RFC3339),
+				"SourceName": srcName(evt.SourceID, ctx, p.sourceRepo),
+			}
+			msg, renderErr := templates.Render(tmpl, templateData)
+			if renderErr != nil {
+				slog.Error("failed to render template", "template_id", *rule.TemplateID, "error", renderErr)
+			} else {
+				renderedTitle = msg.Title
+				renderedBody = msg.Body
+				renderedFormat = msg.Format
 			}
 		}
 	}
@@ -253,63 +272,6 @@ func (p *EventProcessor) processMatchedRule(ctx context.Context, evt *event.Even
 		if err != nil {
 			slog.Error("failed to create delivery", "event_id", evt.ID, "destination_id", destID, "error", err)
 		}
-	}
-}
-
-// applyMapping applies a mapping to raw payload, extracting fields.
-func applyMapping(m *mapping.Mapping, payloadRaw string) (map[string]any, map[string]any, error) {
-	parsedFields := map[string]any{}
-	validationErrors := map[string]any{}
-
-	// Parse payload as JSON
-	var payload any
-	if err := json.Unmarshal([]byte(payloadRaw), &payload); err != nil {
-		return parsedFields, map[string]any{"parse_error": err.Error()}, err
-	}
-
-	// Apply each mapping entry to extract fields
-	for _, entry := range m.Fields {
-		value := extractField(payload, entry.SourcePath)
-		if value == nil && entry.DefaultValue != nil {
-			value = *entry.DefaultValue
-		}
-		if value == nil && entry.Required {
-			validationErrors[entry.TargetKey] = "required field missing"
-			continue
-		}
-		if value != nil {
-			parsedFields[entry.TargetKey] = value
-		}
-	}
-
-	return parsedFields, validationErrors, nil
-}
-
-// extractField extracts a value from a nested payload using dot-notation path.
-func extractField(payload any, path string) any {
-	switch p := payload.(type) {
-	case string:
-		var parsed any
-		if err := json.Unmarshal([]byte(p), &parsed); err != nil {
-			return nil
-		}
-		return extractField(parsed, path)
-	case map[string]any:
-		parts := strings.Split(path, ".")
-		current := any(p)
-		for _, part := range parts {
-			c, ok := current.(map[string]any)
-			if !ok {
-				return nil
-			}
-			current, ok = c[part]
-			if !ok {
-				return nil
-			}
-		}
-		return current
-	default:
-		return nil
 	}
 }
 
@@ -454,21 +416,13 @@ func compareValues(a any, b string, op string) bool {
 	return false
 }
 
-// renderTemplate renders a template with the given fields.
-// Returns (title, body, format, error).
-func renderTemplate(tmpl *templates.Template, fields map[string]any) (string, string, string, error) {
-	title := tmpl.TitleTemplate
-	body := tmpl.BodyTemplate
-
-	// Simple placeholder replacement: {{.FieldKey}} -> value
-	for key, val := range fields {
-		placeholder := "{{." + key + "}}"
-		replacement := fmt.Sprintf("%v", val)
-		title = strings.ReplaceAll(title, placeholder, replacement)
-		body = strings.ReplaceAll(body, placeholder, replacement)
+// srcName resolves a source ID to its name for template metadata.
+func srcName(sourceID string, ctx context.Context, repo *source.Repository) string {
+	src, err := repo.GetByID(ctx, sourceID)
+	if err != nil {
+		return sourceID
 	}
-
-	return title, body, tmpl.Format, nil
+	return src.Name
 }
 
 func generateWorkerID() string {

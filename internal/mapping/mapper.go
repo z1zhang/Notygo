@@ -43,7 +43,13 @@ func Apply(mapping *Mapping, payloadRaw string) (map[string]any, []ValidationErr
 func applyEntry(entry *MappingEntry, payloadRaw string) (any, []ValidationError) {
 	var errs []ValidationError
 
+	// gjson treats "#" as "array count" (a number), not "the whole array".
+	// For multi-result paths like "#.field", gjson correctly returns an array.
+	// But for bare "#", we need the root array itself.
 	result := gjson.Get(payloadRaw, entry.SourcePath)
+	if entry.SourcePath == "#" {
+		result = gjson.Parse(payloadRaw)
+	}
 
 	// Step 1: Handle missing values
 	if !result.Exists() {

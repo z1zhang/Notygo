@@ -56,19 +56,25 @@ const router = createRouter({
           path: 'events',
           name: 'Events',
           component: () => import('../views/Events.vue'),
-          meta: { titleKey: 'nav.events', icon: 'Bell' },
+          meta: { titleKey: 'nav.eventLogs', icon: 'Bell' },
         },
         {
           path: 'deliveries',
           name: 'Deliveries',
           component: () => import('../views/Deliveries.vue'),
-          meta: { titleKey: 'nav.deliveries', icon: 'Van' },
+          meta: { titleKey: 'nav.deliveryLogs', icon: 'Van' },
         },
         {
           path: 'audit',
           name: 'Audit',
           component: () => import('../views/Audit.vue'),
           meta: { titleKey: 'nav.auditLogs', icon: 'List' },
+        },
+        {
+          path: 'playground',
+          name: 'Playground',
+          component: () => import('../views/Playground.vue'),
+          meta: { titleKey: 'nav.playground', icon: 'MagicStick' },
         },
         {
           path: 'settings',

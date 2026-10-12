@@ -39,17 +39,27 @@
           <el-icon><Promotion /></el-icon>
           <template #title>{{ $t('nav.destinations') }}</template>
         </el-menu-item>
-        <el-menu-item index="/events">
-          <el-icon><Bell /></el-icon>
-          <template #title>{{ $t('nav.events') }}</template>
-        </el-menu-item>
-        <el-menu-item index="/deliveries">
-          <el-icon><Van /></el-icon>
-          <template #title>{{ $t('nav.deliveries') }}</template>
-        </el-menu-item>
-        <el-menu-item index="/audit">
-          <el-icon><List /></el-icon>
-          <template #title>{{ $t('nav.auditLogs') }}</template>
+        <el-sub-menu index="logs-group">
+          <template #title>
+            <el-icon><Notebook /></el-icon>
+            <span>{{ $t('nav.logs') }}</span>
+          </template>
+          <el-menu-item index="/events">
+            <el-icon><Bell /></el-icon>
+            <template #title>{{ $t('nav.eventLogs') }}</template>
+          </el-menu-item>
+          <el-menu-item index="/deliveries">
+            <el-icon><Van /></el-icon>
+            <template #title>{{ $t('nav.deliveryLogs') }}</template>
+          </el-menu-item>
+          <el-menu-item index="/audit">
+            <el-icon><List /></el-icon>
+            <template #title>{{ $t('nav.auditLogs') }}</template>
+          </el-menu-item>
+        </el-sub-menu>
+        <el-menu-item index="/playground">
+          <el-icon><MagicStick /></el-icon>
+          <template #title>{{ $t('nav.playground') }}</template>
         </el-menu-item>
         <el-menu-item index="/settings">
           <el-icon><Setting /></el-icon>

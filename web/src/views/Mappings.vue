@@ -47,12 +47,91 @@
         ref="formRef"
         :model="form"
         :rules="formRules"
-        label-width="auto"
+        label-width="90px"
         label-position="left"
       >
         <el-form-item :label="$t('common.name')" prop="name">
           <el-input v-model="form.name" :placeholder="$t('mappings.mappingName')" />
         </el-form-item>
+
+        <!-- Smart Import (collapsible) -->
+        <el-collapse v-model="smartImportExpanded" class="smart-import-collapse">
+          <el-collapse-item name="smart">
+            <template #title>
+              <div class="smart-import-title">
+                <el-icon><MagicStick /></el-icon>
+                {{ $t('mappings.smartImport') }}
+                <el-tag v-if="smartImportStructure" size="small" type="info" style="margin-left: 8px">
+                  {{ smartImportSuggestions.length }} {{ $t('mappings.fieldsFound') }}
+                </el-tag>
+              </div>
+            </template>
+
+            <el-input
+              v-model="smartImportJson"
+              type="textarea"
+              :rows="4"
+              :placeholder="$t('mappings.pasteJsonPlaceholder')"
+              spellcheck="false"
+            />
+            <div class="smart-import-actions">
+              <el-button
+                type="primary"
+                size="small"
+                :loading="smartImportLoading"
+                :disabled="!smartImportJson.trim()"
+                @click="handleSmartImport"
+              >
+                <el-icon><Search /></el-icon> {{ $t('mappings.analyzeJson') }}
+              </el-button>
+              <el-button
+                v-if="smartImportSuggestions.length > 0"
+                type="success"
+                size="small"
+                @click="addAllSuggestions"
+              >
+                <el-icon><Plus /></el-icon> {{ $t('mappings.addAllFields') }}
+              </el-button>
+            </div>
+
+            <!-- Suggested fields list -->
+            <div v-if="smartImportSuggestions.length > 0" class="suggested-fields-list">
+              <div class="suggested-fields-header">
+                <span>{{ $t('mappings.suggestedFields') }}</span>
+                <div v-if="smartImportStructure" style="display: flex; gap: 6px">
+                  <el-tag size="small" :type="smartImportStructure.root_is_array ? 'warning' : 'success'">
+                    {{ smartImportStructure.root_is_array ? $t('playground.rootArray') : $t('playground.rootObject') }}
+                  </el-tag>
+                  <el-tag size="small" type="info">
+                    {{ smartImportStructure.item_count }}
+                  </el-tag>
+                </div>
+              </div>
+              <div class="suggested-fields-scroll">
+                <div
+                  v-for="item in smartImportSuggestions"
+                  :key="item.source_path + (item.multi_result_mode || '')"
+                  class="suggested-field-row"
+                  :class="{ 'is-added': addedPaths.has(item.source_path + (item.multi_result_mode || '')) }"
+                >
+                  <span class="suggested-field-path" :title="item.source_path">{{ item.source_path }}</span>
+                  <el-tag :type="valueTypeTag(item.value_type)" size="small">{{ item.value_type }}</el-tag>
+                  <span class="suggested-field-sample" :title="item.sample_value">{{ item.sample_value }}</span>
+                  <el-button
+                    v-if="!addedPaths.has(item.source_path + (item.multi_result_mode || ''))"
+                    type="primary"
+                    text
+                    size="small"
+                    @click="addFromSuggestion(item)"
+                  >
+                    <el-icon><Plus /></el-icon>
+                  </el-button>
+                  <el-tag v-else type="success" size="small">&#10003;</el-tag>
+                </div>
+              </div>
+            </div>
+          </el-collapse-item>
+        </el-collapse>
 
         <el-divider content-position="left">{{ $t('mappings.fields') }}</el-divider>
 
@@ -100,8 +179,9 @@
               <el-form-item :prop="`fields.${index}.multi_result_mode`" :label="$t('mappings.multiResult')">
                 <el-select v-model="field.multi_result_mode" :placeholder="$t('mappings.selectMode')" style="width: 100%">
                   <el-option :label="$t('mappings.first')" value="first" />
-                  <el-option :label="$t('mappings.join')" value="join" />
+                  <el-option :label="$t('mappings.joinComma')" value="join(, )" />
                   <el-option :label="$t('mappings.array')" value="array" />
+                  <el-option :label="$t('mappings.count')" value="count" />
                 </el-select>
               </el-form-item>
             </el-col>
@@ -150,15 +230,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { Delete } from '@element-plus/icons-vue'
+import { Delete, Plus, Search, MagicStick } from '@element-plus/icons-vue'
 import { listMappings, createMapping, updateMapping, deleteMapping } from '@/api/mappings'
 import { useCrudPage } from '@/composables/useCrudPage'
 import { getErrorMessage } from '@/utils/helpers'
+import { previewParse } from '@/api/preview'
 import type { MappingResponse, MappingEntry } from '@/api/types'
+import type { SuggestedField, StructureInfo } from '@/api/preview'
 
 const { t } = useI18n()
 
@@ -229,6 +311,11 @@ function removeField(index: number) {
 function resetForm() {
   form.name = ''
   form.fields = []
+  // Reset smart import state
+  smartImportJson.value = ''
+  smartImportStructure.value = null
+  smartImportSuggestions.value = []
+  smartImportExpanded.value = []
 }
 
 function fillForm(row: MappingResponse) {
@@ -245,6 +332,11 @@ function fillForm(row: MappingResponse) {
         description: f.description ?? '',
       }))
     : []
+  // Reset smart import state on edit
+  smartImportJson.value = ''
+  smartImportStructure.value = null
+  smartImportSuggestions.value = []
+  smartImportExpanded.value = []
 }
 
 // toNullableStr returns null for empty strings (matches backend *string with omitempty)
@@ -290,6 +382,75 @@ async function handleSave() {
   }
 }
 
+// ── Smart Import ─────────────────────────────────────
+
+const smartImportExpanded = ref<string[]>([])
+const smartImportJson = ref('')
+const smartImportLoading = ref(false)
+const smartImportStructure = ref<StructureInfo | null>(null)
+const smartImportSuggestions = ref<SuggestedField[]>([])
+
+// Track which source_path+mode combos are already in form.fields
+// Normalize: 'first' is the default mode, equivalent to null/empty
+const addedPaths = computed(() => {
+  const s = new Set<string>()
+  for (const f of form.fields) {
+    const mode = f.multi_result_mode && f.multi_result_mode !== 'first' ? f.multi_result_mode : ''
+    s.add(f.source_path + mode)
+  }
+  return s
+})
+
+function addFromSuggestion(sf: SuggestedField) {
+  form.fields.push({
+    source_path: sf.source_path,
+    target_key: sf.target_key,
+    value_type: sf.value_type || 'string',
+    default_value: '',
+    required: false,
+    transform: '',
+    multi_result_mode: sf.multi_result_mode || 'first',
+    description: '',
+  })
+}
+
+function addAllSuggestions() {
+  for (const sf of smartImportSuggestions.value) {
+    const key = sf.source_path + (sf.multi_result_mode || '')
+    if (!addedPaths.value.has(key)) {
+      addFromSuggestion(sf)
+    }
+  }
+}
+
+function valueTypeTag(vt: string): string {
+  switch (vt) {
+    case 'string': return ''
+    case 'number': return 'warning'
+    case 'boolean': return 'success'
+    case 'array': return 'danger'
+    default: return 'info'
+  }
+}
+
+async function handleSmartImport() {
+  if (!smartImportJson.value.trim()) return
+  try { JSON.parse(smartImportJson.value) } catch {
+    ElMessage.error(t('templates.invalidJson'))
+    return
+  }
+  smartImportLoading.value = true
+  try {
+    const res = await previewParse(smartImportJson.value)
+    smartImportStructure.value = res.data.structure
+    smartImportSuggestions.value = res.data.suggested_fields || []
+  } catch (e: unknown) {
+    ElMessage.error(getErrorMessage(e, t('common.error')))
+  } finally {
+    smartImportLoading.value = false
+  }
+}
+
 onMounted(() => {
   fetchData()
 })
@@ -318,6 +479,105 @@ onMounted(() => {
       font-size: 14px;
       color: var(--el-text-color-primary, #303133);
     }
+  }
+
+  // ── Smart Import ──
+
+  .smart-import-collapse {
+    margin-bottom: 12px;
+    border: none;
+
+    :deep(.el-collapse-item__header) {
+      background-color: var(--el-fill-color-lighter, #fafafa);
+      padding: 0 12px;
+      border-radius: 6px;
+      font-weight: 600;
+      height: 36px;
+      line-height: 36px;
+    }
+
+    :deep(.el-collapse-item__wrap) {
+      border: none;
+    }
+
+    :deep(.el-collapse-item__content) {
+      padding: 12px 0 0 0;
+    }
+  }
+
+  .smart-import-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .smart-import-actions {
+    margin-top: 8px;
+    display: flex;
+    gap: 8px;
+  }
+
+  .suggested-fields-list {
+    margin-top: 12px;
+  }
+
+  .suggested-fields-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-weight: 600;
+    font-size: 13px;
+    margin-bottom: 8px;
+  }
+
+  .suggested-fields-scroll {
+    max-height: 240px;
+    overflow-y: auto;
+    border: 1px solid var(--el-border-color-lighter, #ebeef5);
+    border-radius: 4px;
+    background-color: var(--el-fill-color-lighter, #fafafa);
+  }
+
+  .suggested-field-row {
+    display: flex;
+    align-items: center;
+    padding: 5px 10px;
+    gap: 8px;
+    font-size: 13px;
+    border-bottom: 1px solid var(--el-border-color-extra-light, #f2f2f2);
+
+    &:hover {
+      background-color: var(--el-fill-color, #f0f0f0);
+    }
+
+    &.is-added {
+      opacity: 0.5;
+    }
+
+    &:last-child {
+      border-bottom: none;
+    }
+  }
+
+  .suggested-field-path {
+    font-weight: 500;
+    color: var(--el-color-primary, #409eff);
+    min-width: 80px;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .suggested-field-sample {
+    color: var(--el-text-color-regular, #606266);
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
   }
 }
 </style>

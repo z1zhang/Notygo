@@ -61,9 +61,61 @@ internal/
   secret/            — 加解密服务
   audit/             — 审计日志
   observability/     — 日志/RequestID
-web/src/             — 前端（views, api, locales, stores, router）
+web/src/             — 前端
+  api/               — Axios 封装 + types.ts（所有后端响应类型定义）
+  components/        — 共享组件：TruncatedId, StatusTag
+  composables/       — 共享逻辑：useCrudPage, useOptions, useResizableDrawer
+  utils/             — 共享工具：time, helpers, status, lookup
+  assets/global.scss — 全局样式（表格行高、布局类、截断类）
+  locales/           — zh.json / en.json 国际化
+  views/             — 8 个 CRUD 视页 + Login + Dashboard + Settings
 deploy/              — docker-compose.yml
 ```
+
+## 前端复用层
+
+前端已提取共享层，所有 8 个视图均使用共享模块，无独立重复代码：
+
+| 层 | 模块 | 说明 |
+|---|---|---|
+| 工具 | `utils/time.ts` | `formatTime(val)` — 统一时间格式化，null 安全 |
+| 工具 | `utils/helpers.ts` | `getErrorMessage(e, fallback)` — 统一错误消息提取 |
+| 工具 | `utils/status.ts` | `eventStatusTagType` / `deliveryStatusTagType` / `actionTagType` |
+| 工具 | `utils/lookup.ts` | `lookupName(options, id, fallback?)` — ID→名称查找 |
+| 类型 | `api/types.ts` | 所有后端响应接口：Source/Mapping/Rule/Template/Destination/Event/Delivery/Audit + PaginatedResponse |
+| Composable | `composables/useCrudPage.ts` | 列表/分页/删除/对话框状态管理 + i18n 删除确认 |
+| Composable | `composables/useOptions.ts` | 下拉选项（sources/destinations/templates/mappings）加载 |
+| Composable | `composables/useResizableDrawer.ts` | 可拖拽宽度侧栏（拖左边框调整宽度） |
+| 组件 | `components/TruncatedId.vue` | ID 自适应截断 + ResizeObserver 溢出检测 + 悬浮 tooltip + 点击复制 |
+| 组件 | `components/StatusTag.vue` | 标准化状态标签，kind="event"|"delivery"，自动映射 tag type |
+| 全局样式 | `assets/global.scss` | 表格行高统一、`.page-actions`/`.page-filters`/`.pagination-wrap`/`.action-buttons` 布局、`.cell-ellipsis` flex 兼容截断 |
+
+### 各视图对共享模块的使用
+
+| 视图 | useCrudPage | useOptions | useResizableDrawer | StatusTag | TruncatedId | 主要 utils |
+|------|:-:|:-:|:-:|:-:|:-:|---|
+| Sources | ✅ | mappingOptions | — | — | — | helpers, lookup |
+| Mappings | ✅ | — | — | — | — | helpers |
+| Templates | ✅ | — | — | — | — | helpers |
+| Destinations | ✅ | — | — | — | — | helpers |
+| Rules | ✅ | templateOptions, destinationOptions | — | — | — | helpers, lookup |
+| Events | — | sourceOptions, destinationOptions | ✅ | kind=event | ✅ | time, helpers, lookup |
+| Deliveries | — | destinationOptions | ✅ | kind=delivery | ✅ | time, helpers, lookup |
+| Audit | — | — | — | kind=audit | ✅ | time, helpers |
+| Dashboard | — | — | — | 动态 kind | ✅ | time, helpers |
+
+### 前端 UI 约定
+
+- **表格行高**：`.el-table__cell { padding: 10px 0 }` + `.cell { display: flex; align-items: center; min-height: 32px }`
+- **列宽策略**：固定内容（switch/tag/数字）用 `width`，可变内容（名称/ID/时间）用 `min-width`；侧栏表格全部用 `min-width`
+- **文本截断**：`show-overflow-tooltip` 与 `display: flex` 不兼容，改用 `<el-tooltip>` + `.cell-ellipsis` 类
+- **ID 显示**：使用 `<TruncatedId :id="row.id" />`，完整显示 + CSS 自适应截断 + 悬浮复制
+- **Source slug**：表格只显示 slug，点击复制完整 webhook URL（`${origin}/api/v1/ingest/${slug}`）
+- **侧栏**：`el-drawer` + `useResizableDrawer` 可拖拽宽度（初始 800px，范围 400-1200px）
+- **el-descriptions 收缩**：需 `:deep(.el-descriptions__table) { table-layout: fixed; width: 100% }` 才能随 drawer 缩小
+- **映射/规则编辑**：`resetForm()` 不预填空行，`fields = []` 而非 `[createEmptyField()]`
+- **i18n**：删除确认按钮已国际化（`common.confirm` / `common.cancel`），复制反馈（`common.copied` / `common.copyFailed`）
+- **无 monospace 覆盖**：ID/响应体等全部使用默认字体，不强制 monospace
 
 ## 环境变量
 
@@ -76,21 +128,31 @@ deploy/              — docker-compose.yml
 | LOG_LEVEL | info | |
 | EVENT_PROCESSOR_CONCURRENCY | 4 | |
 | DELIVERY_WORKER_CONCURRENCY | 8 | |
+| EVENT_RETENTION_DAYS | 30 | 保留天数（配置存在，清理逻辑未实现） |
+
+## 后端已修复项
+
+- ✅ **regex 操作符**：`strings.Contains` → `regexp.Compile` + `MatchString`（256 字符上限 + 无效模式警告）
+- ✅ **新增操作符**：`not_contains`、`not_exists`
+- ✅ **Source slug**：6 位随机 → 32 位 UUID v4（crypto/rand，无第三方依赖）
+- ✅ **go.mod**：直接依赖已正确分离，不再全部标 indirect
+- ✅ **Destination 密钥**：API 返回完整解密值（之前误返回加密密文）
 
 ## 已知问题与待办
 
 - 规则评估只看映射字段，未映射的字段规则引用不到
 - `/preview/parse`, `/preview/mapping`, `/preview/rule`, `/preview/delivery` 仍是 501 占位
 - `destinations/{id}/test` 未实现
-- `regex` 条件用 `strings.Contains` 模拟，需改为 `regexp`
 - `EVENT_RETENTION_DAYS` 配置存在但没有定时清理逻辑
-- go.mod 中直接依赖都标了 indirect，需 `go mod tidy`
+- **XSS 风险**：`Deliveries.vue` 和 `Templates.vue` 使用 `v-html` 渲染 Markdown/HTML 内容，未经过 DOMPurify 消毒
+- Dashboard 统计用 4 次 API 请求拼凑，应改为专用后端端点
 
 ## 常用命令
 
 ```bash
 go build ./...              # 构建检查
 go test ./...               # 运行测试
+cd web && npx vue-tsc --noEmit  # 前端类型检查
 docker build -t zPush .     # Docker 构建
 ```
 
