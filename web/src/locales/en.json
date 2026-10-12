@@ -218,7 +218,7 @@
     "titleTemplate": "Title Template",
     "titlePlaceholder": "Title template using Go template syntax",
     "bodyTemplate": "Body Template",
-    "bodyPlaceholder": "Body template",
+    "bodyPlaceholder": "Body template using Go template syntax",
     "preview": "Preview",
     "templatePreview": "Template Preview",
     "sampleData": "Sample Data",

@@ -218,7 +218,7 @@
     "titleTemplate": "标题模板",
     "titlePlaceholder": "标题模板，使用 Go template 语法",
     "bodyTemplate": "内容模板",
-    "bodyPlaceholder": "内容模板",
+    "bodyPlaceholder": "内容模板，使用 Go template 语法",
     "preview": "预览",
     "templatePreview": "模板预览",
     "sampleData": "示例数据",
