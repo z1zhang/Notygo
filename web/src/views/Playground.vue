@@ -186,7 +186,7 @@
             <span>{{ $t('playground.templateEditor') }}</span>
           </div>
 
-          <el-form label-width="90px" label-position="left">
+          <el-form label-width="100px" label-position="left">
             <el-form-item :label="$t('templates.format')">
               <el-select v-model="templateForm.format" style="width: 100%">
                 <el-option :label="$t('templates.text')" value="text" />
@@ -313,8 +313,8 @@ const addedPaths = computed(() => {
 
 const templateForm = reactive({
   format: 'markdown',
-  title_template: '',
-  body_template: '',
+  title_template: '{{ .name }}',
+  body_template: '## {{ .name }}\n\n- **Status**: {{ .status }}\n- **Image**: {{ .image_name }}',
 })
 
 const deliveryLoading = ref(false)
