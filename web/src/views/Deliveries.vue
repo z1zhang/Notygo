@@ -75,7 +75,7 @@
     >
       <div class="drawer-resize-handle" @mousedown="onHandleMouseDown" />
       <div v-loading="detailLoading">
-        <template v-if="detail">
+        <div v-if="detail">
           <el-descriptions :column="2" border class="detail-desc">
             <el-descriptions-item :label="$t('common.id')" :span="2">
               {{ detail.id }}
@@ -155,7 +155,7 @@
               <el-icon><RefreshRight /></el-icon> {{ $t('deliveries.retry') }}
             </el-button>
           </div>
-        </template>
+        </div>
       </div>
     </el-drawer>
   </div>

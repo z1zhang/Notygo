@@ -22,14 +22,14 @@
         </el-table-column>
         <el-table-column :label="$t('rules.destinations')" min-width="140">
           <template #default="{ row }">
-            <template v-if="(row.destination_ids ?? []).length">
+            <span v-if="(row.destination_ids ?? []).length">
               <el-tag v-for="dId in (row.destination_ids as string[]).slice(0, 3)" :key="dId" style="margin-right: 4px">
                 {{ lookupName(destinationOptions, dId) }}
               </el-tag>
               <el-tag v-if="(row.destination_ids as string[]).length > 3" type="info">
                 +{{ (row.destination_ids as string[]).length - 3 }}
               </el-tag>
-            </template>
+            </span>
             <span v-else>-</span>
           </template>
         </el-table-column>

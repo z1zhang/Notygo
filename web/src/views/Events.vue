@@ -68,7 +68,7 @@
     >
       <div class="drawer-resize-handle" @mousedown="onHandleMouseDown" />
       <div v-loading="detailLoading">
-        <template v-if="detail">
+        <div v-if="detail">
           <el-descriptions :column="2" border class="detail-desc">
             <el-descriptions-item :label="$t('common.id')" :span="2">
               {{ detail.id }}
@@ -113,7 +113,7 @@
           <el-empty v-else :description="$t('events.noParsedFields')" :image-size="40" />
 
           <el-divider content-position="left">{{ $t('events.eventRun') }}</el-divider>
-          <template v-if="latestRun">
+          <div v-if="latestRun">
             <el-descriptions :column="2" border>
               <el-descriptions-item :label="$t('events.runType')">{{ latestRun.run_type }}</el-descriptions-item>
               <el-descriptions-item :label="$t('common.status')">
@@ -126,7 +126,7 @@
             <div v-if="latestRun.error_summary" style="margin-top: 8px">
               <el-text type="danger">{{ latestRun.error_code }}: {{ latestRun.error_summary }}</el-text>
             </div>
-          </template>
+          </div>
           <el-empty v-else :description="$t('events.noEventRun')" :image-size="40" />
 
           <el-divider content-position="left">{{ $t('events.matchedRules') }}</el-divider>
@@ -172,7 +172,7 @@
               <el-icon><RefreshRight /></el-icon> {{ $t('events.replay') }}
             </el-button>
           </div>
-        </template>
+        </div>
       </div>
     </el-drawer>
   </div>

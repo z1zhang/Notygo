@@ -68,7 +68,7 @@
         </el-form-item>
 
         <!-- DingTalk / Feishu / WeCom: Webhook URL + MsgType -->
-        <template v-if="['dingtalk', 'feishu', 'wecom'].includes(form.type)">
+        <div v-if="['dingtalk', 'feishu', 'wecom'].includes(form.type)">
           <el-form-item :label="$t('destinations.webhookUrl')" prop="webhook_url">
             <el-input v-model="typeConfig.webhook_url" placeholder="https://oapi.dingtalk.com/robot/send?access_token=..." />
           </el-form-item>
@@ -91,10 +91,10 @@
               </template>
             </el-select>
           </el-form-item>
-        </template>
+        </div>
 
         <!-- Email: SMTP config -->
-        <template v-if="form.type === 'email'">
+        <div v-if="form.type === 'email'">
           <el-form-item :label="$t('destinations.smtpHost')" prop="smtp_host">
             <el-input v-model="typeConfig.smtp_host" placeholder="smtp.example.com" />
           </el-form-item>
@@ -123,10 +123,10 @@
               :placeholder="$t('destinations.ccPlaceholder')"
             />
           </el-form-item>
-        </template>
+        </div>
 
         <!-- HTTP Webhook config -->
-        <template v-if="form.type === 'http_webhook'">
+        <div v-if="form.type === 'http_webhook'">
           <el-form-item :label="$t('destinations.targetUrl')" prop="target_url">
             <el-input v-model="typeConfig.url" placeholder="https://example.com/webhook" />
           </el-form-item>
@@ -159,7 +159,7 @@
               :rows="4"
             />
           </el-form-item>
-        </template>
+        </div>
 
         <el-divider />
 
