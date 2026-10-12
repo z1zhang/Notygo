@@ -313,8 +313,8 @@ const addedPaths = computed(() => {
 
 const templateForm = reactive({
   format: 'markdown',
-  title_template: '{{ .name }}',
-  body_template: '## {{ .name }}\n\n- **Status**: {{ .status }}\n- **Image**: {{ .image_name }}',
+  title_template: 'Docker Image Update',
+  body_template: '## Docker Image Update\n\n- **Image**: {{ .image_name }}\n- **Tag**: {{ .tag_value }}\n- **Status**: {{ .status }}',
 })
 
 const deliveryLoading = ref(false)
