@@ -186,7 +186,7 @@ import { RefreshRight, CopyDocument } from '@element-plus/icons-vue'
 import { listEvents, getEvent, replayEvent } from '@/api/events'
 import { listDeliveries } from '@/api/deliveries'
 import { formatTime } from '@/utils/time'
-import { getErrorMessage } from '@/utils/helpers'
+import { getErrorMessage, copyToClipboard } from '@/utils/helpers'
 import { lookupName } from '@/utils/lookup'
 import { useOptions } from '@/composables/useOptions'
 import { useResizableDrawer } from '@/composables/useResizableDrawer'
@@ -314,7 +314,7 @@ async function openDetail(row: EventResponse) {
 
 async function copyText(text: string) {
   try {
-    await navigator.clipboard.writeText(text)
+    await copyToClipboard(text)
     ElMessage.success(t('common.copied'))
   } catch {
     ElMessage.error(t('common.copyFailed'))

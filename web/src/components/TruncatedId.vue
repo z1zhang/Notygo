@@ -12,6 +12,7 @@ import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
 import { CopyDocument } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
+import { copyToClipboard } from '@/utils/helpers'
 
 const { t } = useI18n()
 
@@ -41,7 +42,7 @@ onBeforeUnmount(() => ro?.disconnect())
 
 async function copyId() {
   try {
-    await navigator.clipboard.writeText(props.id)
+    await copyToClipboard(props.id)
     ElMessage.success(t('common.copied'))
   } catch {
     ElMessage.error(t('common.copyFailed'))

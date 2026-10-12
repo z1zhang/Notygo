@@ -127,7 +127,7 @@ import { CopyDocument } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { createSource, updateSource, deleteSource, listSources } from '@/api/sources'
 import type { SourceResponse } from '@/api/types'
-import { getErrorMessage } from '@/utils/helpers'
+import { getErrorMessage, copyToClipboard } from '@/utils/helpers'
 import { lookupName } from '@/utils/lookup'
 import { useCrudPage } from '@/composables/useCrudPage'
 import { useOptions } from '@/composables/useOptions'
@@ -270,7 +270,7 @@ function buildWebhookUrl(slug: string): string {
 
 async function copyWebhookUrl(slug: string) {
   try {
-    await navigator.clipboard.writeText(buildWebhookUrl(slug))
+    await copyToClipboard(buildWebhookUrl(slug))
     ElMessage.success(t('common.copied'))
   } catch {
     ElMessage.error(t('common.copyFailed'))

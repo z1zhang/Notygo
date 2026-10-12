@@ -14,3 +14,22 @@ export function getErrorMessage(e: unknown, fallback: string): string {
   const err = e as { response?: { data?: { message?: string } } }
   return err?.response?.data?.message || fallback
 }
+
+/**
+ * Copy text to clipboard. Falls back to execCommand for non-secure contexts
+ * (e.g. HTTP access in Docker deployments without TLS).
+ */
+export async function copyToClipboard(text: string): Promise<void> {
+  if (navigator.clipboard) {
+    await navigator.clipboard.writeText(text)
+  } else {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.position = 'fixed'
+    ta.style.left = '-9999px'
+    document.body.appendChild(ta)
+    ta.select()
+    document.execCommand('copy')
+    document.body.removeChild(ta)
+  }
+}
