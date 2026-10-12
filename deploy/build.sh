@@ -12,7 +12,7 @@ cd "$(cd "$(dirname "$0")" && pwd)/.."
 # ============================================================
 
 # ---- 配置 ----
-IMAGE_NAME="zhangz1o/push"
+IMAGE_NAME="zhangz1o/zpush"
 PROXY="${BUILD_PROXY:-http://127.0.0.1:7890}"   # 代理地址，可通过环境变量覆盖
 REGISTRY_MIRROR="${REGISTRY_MIRROR:-}"            # Docker registry mirror（可选）
 
