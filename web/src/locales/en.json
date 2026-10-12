@@ -216,7 +216,7 @@
     "markdown": "Markdown",
     "html": "HTML",
     "titleTemplate": "Title Template",
-    "titlePlaceholder": "Title template using Go syntax, e.g. {{ .event.type }}",
+    "titlePlaceholder": "Title template using Go template syntax",
     "bodyTemplate": "Body Template",
     "bodyPlaceholder": "Body template",
     "preview": "Preview",

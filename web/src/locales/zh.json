@@ -216,7 +216,7 @@
     "markdown": "Markdown",
     "html": "HTML",
     "titleTemplate": "标题模板",
-    "titlePlaceholder": "标题模板，使用 Go 语法，例如 {{ .event.type }}",
+    "titlePlaceholder": "标题模板，使用 Go template 语法",
     "bodyTemplate": "内容模板",
     "bodyPlaceholder": "内容模板",
     "preview": "预览",
