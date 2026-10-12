@@ -18,8 +18,9 @@ func ListDeliveries(db *sql.DB) http.HandlerFunc {
 		page, size := ParsePagination(r)
 		statusFilter := r.URL.Query().Get("status")
 		destIDFilter := r.URL.Query().Get("destination_id")
+		eventIDFilter := r.URL.Query().Get("event_id")
 
-		deliveries, total, err := repo.List(r.Context(), page, size, statusFilter, destIDFilter)
+		deliveries, total, err := repo.List(r.Context(), page, size, statusFilter, destIDFilter, eventIDFilter)
 		if err != nil {
 			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to list deliveries")
 			return

@@ -68,8 +68,8 @@ func (r *Repository) GetByID(ctx context.Context, id string) (*Delivery, error) 
 }
 
 // List returns a paginated list of deliveries and the total count.
-// Filters by status and destination_id if provided.
-func (r *Repository) List(ctx context.Context, page, size int, statusFilter, destIDFilter string) ([]Delivery, int64, error) {
+// Filters by status, destination_id, and event_id if provided.
+func (r *Repository) List(ctx context.Context, page, size int, statusFilter, destIDFilter, eventIDFilter string) ([]Delivery, int64, error) {
 	var total int64
 	var args []any
 
@@ -86,6 +86,11 @@ func (r *Repository) List(ctx context.Context, page, size int, statusFilter, des
 		countQuery += ` AND destination_id = ?`
 		listQuery += ` AND destination_id = ?`
 		args = append(args, destIDFilter)
+	}
+	if eventIDFilter != "" {
+		countQuery += ` AND event_id = ?`
+		listQuery += ` AND event_id = ?`
+		args = append(args, eventIDFilter)
 	}
 
 	err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total)
