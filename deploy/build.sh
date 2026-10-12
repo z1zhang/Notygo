@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# cd to project root (where this script's parent dir resides)
+cd "$(cd "$(dirname "$0")" && pwd)/.."
+
 # ============================================================
 # zPush Docker build & push script
 # 用法: ./build.sh [版本标签]
@@ -44,7 +47,7 @@ docker build \
     -t "${FULL_IMAGE}" \
     -t "${LATEST_IMAGE}" \
     -f Dockerfile \
-    ..
+    .
 
 echo ">>> build 成功 ✓"
 

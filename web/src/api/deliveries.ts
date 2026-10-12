@@ -1,5 +1,6 @@
 import { api } from './index'
-import type { AxiosResponse, ListApiReturn, DeliveryResponse, DeliveryAttemptResponse } from './types'
+import type { AxiosResponse } from 'axios'
+import type { ListApiReturn, DeliveryResponse, DeliveryAttemptResponse } from './types'
 
 export interface GetDeliveryResponse {
   delivery: DeliveryResponse

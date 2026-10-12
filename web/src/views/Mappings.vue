@@ -234,7 +234,16 @@ function resetForm() {
 function fillForm(row: MappingResponse) {
   form.name = row.name ?? ''
   form.fields = (row.fields ?? []).length
-    ? (row.fields as MappingEntry[]).map((f) => ({ ...createEmptyField(), ...f }))
+    ? (row.fields as MappingEntry[]).map((f) => ({
+        source_path: f.source_path,
+        target_key: f.target_key,
+        value_type: f.value_type,
+        default_value: f.default_value ?? '',
+        required: f.required,
+        transform: f.transform ?? '',
+        multi_result_mode: f.multi_result_mode ?? 'first',
+        description: f.description ?? '',
+      }))
     : []
 }
 

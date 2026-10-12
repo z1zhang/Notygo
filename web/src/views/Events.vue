@@ -192,7 +192,7 @@ import { useOptions } from '@/composables/useOptions'
 import { useResizableDrawer } from '@/composables/useResizableDrawer'
 import TruncatedId from '@/components/TruncatedId.vue'
 import StatusTag from '@/components/StatusTag.vue'
-import type { EventResponse, EventRunResponse, RuleSnapshot, DeliveryResponse } from '@/api/types'
+import type { EventResponse, EventRunResponse, RuleSnapshot } from '@/api/types'
 
 const { t } = useI18n()
 
@@ -288,7 +288,7 @@ async function openDetail(row: EventResponse) {
   relatedDeliveries.value = []
   try {
     const res = await getEvent(row.id)
-    const data = res.data as Record<string, unknown>
+    const data = res.data as unknown as Record<string, unknown>
 
     // Backend GetEvent returns: { event: {...}, latest_run: {...}, parsed_fields: {...} }
     if (data.event) {
