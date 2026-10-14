@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"zpush/internal/delivery"
+	"zpush/internal/notify"
 	"zpush/internal/storage"
 )
 
@@ -60,7 +61,7 @@ func GetDelivery(db *sql.DB) http.HandlerFunc {
 }
 
 // RetryDelivery resets a delivery back to pending status for retry.
-func RetryDelivery(db *sql.DB) http.HandlerFunc {
+func RetryDelivery(db *sql.DB, notifier *notify.Notifier) http.HandlerFunc {
 	repo := delivery.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
@@ -89,6 +90,11 @@ func RetryDelivery(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		// Notify the delivery worker to pick up the retried delivery immediately
+		if notifier != nil {
+			notifier.NotifyDelivery()
+		}
+
 		updated, _ := repo.GetByID(r.Context(), id)
 		WriteJSON(w, http.StatusOK, map[string]any{
 			"delivery": updated,
@@ -98,7 +104,7 @@ func RetryDelivery(db *sql.DB) http.HandlerFunc {
 }
 
 // BulkRetry resets multiple deliveries back to pending based on filters.
-func BulkRetry(db *sql.DB) http.HandlerFunc {
+func BulkRetry(db *sql.DB, notifier *notify.Notifier) http.HandlerFunc {
 	repo := delivery.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -123,6 +129,11 @@ func BulkRetry(db *sql.DB) http.HandlerFunc {
 		if err != nil {
 			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to bulk retry deliveries")
 			return
+		}
+
+		// Notify the delivery worker to pick up the reset deliveries
+		if notifier != nil {
+			notifier.NotifyDelivery()
 		}
 
 		WriteJSON(w, http.StatusOK, map[string]any{

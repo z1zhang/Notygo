@@ -4,10 +4,12 @@ import "time"
 
 // Mapping represents a field mapping configuration.
 type Mapping struct {
-	ID        string       `json:"id"`
-	Name      string       `json:"name"`
-	Revision  int          `json:"revision"`
-	Fields    []MappingEntry `json:"fields"`
+	ID              string       `json:"id"`
+	Name            string       `json:"name"`
+	Revision        int          `json:"revision"`
+	RuleIDs         []string     `json:"rule_ids,omitempty"`
+	ContinueOnMatch bool         `json:"continue_on_match"`
+	Fields          []MappingEntry `json:"fields"`
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
 }

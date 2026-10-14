@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -30,6 +31,9 @@ func boolToInt(b bool) int {
 func intToBool(i int) bool {
 	return i != 0
 }
+
+// ruleColumns is the standard column list for rule queries.
+const ruleColumns = `id, name, enabled, priority, conditions, condition_mode, template_id, destination_ids, dedupe_config, revision, created_at, updated_at`
 
 // Repository provides CRUD operations for rules.
 type Repository struct {
@@ -65,10 +69,10 @@ func (r *Repository) Create(ctx context.Context, rule *Rule) (*Rule, error) {
 	}
 
 	_, err = r.db.ExecContext(ctx,
-		`INSERT INTO rules (id, name, enabled, priority, conditions, condition_mode, continue_on_match, template_id, destination_ids, dedupe_config, revision, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+		`INSERT INTO rules (id, name, enabled, priority, conditions, condition_mode, template_id, destination_ids, dedupe_config, revision, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
 		id, rule.Name, boolToInt(rule.Enabled), rule.Priority, string(conditionsJSON),
-		rule.ConditionMode, boolToInt(rule.ContinueOnMatch), rule.TemplateID,
+		rule.ConditionMode, rule.TemplateID,
 		string(destIDsJSON), dedupeJSON, nowStr, nowStr,
 	)
 	if err != nil {
@@ -81,8 +85,7 @@ func (r *Repository) Create(ctx context.Context, rule *Rule) (*Rule, error) {
 // GetByID retrieves a rule by its ID.
 func (r *Repository) GetByID(ctx context.Context, id string) (*Rule, error) {
 	row := r.db.QueryRowContext(ctx,
-		`SELECT id, name, enabled, priority, conditions, condition_mode, continue_on_match, template_id, destination_ids, dedupe_config, revision, created_at, updated_at
-		 FROM rules WHERE id = ?`, id)
+		`SELECT `+ruleColumns+` FROM rules WHERE id = ?`, id)
 	return scanRule(row)
 }
 
@@ -99,8 +102,7 @@ func (r *Repository) List(ctx context.Context, page, size int) ([]Rule, int64, e
 
 	offset := (page - 1) * size
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT id, name, enabled, priority, conditions, condition_mode, continue_on_match, template_id, destination_ids, dedupe_config, revision, created_at, updated_at
-		 FROM rules ORDER BY priority DESC, created_at DESC LIMIT ? OFFSET ?`, size, offset)
+		`SELECT `+ruleColumns+` FROM rules ORDER BY priority DESC, created_at DESC LIMIT ? OFFSET ?`, size, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list rules: %w", err)
 	}
@@ -124,8 +126,7 @@ func (r *Repository) List(ctx context.Context, page, size int) ([]Rule, int64, e
 // ListEnabled returns all enabled rules ordered by priority.
 func (r *Repository) ListEnabled(ctx context.Context) ([]Rule, error) {
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT id, name, enabled, priority, conditions, condition_mode, continue_on_match, template_id, destination_ids, dedupe_config, revision, created_at, updated_at
-		 FROM rules WHERE enabled = 1 ORDER BY priority DESC, created_at ASC`)
+		`SELECT `+ruleColumns+` FROM rules WHERE enabled = 1 ORDER BY priority DESC, created_at ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("list enabled rules: %w", err)
 	}
@@ -141,6 +142,46 @@ func (r *Repository) ListEnabled(ctx context.Context) ([]Rule, error) {
 	}
 	if err = rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate enabled rules: %w", err)
+	}
+
+	return result, nil
+}
+
+// ListEnabledByIDs returns enabled rules matching the given IDs, ordered by priority.
+// Returns empty slice if ids is empty.
+func (r *Repository) ListEnabledByIDs(ctx context.Context, ids []string) ([]Rule, error) {
+	if len(ids) == 0 {
+		return []Rule{}, nil
+	}
+
+	placeholders := make([]string, len(ids))
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+
+	query := fmt.Sprintf(
+		`SELECT %s FROM rules WHERE enabled = 1 AND id IN (%s) ORDER BY priority DESC, created_at ASC`,
+		ruleColumns, strings.Join(placeholders, ","),
+	)
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list enabled rules by ids: %w", err)
+	}
+	defer rows.Close()
+
+	var result []Rule
+	for rows.Next() {
+		rule, err := scanRuleFromRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, *rule)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate enabled rules by ids: %w", err)
 	}
 
 	return result, nil
@@ -174,10 +215,10 @@ func (r *Repository) Update(ctx context.Context, id string, rule *Rule) (*Rule, 
 	newRevision := existing.Revision + 1
 	nowStr := storage.FormatNow()
 	_, err = r.db.ExecContext(ctx,
-		`UPDATE rules SET name=?, enabled=?, priority=?, conditions=?, condition_mode=?, continue_on_match=?, template_id=?, destination_ids=?, dedupe_config=?, revision=?, updated_at=?
+		`UPDATE rules SET name=?, enabled=?, priority=?, conditions=?, condition_mode=?, template_id=?, destination_ids=?, dedupe_config=?, revision=?, updated_at=?
 		 WHERE id=?`,
 		rule.Name, boolToInt(rule.Enabled), rule.Priority, string(conditionsJSON),
-		rule.ConditionMode, boolToInt(rule.ContinueOnMatch), rule.TemplateID,
+		rule.ConditionMode, rule.TemplateID,
 		string(destIDsJSON), dedupeJSON, newRevision, nowStr, id,
 	)
 	if err != nil {
@@ -203,7 +244,6 @@ func (r *Repository) Delete(ctx context.Context, id string) error {
 func scanRule(row *sql.Row) (*Rule, error) {
 	var r Rule
 	var enabled int
-	var continueOnMatch int
 	var conditionsJSON string
 	var destIDsJSON string
 	var dedupeJSON sql.NullString
@@ -211,7 +251,7 @@ func scanRule(row *sql.Row) (*Rule, error) {
 
 	err := row.Scan(
 		&r.ID, &r.Name, &enabled, &r.Priority, &conditionsJSON, &r.ConditionMode,
-		&continueOnMatch, &r.TemplateID, &destIDsJSON, &dedupeJSON, &r.Revision,
+		&r.TemplateID, &destIDsJSON, &dedupeJSON, &r.Revision,
 		&createdAt, &updatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -222,7 +262,6 @@ func scanRule(row *sql.Row) (*Rule, error) {
 	}
 
 	r.Enabled = intToBool(enabled)
-	r.ContinueOnMatch = intToBool(continueOnMatch)
 
 	if err := json.Unmarshal([]byte(conditionsJSON), &r.Conditions); err != nil {
 		return nil, fmt.Errorf("unmarshal conditions: %w", err)
@@ -244,7 +283,6 @@ func scanRule(row *sql.Row) (*Rule, error) {
 func scanRuleFromRows(rows *sql.Rows) (*Rule, error) {
 	var r Rule
 	var enabled int
-	var continueOnMatch int
 	var conditionsJSON string
 	var destIDsJSON string
 	var dedupeJSON sql.NullString
@@ -252,7 +290,7 @@ func scanRuleFromRows(rows *sql.Rows) (*Rule, error) {
 
 	err := rows.Scan(
 		&r.ID, &r.Name, &enabled, &r.Priority, &conditionsJSON, &r.ConditionMode,
-		&continueOnMatch, &r.TemplateID, &destIDsJSON, &dedupeJSON, &r.Revision,
+		&r.TemplateID, &destIDsJSON, &dedupeJSON, &r.Revision,
 		&createdAt, &updatedAt,
 	)
 	if err != nil {
@@ -260,7 +298,6 @@ func scanRuleFromRows(rows *sql.Rows) (*Rule, error) {
 	}
 
 	r.Enabled = intToBool(enabled)
-	r.ContinueOnMatch = intToBool(continueOnMatch)
 
 	if err := json.Unmarshal([]byte(conditionsJSON), &r.Conditions); err != nil {
 		return nil, fmt.Errorf("unmarshal conditions: %w", err)

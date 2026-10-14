@@ -3,6 +3,7 @@ import { listSources } from '@/api/sources'
 import { listDestinations } from '@/api/destinations'
 import { listTemplates } from '@/api/templates'
 import { listMappings } from '@/api/mappings'
+import { listRules } from '@/api/rules'
 
 export interface NameOption {
   id: string
@@ -10,7 +11,7 @@ export interface NameOption {
 }
 
 /**
- * Composable for loading dropdown option lists (sources, destinations, templates, mappings).
+ * Composable for loading dropdown option lists (sources, destinations, templates, mappings, rules).
  * Each option list is loaded independently and cached in refs.
  */
 export function useOptions() {
@@ -18,6 +19,7 @@ export function useOptions() {
   const destinationOptions = ref<NameOption[]>([])
   const templateOptions = ref<NameOption[]>([])
   const mappingOptions = ref<NameOption[]>([])
+  const ruleOptions = ref<NameOption[]>([])
 
   function mapToOptions(data: unknown[]): NameOption[] {
     return data.map((item) => {
@@ -57,16 +59,24 @@ export function useOptions() {
     } catch { /* silent */ }
   }
 
+  async function fetchRuleOptions() {
+    try {
+      const res = await listRules({ page: 1, size: 200 })
+      ruleOptions.value = mapToOptions(res.data?.data ?? [])
+    } catch { /* silent */ }
+  }
+
   /**
    * Load multiple option lists at once.
    * @param keys - which option lists to load
    */
-  async function fetchAll(keys: ('sources' | 'destinations' | 'templates' | 'mappings')[] = ['sources', 'destinations', 'templates', 'mappings']) {
+  async function fetchAll(keys: ('sources' | 'destinations' | 'templates' | 'mappings' | 'rules')[] = ['sources', 'destinations', 'templates', 'mappings', 'rules']) {
     const tasks: Promise<void>[] = []
     if (keys.includes('sources')) tasks.push(fetchSourceOptions())
     if (keys.includes('destinations')) tasks.push(fetchDestinationOptions())
     if (keys.includes('templates')) tasks.push(fetchTemplateOptions())
     if (keys.includes('mappings')) tasks.push(fetchMappingOptions())
+    if (keys.includes('rules')) tasks.push(fetchRuleOptions())
     await Promise.all(tasks)
   }
 
@@ -75,10 +85,12 @@ export function useOptions() {
     destinationOptions,
     templateOptions,
     mappingOptions,
+    ruleOptions,
     fetchSourceOptions,
     fetchDestinationOptions,
     fetchTemplateOptions,
     fetchMappingOptions,
+    fetchRuleOptions,
     fetchAll,
   }
 }

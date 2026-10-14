@@ -44,6 +44,8 @@ export interface MappingResponse {
   id: string
   name: string
   revision: number
+  rule_ids?: string[]
+  continue_on_match: boolean
   fields: MappingEntry[]
   created_at?: string
   updated_at?: string
@@ -65,8 +67,6 @@ export interface ConditionGroup {
 
 export interface DedupeConfig {
   window_seconds: number
-  key_fields: string[]
-  action: string
 }
 
 export interface RuleResponse {
@@ -76,7 +76,6 @@ export interface RuleResponse {
   priority: number
   conditions: ConditionGroup
   condition_mode: string
-  continue_on_match: boolean
   template_id?: string | null
   destination_ids: string[]
   dedupe_config?: DedupeConfig | null

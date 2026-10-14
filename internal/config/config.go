@@ -72,12 +72,12 @@ func Load() (*Config, error) {
 		Worker: WorkerConfig{
 			EventProcessorConcurrency: getEnvInt("EVENT_PROCESSOR_CONCURRENCY", 4),
 			DeliveryWorkerConcurrency: getEnvInt("DELIVERY_WORKER_CONCURRENCY", 8),
-			LeaseTimeout:              getEnvDuration("LEASE_TIMEOUT", 5*time.Minute),
+			LeaseTimeout:              getEnvDuration("LEASE_TIMEOUT", 30*time.Second),
 			RetryBaseDelay:            30 * time.Second,
 			RetryMaxDelay:             1 * time.Hour,
 			RetryJitterPercent:        20,
 			DefaultMaxAttempts:        getEnvInt("DEFAULT_MAX_ATTEMPTS", 5),
-			ClaimPollInterval:         2 * time.Second,
+			ClaimPollInterval:         getEnvDuration("CLAIM_POLL_INTERVAL", 2*time.Second),
 			LeaseRecoveryInterval:     30 * time.Second,
 		},
 		Ingest: IngestConfig{

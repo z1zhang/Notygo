@@ -7,6 +7,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"zpush/internal/event"
+	"zpush/internal/notify"
 )
 
 // ListEvents returns a paginated list of events, with optional status filter.
@@ -47,24 +48,22 @@ func GetEvent(db *sql.DB) http.HandlerFunc {
 		if err != nil {
 			// No event run yet, return event without run data
 			WriteJSON(w, http.StatusOK, map[string]any{
-				"event":        evt,
-				"latest_run":   nil,
-				"parsed_fields": nil,
+				"event":      evt,
+				"latest_run": nil,
 			})
 			return
 		}
 
 		WriteJSON(w, http.StatusOK, map[string]any{
-			"event":        evt,
-			"latest_run":   run,
-			"parsed_fields": run.ParsedFields,
+			"event":      evt,
+			"latest_run": run,
 		})
 	}
 }
 
-// ReplayEvent creates a new EventRun with run_type='replay' and sets the event
-// status back to 'received' for reprocessing.
-func ReplayEvent(db *sql.DB) http.HandlerFunc {
+// ReplayEvent sets the event status back to 'received' for reprocessing.
+// The processor will create a new EventRun with run_type='replay' when it picks up the event.
+func ReplayEvent(db *sql.DB, notifier *notify.Notifier) http.HandlerFunc {
 	repo := event.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
@@ -74,33 +73,20 @@ func ReplayEvent(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Create new EventRun with run_type='replay'
-		eventRun := &event.EventRun{
-			EventID:          evt.ID,
-			RunType:          "replay",
-			ParsedFields:     map[string]any{},
-			ValidationResult: map[string]any{},
-			RuleSetSnapshot:  []event.RuleSnapshot{},
-			MatchedRuleIDs:   []string{},
-			Status:           event.EventRunStatusProcessing,
-		}
-
-		createdRun, err := repo.CreateEventRun(r.Context(), eventRun)
-		if err != nil {
-			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to create replay run")
-			return
-		}
-
-		// Set event status back to 'received' for reprocessing
-		if err := repo.SetStatus(r.Context(), evt.ID, event.EventStatusReceived); err != nil {
+		// Set event for replay: status back to 'received', run_type = 'replay'
+		if err := repo.SetForReplay(r.Context(), evt.ID); err != nil {
 			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to reset event status")
 			return
 		}
 
+		// Notify the event processor to pick up the replayed event immediately
+		if notifier != nil {
+			notifier.NotifyEvent()
+		}
+
 		WriteJSON(w, http.StatusOK, map[string]any{
-			"event":     evt.ID,
-			"run":       createdRun,
-			"message":   "event queued for replay",
+			"event_id": evt.ID,
+			"message":  "event queued for replay",
 		})
 	}
 }

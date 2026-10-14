@@ -23,6 +23,7 @@ import (
 	"zpush/internal/event"
 	"zpush/internal/ingest"
 	"zpush/internal/mapping"
+	"zpush/internal/notify"
 	"zpush/internal/observability"
 	"zpush/internal/processor"
 	"zpush/internal/rules"
@@ -90,8 +91,11 @@ func main() {
 	}
 	rateLimiter := ingest.NewRateLimiter(globalRate, globalBurst)
 
+	// Create notifier for instant wake-up between ingest → processor → worker
+	notifier := notify.NewNotifier()
+
 	// Create ingester
-	ingester := ingest.NewIngester(db, sourceRepo, secretSvc, rateLimiter, cfg.Ingest.MaxPayloadBytes)
+	ingester := ingest.NewIngester(db, sourceRepo, secretSvc, rateLimiter, cfg.Ingest.MaxPayloadBytes, notifier)
 
 	// Create sender registry and register adapters
 	senderRegistry := sender.NewRegistry()
@@ -105,10 +109,10 @@ func main() {
 	circuitBreaker := delivery.NewCircuitBreakerManager()
 
 	// Create delivery worker
-	deliveryWorker := delivery.NewDeliveryWorker(cfg.Worker, destRepo, deliveryRepo, senderRegistry, circuitBreaker, secretSvc)
+	deliveryWorker := delivery.NewDeliveryWorker(cfg.Worker, destRepo, deliveryRepo, senderRegistry, circuitBreaker, secretSvc, notifier)
 
 	// Create event processor
-	eventProcessor := processor.NewEventProcessor(cfg.Worker, sourceRepo, mappingRepo, ruleRepo, templateRepo, destRepo, eventRepo, deliveryRepo)
+	eventProcessor := processor.NewEventProcessor(cfg.Worker, sourceRepo, mappingRepo, ruleRepo, templateRepo, destRepo, eventRepo, deliveryRepo, notifier)
 
 	// Create worker context that can be canceled
 	workerCtx, workerCancel := context.WithCancel(context.Background())
@@ -121,11 +125,11 @@ func main() {
 	slog.Info("delivery worker started", "concurrency", cfg.Worker.DeliveryWorkerConcurrency)
 
 	// Start lease recovery loops
-	go processor.LeaseRecoveryLoop(workerCtx, db, cfg.Worker.LeaseRecoveryInterval)
-	go delivery.LeaseRecoveryLoop(workerCtx, db, cfg.Worker.LeaseRecoveryInterval)
+	go processor.LeaseRecoveryLoop(workerCtx, db, cfg.Worker.LeaseRecoveryInterval, notifier)
+	go delivery.LeaseRecoveryLoop(workerCtx, db, cfg.Worker.LeaseRecoveryInterval, notifier)
 
 	// Create router
-	router := api.NewRouter(db, secretSvc, sourceRepo, mappingRepo, ruleRepo, templateRepo, destRepo, eventRepo, deliveryRepo, ingester)
+	router := api.NewRouter(db, secretSvc, sourceRepo, mappingRepo, ruleRepo, templateRepo, destRepo, eventRepo, deliveryRepo, ingester, notifier)
 
 	// Start HTTP server
 	srv := &http.Server{

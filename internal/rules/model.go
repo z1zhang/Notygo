@@ -10,7 +10,6 @@ type Rule struct {
 	Priority        int           `json:"priority"`
 	Conditions      ConditionGroup `json:"conditions"`
 	ConditionMode   string        `json:"condition_mode"`
-	ContinueOnMatch bool          `json:"continue_on_match"`
 	TemplateID      *string       `json:"template_id,omitempty"`
 	DestinationIDs  []string      `json:"destination_ids"`
 	DedupeConfig    *DedupeConfig `json:"dedupe_config,omitempty"`
@@ -36,8 +35,8 @@ type Condition struct {
 }
 
 // DedupeConfig configures deduplication behaviour for a rule.
+// When enabled (WindowSeconds > 0), duplicate payloads within the window are skipped.
+// The dedupe key is always payload_hash (SHA-256 of the raw request body).
 type DedupeConfig struct {
-	WindowSeconds int    `json:"window_seconds"`
-	KeyFields     []string `json:"key_fields"`
-	Action        string `json:"action"` // "skip", "queue"
+	WindowSeconds int `json:"window_seconds"`
 }

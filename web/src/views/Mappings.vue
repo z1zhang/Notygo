@@ -15,6 +15,19 @@
             <el-tag>{{ (row.fields ?? []).length }}</el-tag>
           </template>
         </el-table-column>
+        <el-table-column :label="$t('mappings.rules')" min-width="180">
+          <template #default="{ row }">
+            <span v-if="(row.rule_ids ?? []).length">
+              <el-tag v-for="rId in (row.rule_ids as string[]).slice(0, 3)" :key="rId" style="margin-right: 4px">
+                {{ lookupName(ruleOptions, rId) }}
+              </el-tag>
+              <el-tag v-if="(row.rule_ids as string[]).length > 3" type="info">
+                +{{ (row.rule_ids as string[]).length - 3 }}
+              </el-tag>
+            </span>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
         <el-table-column :label="$t('common.actions')" width="180" fixed="right">
           <template #default="{ row }">
             <div class="action-buttons">
@@ -52,6 +65,26 @@
       >
         <el-form-item :label="$t('common.name')" prop="name">
           <el-input v-model="form.name" :placeholder="$t('mappings.mappingName')" />
+        </el-form-item>
+
+        <el-form-item :label="$t('mappings.rules')">
+          <el-select
+            v-model="form.rule_ids"
+            multiple
+            :placeholder="$t('mappings.selectRules')"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="r in ruleOptions"
+              :key="r.id"
+              :label="r.name"
+              :value="r.id"
+            />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item :label="$t('mappings.continueOnMatch')">
+          <el-switch v-model="form.continue_on_match" />
         </el-form-item>
 
         <!-- Smart Import (collapsible) -->
@@ -188,10 +221,9 @@
             <el-col :span="8">
               <el-form-item :prop="`fields.${index}.transform`" :label="$t('mappings.transform')">
                 <el-select v-model="field.transform" :placeholder="$t('mappings.selectTransform')" clearable style="width: 100%">
-                  <el-option :label="$t('mappings.lower')" value="lower" />
-                  <el-option :label="$t('mappings.upper')" value="upper" />
+                  <el-option :label="$t('mappings.lower')" value="to_lower" />
+                  <el-option :label="$t('mappings.upper')" value="to_upper" />
                   <el-option :label="$t('mappings.trim')" value="trim" />
-                  <el-option :label="$t('mappings.regex')" value="regex" />
                 </el-select>
               </el-form-item>
             </el-col>
@@ -237,6 +269,8 @@ import { useI18n } from 'vue-i18n'
 import { Delete, Plus, Search, MagicStick } from '@element-plus/icons-vue'
 import { listMappings, createMapping, updateMapping, deleteMapping } from '@/api/mappings'
 import { useCrudPage } from '@/composables/useCrudPage'
+import { useOptions } from '@/composables/useOptions'
+import { lookupName } from '@/utils/lookup'
 import { getErrorMessage } from '@/utils/helpers'
 import { previewParse } from '@/api/preview'
 import type { MappingResponse, MappingEntry } from '@/api/types'
@@ -265,6 +299,8 @@ const {
   entityI18nKey: 'nav.mappings',
 })
 
+const { ruleOptions, fetchRuleOptions } = useOptions()
+
 // Use MappingEntry as the form field type; local mutable version for the form
 interface FieldRow {
   source_path: string
@@ -280,6 +316,8 @@ interface FieldRow {
 const formRef = ref<FormInstance>()
 const form = reactive({
   name: '',
+  rule_ids: [] as string[],
+  continue_on_match: false,
   fields: [] as FieldRow[],
 })
 
@@ -310,6 +348,8 @@ function removeField(index: number) {
 
 function resetForm() {
   form.name = ''
+  form.rule_ids = []
+  form.continue_on_match = false
   form.fields = []
   // Reset smart import state
   smartImportJson.value = ''
@@ -320,6 +360,8 @@ function resetForm() {
 
 function fillForm(row: MappingResponse) {
   form.name = row.name ?? ''
+  form.rule_ids = (row.rule_ids ?? []) as string[]
+  form.continue_on_match = row.continue_on_match ?? false
   form.fields = (row.fields ?? []).length
     ? (row.fields as MappingEntry[]).map((f) => ({
         source_path: f.source_path,
@@ -353,6 +395,8 @@ async function handleSave() {
   try {
     const payload: Record<string, unknown> = {
       name: form.name,
+      rule_ids: form.rule_ids,
+      continue_on_match: form.continue_on_match,
       fields: form.fields
         .filter((f) => f.source_path || f.target_key)
         .map((f) => ({
@@ -453,6 +497,7 @@ async function handleSmartImport() {
 
 onMounted(() => {
   fetchData()
+  fetchRuleOptions()
 })
 </script>
 

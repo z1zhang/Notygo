@@ -14,6 +14,7 @@ import (
 	"zpush/internal/event"
 	"zpush/internal/ingest"
 	"zpush/internal/mapping"
+	"zpush/internal/notify"
 	"zpush/internal/observability"
 	"zpush/internal/rules"
 	"zpush/internal/secret"
@@ -33,6 +34,7 @@ func NewRouter(
 	eventRepo *event.Repository,
 	deliveryRepo *delivery.Repository,
 	ingester *ingest.Ingester,
+	notifier *notify.Notifier,
 ) chi.Router {
 	r := chi.NewRouter()
 
@@ -121,7 +123,7 @@ func NewRouter(
 				r.Get("/", ListEvents(db))
 				r.Route("/{id}", func(r chi.Router) {
 					r.Get("/", GetEvent(db))
-					r.Post("/replay", ReplayEvent(db))
+					r.Post("/replay", ReplayEvent(db, notifier))
 				})
 			})
 
@@ -129,9 +131,9 @@ func NewRouter(
 				r.Get("/", ListDeliveries(db))
 				r.Route("/{id}", func(r chi.Router) {
 					r.Get("/", GetDelivery(db))
-					r.Post("/retry", RetryDelivery(db))
+					r.Post("/retry", RetryDelivery(db, notifier))
 				})
-				r.Post("/bulk-retry", BulkRetry(db))
+				r.Post("/bulk-retry", BulkRetry(db, notifier))
 			})
 
 			// Audit logs

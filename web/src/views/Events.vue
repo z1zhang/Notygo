@@ -5,6 +5,7 @@
         <el-option :label="$t('events.received')" value="received" />
         <el-option :label="$t('events.processing')" value="processing" />
         <el-option :label="$t('events.completed')" value="completed" />
+        <el-option :label="$t('events.deduped')" value="deduped" />
         <el-option :label="$t('events.failed')" value="failed" />
       </el-select>
       <el-select v-model="filters.source_id" :placeholder="$t('events.source')" clearable style="width: 200px" @change="fetchData">
@@ -164,6 +165,16 @@
               </template>
             </el-table-column>
             <el-table-column prop="attempt_count" :label="$t('events.attempts')" min-width="90" />
+            <el-table-column :label="$t('events.createdAt')" min-width="160">
+              <template #default="{ row }">
+                {{ formatTime(row.created_at) }}
+              </template>
+            </el-table-column>
+            <el-table-column :label="$t('events.updatedAt')" min-width="160">
+              <template #default="{ row }">
+                {{ formatTime(row.updated_at) }}
+              </template>
+            </el-table-column>
           </el-table>
           <el-empty v-else :description="$t('events.noDeliveries')" :image-size="40" />
 
@@ -290,7 +301,7 @@ async function openDetail(row: EventResponse) {
     const res = await getEvent(row.id)
     const data = res.data as unknown as Record<string, unknown>
 
-    // Backend GetEvent returns: { event: {...}, latest_run: {...}, parsed_fields: {...} }
+    // Backend GetEvent returns: { event: {...}, latest_run: {...} }
     if (data.event) {
       detail.value = data.event as EventResponse
     } else {

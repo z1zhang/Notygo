@@ -86,16 +86,41 @@
             type="password"
             show-password
             :placeholder="isEditing ? $t('sources.secretEditPlaceholder') : $t('sources.secretPlaceholder')"
-          />
+          >
+            <template #append>
+              <el-button @click="generateSecret">{{ $t('sources.generateSecret') }}</el-button>
+            </template>
+          </el-input>
         </el-form-item>
         <el-form-item :label="$t('sources.maxBodyBytes')" prop="max_body_bytes">
-          <el-input-number v-model="form.max_body_bytes" :min="0" :step="1024" />
+          <el-input-number v-model="form.max_body_bytes" :min="0" :step="128" />
         </el-form-item>
-        <el-form-item :label="$t('sources.rateLimit')" prop="rate_limit">
-          <el-input
-            v-model="form.rate_limit"
-            placeholder='{"rate":10,"burst":20}'
-          />
+        <el-form-item :label="$t('sources.rateLimit')">
+          <div style="display: flex; gap: 16px; width: 100%">
+            <div style="flex: 1">
+              <div style="font-size: 12px; color: var(--el-text-color-regular); margin-bottom: 4px">{{ $t('sources.rateLimitRate') }}</div>
+              <el-input-number
+                v-model="form.rate_limit_rate"
+                :min="0"
+                :step="1"
+                controls-position="right"
+                style="width: 100%"
+              />
+            </div>
+            <div style="flex: 1">
+              <div style="font-size: 12px; color: var(--el-text-color-regular); margin-bottom: 4px">{{ $t('sources.rateLimitBurst') }}</div>
+              <el-input-number
+                v-model="form.rate_limit_burst"
+                :min="0"
+                :step="1"
+                controls-position="right"
+                style="width: 100%"
+              />
+            </div>
+          </div>
+          <div style="font-size: 12px; color: var(--el-text-color-placeholder); margin-top: 4px; line-height: 1.4">
+            {{ $t('sources.rateLimitHint') }}
+          </div>
         </el-form-item>
         <el-form-item :label="$t('sources.mapping')" prop="mapping_id">
           <el-select v-model="form.mapping_id" :placeholder="$t('sources.selectMapping')" clearable>
@@ -160,8 +185,9 @@ const form = reactive({
   name: '',
   auth_type: 'none',
   secret: '',
-  max_body_bytes: 1048576,
-  rate_limit: '',
+  max_body_bytes: 1024, // displayed as KB internally, converted to bytes on save
+  rate_limit_rate: 0,
+  rate_limit_burst: 0,
   mapping_id: '',
   enabled: true,
 })
@@ -175,8 +201,9 @@ function resetForm() {
   form.name = ''
   form.auth_type = 'none'
   form.secret = ''
-  form.max_body_bytes = 1048576
-  form.rate_limit = ''
+  form.max_body_bytes = 1024
+  form.rate_limit_rate = 0
+  form.rate_limit_burst = 0
   form.mapping_id = ''
   form.enabled = true
 }
@@ -189,8 +216,21 @@ function openDialog(row?: SourceResponse) {
     form.name = row.name ?? ''
     form.auth_type = row.auth_type ?? 'none'
     form.secret = ''
-    form.max_body_bytes = row.max_body_bytes ?? 1048576
-    form.rate_limit = row.rate_limit ?? ''
+    form.max_body_bytes = Math.round((row.max_body_bytes ?? 1048576) / 1024)
+    // Parse rate_limit JSON string into separate rate/burst fields
+    if (row.rate_limit) {
+      try {
+        const rl = JSON.parse(row.rate_limit)
+        form.rate_limit_rate = rl.rate ?? 0
+        form.rate_limit_burst = rl.burst ?? 0
+      } catch {
+        form.rate_limit_rate = 0
+        form.rate_limit_burst = 0
+      }
+    } else {
+      form.rate_limit_rate = 0
+      form.rate_limit_burst = 0
+    }
     form.mapping_id = row.mapping_id ?? ''
     form.enabled = row.enabled ?? true
   } else {
@@ -210,7 +250,7 @@ async function handleSave() {
     const payload: Record<string, unknown> = {
       name: form.name,
       auth_type: form.auth_type,
-      max_body_bytes: form.max_body_bytes,
+      max_body_bytes: form.max_body_bytes * 1024, // convert KB → bytes
       enabled: form.enabled,
       mapping_id: form.mapping_id || null,
     }
@@ -221,16 +261,12 @@ async function handleSave() {
       payload.secret_ref = form.secret
     }
 
-    // Rate limit: backend expects *string (JSON string), not a parsed object
-    if (form.rate_limit) {
-      // Validate it's valid JSON, but send as string
-      try {
-        JSON.parse(form.rate_limit)
-        payload.rate_limit = form.rate_limit  // send as string
-      } catch {
-        // Not valid JSON, send as-is (backend will handle)
-        payload.rate_limit = form.rate_limit
-      }
+    // Rate limit: assemble rate/burst into JSON string for backend
+    if (form.rate_limit_rate > 0 || form.rate_limit_burst > 0) {
+      payload.rate_limit = JSON.stringify({
+        rate: form.rate_limit_rate || 0,
+        burst: form.rate_limit_burst || 0,
+      })
     }
 
     if (isEditing.value) {
@@ -247,6 +283,18 @@ async function handleSave() {
   } finally {
     saving.value = false
   }
+}
+
+function generateSecret() {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+  const length = 32
+  const array = new Uint8Array(length)
+  crypto.getRandomValues(array)
+  let result = ''
+  for (let i = 0; i < length; i++) {
+    result += chars[array[i] % chars.length]
+  }
+  form.secret = result
 }
 
 async function toggleEnabled(row: SourceResponse, val: boolean) {

@@ -6,12 +6,13 @@ import (
 	"log/slog"
 	"time"
 
+	"zpush/internal/notify"
 	"zpush/internal/storage"
 )
 
 // LeaseRecoveryLoop recovers deliveries whose lease has expired by resetting them
 // back to 'pending' status so they can be re-claimed.
-func LeaseRecoveryLoop(ctx context.Context, db *sql.DB, interval time.Duration) {
+func LeaseRecoveryLoop(ctx context.Context, db *sql.DB, interval time.Duration, notifier *notify.Notifier) {
 	slog.Info("delivery lease recovery loop starting", "interval", interval)
 
 	ticker := time.NewTicker(interval)
@@ -27,7 +28,7 @@ func LeaseRecoveryLoop(ctx context.Context, db *sql.DB, interval time.Duration) 
 			nowExpr := storage.NowExpr()
 			result, err := db.ExecContext(ctx,
 				"UPDATE deliveries SET status='pending', attempt_count=attempt_count-1, lease_until=NULL, lease_owner=NULL, updated_at="+nowExpr+
-					" WHERE status='sending' AND lease_until IS NOT NULL AND lease_until < "+nowExpr)
+					" WHERE status='processing' AND lease_until IS NOT NULL AND lease_until < "+nowExpr)
 			if err != nil {
 				slog.Error("delivery lease recovery error", "error", err)
 				continue
@@ -35,6 +36,10 @@ func LeaseRecoveryLoop(ctx context.Context, db *sql.DB, interval time.Duration) 
 			n, _ := result.RowsAffected()
 			if n > 0 {
 				slog.Info("delivery lease recovery reclaimed deliveries", "count", n)
+				// Wake up the delivery worker dispatcher immediately
+				if notifier != nil {
+					notifier.NotifyDelivery()
+				}
 			}
 		}
 	}

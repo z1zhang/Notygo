@@ -9,9 +9,12 @@ import (
 // MySQL supports up to 6 fractional second digits (microseconds).
 const mysqlDatetimeLayout = "2006-01-02 15:04:05.999999"
 
-// NowExpr returns the SQL expression for the current UTC time ("NOW()").
+// NowExpr returns the SQL expression for the current UTC time.
+// Uses UTC_TIMESTAMP() instead of NOW() because MySQL's NOW() returns
+// the server's local time (which may be UTC+8), while all Go-side
+// timestamps use time.Now().UTC(). Mixing the two causes 8-hour offsets.
 func NowExpr() string {
-	return "NOW()"
+	return "UTC_TIMESTAMP()"
 }
 
 // FormatTime formats a time.Time for MySQL DATETIME columns.

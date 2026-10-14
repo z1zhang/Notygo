@@ -6,6 +6,7 @@ const eventStatusMap: Record<string, string> = {
   received: 'info',
   processing: 'warning',
   completed: 'success',
+  deduped: '',
   failed: 'danger',
 }
 

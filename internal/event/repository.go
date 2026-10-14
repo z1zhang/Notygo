@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -49,12 +50,12 @@ func (r *Repository) Insert(ctx context.Context, e *Event) (*Event, error) {
 	}
 
 	_, err := r.db.ExecContext(ctx,
-		`INSERT INTO events (id, source_id, source_event_id, request_id, received_at, content_type, payload_raw, payload_hash, status, error_code, error_summary, expire_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO events (id, source_id, source_event_id, request_id, received_at, content_type, payload_raw, payload_hash, status, run_type, error_code, error_summary, expire_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		e.ID, e.SourceID, e.SourceEventID, e.RequestID,
 		storage.FormatTime(e.ReceivedAt),
 		e.ContentType, e.PayloadRaw, e.PayloadHash,
-		e.Status, e.ErrorCode, e.ErrorSummary, expireAt,
+		e.Status, e.RunType, e.ErrorCode, e.ErrorSummary, expireAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("insert event: %w", err)
@@ -66,7 +67,7 @@ func (r *Repository) Insert(ctx context.Context, e *Event) (*Event, error) {
 // GetByID retrieves an event by its ID.
 func (r *Repository) GetByID(ctx context.Context, id string) (*Event, error) {
 	row := r.db.QueryRowContext(ctx,
-		`SELECT id, source_id, source_event_id, request_id, received_at, content_type, payload_raw, payload_hash, status, error_code, error_summary, expire_at, lease_until, lease_owner
+		`SELECT id, source_id, source_event_id, request_id, received_at, content_type, payload_raw, payload_hash, status, run_type, error_code, error_summary, expire_at, lease_until, lease_owner
 		 FROM events WHERE id = ?`, id)
 	return scanEvent(row)
 }
@@ -76,7 +77,7 @@ func (r *Repository) GetByID(ctx context.Context, id string) (*Event, error) {
 func (r *Repository) List(ctx context.Context, page, size int, statusFilter string) ([]Event, int64, error) {
 	var total int64
 	countQuery := `SELECT COUNT(*) FROM events`
-	listQuery := `SELECT id, source_id, source_event_id, request_id, received_at, content_type, payload_raw, payload_hash, status, error_code, error_summary, expire_at, lease_until, lease_owner
+	listQuery := `SELECT id, source_id, source_event_id, request_id, received_at, content_type, payload_raw, payload_hash, status, run_type, error_code, error_summary, expire_at, lease_until, lease_owner
 		 FROM events`
 	var args []any
 
@@ -124,20 +125,22 @@ func (r *Repository) List(ctx context.Context, page, size int, statusFilter stri
 func (r *Repository) ClaimEvent(ctx context.Context, workerID string, leaseTimeout time.Duration) (*Event, error) {
 	leaseUntil := storage.FormatTime(time.Now().UTC().Add(leaseTimeout))
 
-	// Find and claim the oldest 'received' event.
-	// Double-nested subquery required for MySQL compatibility:
-	// MySQL does not allow referencing the same table in an UPDATE subquery directly.
+	// Step 1: Find the oldest claimable event ID
+	var id string
+	err := r.db.QueryRowContext(ctx,
+		`SELECT id FROM events WHERE status = 'received' ORDER BY received_at ASC LIMIT 1`,
+	).Scan(&id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrAlreadyClaimed
+		}
+		return nil, fmt.Errorf("find claimable event: %w", err)
+	}
+
+	// Step 2: Claim it by ID (atomic, status guard prevents double-claiming)
 	result, err := r.db.ExecContext(ctx,
-		`UPDATE events SET status = ?, lease_until = ?, lease_owner = ?
-		 WHERE id = (
-			 SELECT id FROM (
-				 SELECT id FROM events
-				 WHERE status = 'received'
-				 ORDER BY received_at ASC
-				 LIMIT 1
-			 ) AS claimable
-		 ) AND status = 'received'`,
-		EventStatusProcessing, leaseUntil, workerID,
+		`UPDATE events SET status = ?, lease_until = ?, lease_owner = ? WHERE id = ? AND status = 'received'`,
+		EventStatusProcessing, leaseUntil, workerID, id,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("claim event: %w", err)
@@ -145,32 +148,43 @@ func (r *Repository) ClaimEvent(ctx context.Context, workerID string, leaseTimeo
 
 	n, _ := result.RowsAffected()
 	if n == 0 {
-		return nil, ErrAlreadyClaimed
+		return nil, ErrAlreadyClaimed // someone else claimed it between step 1 and 2
 	}
 
-	// Fetch the claimed event
-	var event Event
-	row := r.db.QueryRowContext(ctx,
-		`SELECT id, source_id, source_event_id, request_id, received_at, content_type, payload_raw, payload_hash, status, error_code, error_summary, expire_at, lease_until, lease_owner
-		 FROM events WHERE lease_owner = ? AND status = ? ORDER BY received_at ASC LIMIT 1`,
-		workerID, EventStatusProcessing,
-	)
-	event, err = scanEventValue(row)
-	if err != nil {
-		return nil, err
-	}
-
-	return &event, nil
+	// Step 3: Fetch by ID — guaranteed to be the right one
+	return r.GetByID(ctx, id)
 }
 
 // MarkProcessed marks an event as completed.
+// Includes a status guard (AND status = 'processing') to prevent marking an
+// event as completed if lease recovery already reset it to 'received'.
 func (r *Repository) MarkProcessed(ctx context.Context, id string) error {
-	_, err := r.db.ExecContext(ctx,
-		`UPDATE events SET status = ?, lease_until = NULL, lease_owner = NULL WHERE id = ?`,
-		EventStatusCompleted, id,
+	result, err := r.db.ExecContext(ctx,
+		`UPDATE events SET status = ?, lease_until = NULL, lease_owner = NULL WHERE id = ? AND status = ?`,
+		EventStatusCompleted, id, EventStatusProcessing,
 	)
 	if err != nil {
 		return fmt.Errorf("mark event processed: %w", err)
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		slog.Warn("mark event processed skipped (not in processing status)", "event_id", id)
+	}
+	return nil
+}
+
+// MarkDeduped marks an event as deduped (all matched rules were dedupe-skipped).
+func (r *Repository) MarkDeduped(ctx context.Context, id string) error {
+	result, err := r.db.ExecContext(ctx,
+		`UPDATE events SET status = ?, lease_until = NULL, lease_owner = NULL WHERE id = ? AND status = ?`,
+		EventStatusDeduped, id, EventStatusProcessing,
+	)
+	if err != nil {
+		return fmt.Errorf("mark event deduped: %w", err)
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		slog.Warn("mark event deduped skipped (not in processing status)", "event_id", id)
 	}
 	return nil
 }
@@ -195,6 +209,18 @@ func (r *Repository) SetStatus(ctx context.Context, id string, status string) er
 	)
 	if err != nil {
 		return fmt.Errorf("set event status: %w", err)
+	}
+	return nil
+}
+
+// SetForReplay resets the event for replay: sets status to 'received' and run_type to 'replay'.
+func (r *Repository) SetForReplay(ctx context.Context, id string) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE events SET status = ?, run_type = ?, lease_until = NULL, lease_owner = NULL WHERE id = ?`,
+		EventStatusReceived, EventRunTypeReplay, id,
+	)
+	if err != nil {
+		return fmt.Errorf("set event for replay: %w", err)
 	}
 	return nil
 }
@@ -294,7 +320,7 @@ func scanEvent(row *sql.Row) (*Event, error) {
 
 	err := row.Scan(
 		&e.ID, &e.SourceID, &e.SourceEventID, &e.RequestID, &receivedAt,
-		&e.ContentType, &e.PayloadRaw, &e.PayloadHash, &e.Status,
+		&e.ContentType, &e.PayloadRaw, &e.PayloadHash, &e.Status, &e.RunType,
 		&e.ErrorCode, &e.ErrorSummary, &expireAt, &leaseUntil, &leaseOwner,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -336,7 +362,7 @@ func scanEventFromRows(rows *sql.Rows) (*Event, error) {
 
 	err := rows.Scan(
 		&e.ID, &e.SourceID, &e.SourceEventID, &e.RequestID, &receivedAt,
-		&e.ContentType, &e.PayloadRaw, &e.PayloadHash, &e.Status,
+		&e.ContentType, &e.PayloadRaw, &e.PayloadHash, &e.Status, &e.RunType,
 		&e.ErrorCode, &e.ErrorSummary, &expireAt, &leaseUntil, &leaseOwner,
 	)
 	if err != nil {

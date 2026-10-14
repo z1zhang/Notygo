@@ -83,11 +83,6 @@
               <el-switch v-model="form.enabled" />
             </el-form-item>
           </el-col>
-          <el-col :span="8">
-            <el-form-item :label="$t('rules.continueOnMatch')">
-              <el-switch v-model="form.continue_on_match" />
-            </el-form-item>
-          </el-col>
         </el-row>
 
         <el-divider content-position="left">{{ $t('rules.conditions') }}</el-divider>
@@ -189,30 +184,13 @@
 
         <el-row :gutter="16">
           <el-col :span="8">
-            <el-form-item :label="$t('rules.windowSec')" label-width="110px">
-              <el-input-number v-model="form.dedupe_window" :min="0" :max="86400" :placeholder="$t('rules.windowPlaceholder')" style="width: 100%" />
+            <el-form-item :label="$t('rules.dedupeEnabled')">
+              <el-switch v-model="form.dedupe_enabled" />
             </el-form-item>
           </el-col>
           <el-col :span="8">
-            <el-form-item :label="$t('rules.keyFields')" label-width="110px">
-              <el-select
-                v-model="form.dedupe_key_fields"
-                multiple
-                filterable
-                allow-create
-                default-first-option
-                :placeholder="$t('rules.keyFieldsPlaceholder')"
-                style="width: 100%"
-              >
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item :label="$t('rules.dedupeAction')" label-width="110px">
-              <el-select v-model="form.dedupe_action" :placeholder="$t('rules.actionPlaceholder')" clearable style="width: 100%">
-                <el-option :label="$t('rules.skip')" value="skip" />
-                <el-option :label="$t('rules.queue')" value="queue" />
-              </el-select>
+            <el-form-item :label="$t('rules.windowSec')">
+              <el-input-number v-model="form.dedupe_window" :min="1" :max="86400" :placeholder="$t('rules.windowPlaceholder')" :disabled="!form.dedupe_enabled" style="width: 100%" />
             </el-form-item>
           </el-col>
         </el-row>
@@ -274,14 +252,12 @@ const form = reactive({
   priority: 0,
   enabled: true,
   condition_mode: 'and',
-  continue_on_match: false,
   conditions: [] as ConditionRow[],
   template_id: '',
   destination_ids: [] as string[],
   // dedupe
-  dedupe_window: 0,
-  dedupe_key_fields: [] as string[],
-  dedupe_action: '',
+  dedupe_enabled: false,
+  dedupe_window: 300,
 })
 
 const formRules: FormRules = {
@@ -315,13 +291,11 @@ function resetForm() {
   form.priority = 0
   form.enabled = true
   form.condition_mode = 'and'
-  form.continue_on_match = false
   form.conditions = []
   form.template_id = ''
   form.destination_ids = []
-  form.dedupe_window = 0
-  form.dedupe_key_fields = []
-  form.dedupe_action = ''
+  form.dedupe_enabled = false
+  form.dedupe_window = 300
 }
 
 function openDialog(row?: RuleResponse) {
@@ -333,7 +307,6 @@ function openDialog(row?: RuleResponse) {
     form.priority = row.priority ?? 0
     form.enabled = row.enabled ?? true
     form.condition_mode = row.condition_mode ?? 'and'
-    form.continue_on_match = row.continue_on_match ?? false
 
     // Backend stores conditions as ConditionGroup { operator, conditions: [...] }
     // Extract the flat conditions array from the group
@@ -359,10 +332,9 @@ function openDialog(row?: RuleResponse) {
     form.destination_ids = (row.destination_ids ?? []) as string[]
 
     // Dedupe config
-    if (row.dedupe_config) {
-      form.dedupe_window = row.dedupe_config.window_seconds ?? 0
-      form.dedupe_key_fields = row.dedupe_config.key_fields ?? []
-      form.dedupe_action = row.dedupe_config.action ?? ''
+    if (row.dedupe_config && row.dedupe_config.window_seconds > 0) {
+      form.dedupe_enabled = true
+      form.dedupe_window = row.dedupe_config.window_seconds
     }
   } else {
     isEditing.value = false
@@ -392,12 +364,8 @@ async function handleSave() {
     }
 
     // Build dedupe config
-    const dedupeConfig = form.dedupe_window > 0
-      ? {
-          window_seconds: form.dedupe_window,
-          key_fields: form.dedupe_key_fields,
-          action: form.dedupe_action || 'skip',
-        }
+    const dedupeConfig = form.dedupe_enabled
+      ? { window_seconds: form.dedupe_window }
       : null
 
     const payload: Record<string, unknown> = {
@@ -405,7 +373,6 @@ async function handleSave() {
       priority: form.priority,
       enabled: form.enabled,
       condition_mode: form.condition_mode,
-      continue_on_match: form.continue_on_match,
       conditions: conditionGroup,
       template_id: form.template_id || null,
       destination_ids: form.destination_ids,

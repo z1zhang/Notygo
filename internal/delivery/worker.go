@@ -13,6 +13,7 @@ import (
 
 	"zpush/internal/config"
 	"zpush/internal/destination"
+	"zpush/internal/notify"
 	"zpush/internal/secret"
 	"zpush/internal/sender"
 )
@@ -26,6 +27,7 @@ type DeliveryWorker struct {
 	senderRegistry *sender.Registry
 	circuitBreaker *CircuitBreakerManager
 	secretSvc      *secret.Service
+	notifier       *notify.Notifier
 	workerID       string
 }
 
@@ -37,6 +39,7 @@ func NewDeliveryWorker(
 	senderRegistry *sender.Registry,
 	circuitBreaker *CircuitBreakerManager,
 	secretSvc *secret.Service,
+	notifier *notify.Notifier,
 ) *DeliveryWorker {
 	workerID := generateDeliveryWorkerID()
 	return &DeliveryWorker{
@@ -46,6 +49,7 @@ func NewDeliveryWorker(
 		senderRegistry: senderRegistry,
 		circuitBreaker: circuitBreaker,
 		secretSvc:      secretSvc,
+		notifier:       notifier,
 		workerID:       workerID,
 	}
 }
@@ -54,53 +58,130 @@ func NewDeliveryWorker(
 func (w *DeliveryWorker) Run(ctx context.Context) {
 	slog.Info("delivery worker starting", "worker_id", w.workerID, "concurrency", w.cfg.DeliveryWorkerConcurrency)
 
-	sem := make(chan struct{}, w.cfg.DeliveryWorkerConcurrency)
-	var wg sync.WaitGroup
+	// Work channel: buffered to concurrency capacity. When full, the dispatcher
+	// blocks on send, providing natural backpressure.
+	workCh := make(chan *Delivery, w.cfg.DeliveryWorkerConcurrency)
 
+	// doneCh signals when a worker finishes processing — allows the dispatcher
+	// to wake up immediately and claim more deliveries without waiting for the ticker.
+	doneCh := make(chan struct{}, w.cfg.DeliveryWorkerConcurrency)
+
+	// Start worker pool — N goroutines reading from workCh
+	var wg sync.WaitGroup
+	for i := 0; i < w.cfg.DeliveryWorkerConcurrency; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for d := range workCh {
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							slog.Error("delivery worker panic", "delivery_id", d.ID, "event_id", d.EventID, "panic", r)
+						}
+					}()
+					w.sendDelivery(ctx, d)
+				}()
+				// Signal that a slot is free (non-blocking, doneCh is buffered)
+				select {
+				case doneCh <- struct{}{}:
+				default:
+				}
+			}
+		}()
+	}
+
+	// Dispatcher: wait for notification, worker-done, or ticker, then batch-claim loop
 	ticker := time.NewTicker(w.cfg.ClaimPollInterval)
 	defer ticker.Stop()
 
-	for {
-		select {
-		case <-ctx.Done():
-			slog.Info("delivery worker stopping, waiting for in-flight tasks", "worker_id", w.workerID)
-			wg.Wait()
-			slog.Info("delivery worker stopped", "worker_id", w.workerID)
-			return
+	notifyCh := w.notifier.DeliveryCh() // nil if notifier is nil
 
-		case <-ticker.C:
+dispatch:
+	for {
+		// Wait for a signal: notification, worker-done, or ticker fallback
+		if notifyCh != nil {
+			select {
+			case <-ctx.Done():
+				break dispatch
+			case <-notifyCh:
+				// New deliveries arrived, drain coalesced signals
+				drainDeliveryChannel(notifyCh)
+			case <-doneCh:
+				// A worker finished, try to claim more immediately
+			case <-ticker.C:
+				// Fallback poll
+			}
+		} else {
+			// No notifier: listen on doneCh + ticker
+			select {
+			case <-ctx.Done():
+				break dispatch
+			case <-doneCh:
+			case <-ticker.C:
+			}
+		}
+
+		// Batch claim loop: claim deliveries until workCh is full or no more claimable
+		for {
+			select {
+			case <-ctx.Done():
+				break dispatch
+			default:
+			}
+
 			d, err := w.deliveryRepo.ClaimDelivery(ctx, w.workerID, w.cfg.LeaseTimeout)
 			if err != nil {
-				// No deliveries to claim or error
-				continue
+				if err != ErrAlreadyClaimed {
+					// Transient DB error — log and retry after brief pause
+					slog.Error("claim delivery error, retrying", "error", err)
+					select {
+					case <-ctx.Done():
+						break dispatch
+					case <-time.After(200 * time.Millisecond):
+						continue // retry the claim immediately
+					}
+				}
+				break // no more deliveries to claim right now
 			}
 
-			// Acquire semaphore slot
+			// Push to workCh. This blocks when the channel is full (backpressure).
 			select {
-			case sem <- struct{}{}:
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
-					defer func() { <-sem }()
-					w.sendDelivery(ctx, d)
-				}()
-			default:
-				// At concurrency limit; release the claim back
-				slog.Warn("delivery worker at concurrency limit, releasing claim", "delivery_id", d.ID)
-				_ = w.deliveryRepo.ResetToPending(ctx, d.ID)
+			case workCh <- d:
+				// Delivery dispatched to worker pool
+			case <-ctx.Done():
+				// Context cancelled while waiting for a slot.
+				// The delivery is claimed but not dispatched. Lease recovery will handle it.
+				break dispatch
 			}
+		}
+	}
+
+	// Graceful shutdown: close workCh so workers drain, then wait
+	close(workCh)
+	slog.Info("delivery worker stopping, waiting for in-flight tasks", "worker_id", w.workerID)
+	wg.Wait()
+	slog.Info("delivery worker stopped", "worker_id", w.workerID)
+}
+
+// drainDeliveryChannel drains any coalesced signals from a notification channel.
+func drainDeliveryChannel(ch <-chan struct{}) {
+	for {
+		select {
+		case <-ch:
+		default:
+			return
 		}
 	}
 }
 
 // sendDelivery handles a single delivery attempt.
 func (w *DeliveryWorker) sendDelivery(ctx context.Context, d *Delivery) {
-	slog.Info("sending delivery", "delivery_id", d.ID, "destination_id", d.DestinationID, "attempt", d.AttemptCount)
+	slog.Info("sending delivery", "delivery_id", d.ID, "event_id", d.EventID, "destination_id", d.DestinationID, "attempt", d.AttemptCount)
 
 	// 1. Check circuit breaker
 	dest, err := w.destRepo.GetByID(ctx, d.DestinationID)
 	if err != nil {
-		slog.Error("failed to fetch destination for delivery", "delivery_id", d.ID, "destination_id", d.DestinationID, "error", err)
+		slog.Error("failed to fetch destination for delivery", "delivery_id", d.ID, "event_id", d.EventID, "destination_id", d.DestinationID, "error", err)
 		_ = w.deliveryRepo.UpdateError(ctx, d.ID, "DELIVER_001", "destination not found")
 		_ = w.deliveryRepo.UpdateStatus(ctx, d.ID, DeliveryStatusFailed)
 		return
@@ -178,7 +259,7 @@ func (w *DeliveryWorker) sendDelivery(ctx context.Context, d *Delivery) {
 	// 7. Handle result
 	if err != nil {
 		// Non-HTTP error (connection, timeout, etc.)
-		slog.Error("delivery send error", "delivery_id", d.ID, "error", err)
+		slog.Error("delivery send error", "delivery_id", d.ID, "event_id", d.EventID, "error", err)
 		attempt.ErrorCode = stringPtr("DELIVER_001")
 		attempt.ErrorSummary = stringPtr(err.Error())
 		_, _ = w.deliveryRepo.RecordDeliveryAttempt(ctx, attempt)
@@ -190,7 +271,7 @@ func (w *DeliveryWorker) sendDelivery(ctx context.Context, d *Delivery) {
 
 	if result.StatusCode >= 200 && result.StatusCode < 300 {
 		// Success
-		slog.Info("delivery succeeded", "delivery_id", d.ID, "status_code", result.StatusCode)
+		slog.Info("delivery succeeded", "delivery_id", d.ID, "event_id", d.EventID, "status_code", result.StatusCode)
 		_, _ = w.deliveryRepo.RecordDeliveryAttempt(ctx, attempt)
 		_ = w.deliveryRepo.UpdateStatus(ctx, d.ID, DeliveryStatusDelivered)
 		w.circuitBreaker.RecordSuccess(d.DestinationID)
@@ -229,7 +310,7 @@ func (w *DeliveryWorker) sendDelivery(ctx context.Context, d *Delivery) {
 // and scheduling the next attempt.
 func (w *DeliveryWorker) handleRetryableFailure(ctx context.Context, d *Delivery, errCode, errMsg string) {
 	if d.AttemptCount >= d.MaxAttempts {
-		slog.Warn("delivery max attempts reached, moving to dead letter", "delivery_id", d.ID, "attempts", d.AttemptCount)
+		slog.Warn("delivery max attempts reached, moving to dead letter", "delivery_id", d.ID, "event_id", d.EventID, "attempts", d.AttemptCount)
 		_ = w.deliveryRepo.UpdateStatus(ctx, d.ID, DeliveryStatusFailed)
 		return
 	}
@@ -237,7 +318,7 @@ func (w *DeliveryWorker) handleRetryableFailure(ctx context.Context, d *Delivery
 	backoff := calculateBackoff(d.AttemptCount, w.cfg.RetryBaseDelay, w.cfg.RetryMaxDelay, w.cfg.RetryJitterPercent)
 	nextAttempt := time.Now().UTC().Add(backoff)
 
-	slog.Info("delivery retry scheduled", "delivery_id", d.ID, "attempt", d.AttemptCount, "backoff", backoff, "next_attempt", nextAttempt)
+	slog.Info("delivery retry scheduled", "delivery_id", d.ID, "event_id", d.EventID, "attempt", d.AttemptCount, "backoff", backoff, "next_attempt", nextAttempt)
 	_ = w.deliveryRepo.UpdateError(ctx, d.ID, errCode, errMsg)
 	_ = w.deliveryRepo.UpdateStatus(ctx, d.ID, DeliveryStatusRetryWait)
 	_ = w.deliveryRepo.UpdateNextAttempt(ctx, d.ID, nextAttempt)

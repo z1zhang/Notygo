@@ -7,8 +7,15 @@ const (
 	EventStatusReceived   = "received"
 	EventStatusProcessing = "processing"
 	EventStatusCompleted  = "completed"
+	EventStatusDeduped    = "deduped"
 	EventStatusFailed     = "failed"
 	EventStatusExpired    = "expired"
+)
+
+// Event run type constants.
+const (
+	EventRunTypeInitial = "initial"
+	EventRunTypeReplay  = "replay"
 )
 
 // EventRun status constants.
@@ -29,6 +36,7 @@ type Event struct {
 	PayloadRaw    string     `json:"payload_raw"`
 	PayloadHash   string     `json:"payload_hash"`
 	Status        string     `json:"status"`
+	RunType       string     `json:"run_type"`
 	ErrorCode     *string    `json:"error_code,omitempty"`
 	ErrorSummary  *string    `json:"error_summary,omitempty"`
 	ExpireAt      *time.Time  `json:"expire_at,omitempty"`

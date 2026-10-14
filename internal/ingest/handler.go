@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/oklog/ulid/v2"
 
+	"zpush/internal/notify"
 	"zpush/internal/observability"
 	"zpush/internal/secret"
 	"zpush/internal/source"
@@ -28,16 +29,18 @@ type Ingester struct {
 	secretSvc    *secret.Service
 	rateLimiter  *RateLimiter
 	maxBodyBytes int
+	notifier     *notify.Notifier
 }
 
 // NewIngester creates a new Ingester.
-func NewIngester(db *sql.DB, sourceRepo *source.Repository, secretSvc *secret.Service, rl *RateLimiter, maxBodyBytes int) *Ingester {
+func NewIngester(db *sql.DB, sourceRepo *source.Repository, secretSvc *secret.Service, rl *RateLimiter, maxBodyBytes int, notifier *notify.Notifier) *Ingester {
 	return &Ingester{
 		db:           db,
 		sourceRepo:   sourceRepo,
 		secretSvc:    secretSvc,
 		rateLimiter:  rl,
 		maxBodyBytes: maxBodyBytes,
+		notifier:     notifier,
 	}
 }
 
@@ -149,13 +152,18 @@ func (h *Ingester) HandleIngest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_, err = h.db.ExecContext(ctx,
-		`INSERT INTO events (id, source_id, source_event_id, request_id, received_at, content_type, payload_raw, payload_hash, status)
+		`INSERT INTO events (id, source_id, source_event_id, request_id, received_at, content_type, payload_raw, payload_hash, status, run_type)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		eventID, src.ID, sourceEventID, requestID, receivedAt, src.PayloadContentType, string(body), payloadHash, "received",
+		eventID, src.ID, sourceEventID, requestID, receivedAt, src.PayloadContentType, string(body), payloadHash, "received", "initial",
 	)
 	if err != nil {
 		writeIngestError(w, http.StatusInternalServerError, "INGEST_006", "failed to store event")
 		return
+	}
+
+	// Notify the event processor that a new event is available
+	if h.notifier != nil {
+		h.notifier.NotifyEvent()
 	}
 
 	// 13. Return 202 Accepted
