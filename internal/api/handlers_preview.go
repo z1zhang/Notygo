@@ -29,9 +29,9 @@ type previewParseResponse struct {
 }
 
 type structureInfo struct {
-	Type         string `json:"type"`          // "array" or "object"
-	RootIsArray  bool   `json:"root_is_array"`
-	ItemCount    int    `json:"item_count"`    // array length or object key count
+	Type        string `json:"type"` // "array" or "object"
+	RootIsArray bool   `json:"root_is_array"`
+	ItemCount   int    `json:"item_count"` // array length or object key count
 }
 
 type suggestedField struct {
@@ -338,7 +338,7 @@ func isVowel(c rune) bool {
 
 // previewMappingRequest is the request body for the mapping preview endpoint.
 type previewMappingRequest struct {
-	Payload string             `json:"payload"`
+	Payload string                 `json:"payload"`
 	Fields  []mapping.MappingEntry `json:"fields"`
 }
 
@@ -372,8 +372,8 @@ func PreviewMapping() http.HandlerFunc {
 		}
 
 		WriteJSON(w, http.StatusOK, map[string]any{
-			"parsed_fields":      parsedFields,
-			"validation_errors":  validationErrors,
+			"parsed_fields":     parsedFields,
+			"validation_errors": validationErrors,
 		})
 	}
 }

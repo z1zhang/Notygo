@@ -14,7 +14,6 @@ type Source struct {
 	MaxBodyBytes       int       `json:"max_body_bytes"`
 	RateLimit          *string   `json:"rate_limit,omitempty"`
 	MappingID          *string   `json:"mapping_id,omitempty"`
-	ExpectedResponse   *string   `json:"expected_response,omitempty"`
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
 }
@@ -30,7 +29,6 @@ type CreateSourceRequest struct {
 	MaxBodyBytes       *int    `json:"max_body_bytes,omitempty"`
 	RateLimit          *string `json:"rate_limit,omitempty"`
 	MappingID          *string `json:"mapping_id,omitempty"`
-	ExpectedResponse   *string `json:"expected_response,omitempty"`
 }
 
 // UpdateSourceRequest is the DTO for updating an existing source.
@@ -44,7 +42,6 @@ type UpdateSourceRequest struct {
 	MaxBodyBytes       *int    `json:"max_body_bytes,omitempty"`
 	RateLimit          *string `json:"rate_limit,omitempty"`
 	MappingID          *string `json:"mapping_id,omitempty"`
-	ExpectedResponse   *string `json:"expected_response,omitempty"`
 }
 
 // SourceResponse is the DTO returned by the API.
@@ -59,7 +56,6 @@ type SourceResponse struct {
 	MaxBodyBytes       int     `json:"max_body_bytes"`
 	RateLimit          *string `json:"rate_limit,omitempty"`
 	MappingID          *string `json:"mapping_id,omitempty"`
-	ExpectedResponse   *string `json:"expected_response,omitempty"`
 	CreatedAt          string  `json:"created_at,omitempty"`
 	UpdatedAt          string  `json:"updated_at,omitempty"`
 }

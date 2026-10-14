@@ -2,10 +2,13 @@ package api
 
 import (
 	"database/sql"
+	"encoding/json"
+	"fmt"
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-
+	"zpush/internal/audit"
 	"zpush/internal/event"
 	"zpush/internal/notify"
 )
@@ -63,7 +66,7 @@ func GetEvent(db *sql.DB) http.HandlerFunc {
 
 // ReplayEvent sets the event status back to 'received' for reprocessing.
 // The processor will create a new EventRun with run_type='replay' when it picks up the event.
-func ReplayEvent(db *sql.DB, notifier *notify.Notifier) http.HandlerFunc {
+func ReplayEvent(db *sql.DB, notifier *notify.Notifier, auditRepo *audit.Repository) http.HandlerFunc {
 	repo := event.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
@@ -88,5 +91,29 @@ func ReplayEvent(db *sql.DB, notifier *notify.Notifier) http.HandlerFunc {
 			"event_id": evt.ID,
 			"message":  "event queued for replay",
 		})
+
+		// Audit log
+		if auditErr := auditRepo.Insert(r.Context(), &audit.AuditLog{
+			Operator:   GetUsernameFromContext(r.Context()),
+			Action:     "replay",
+			TargetType: "event",
+			TargetID:   evt.ID,
+			Summary:    stringPtr(fmt.Sprintf("replayed event %s", evt.ID)),
+		}); auditErr != nil {
+			slog.Error("audit log insert failed", "action", "replay", "target_type", "event", "error", auditErr)
+		}
 	}
+}
+
+// stringPtr returns a pointer to the given string.
+func stringPtr(s string) *string { return &s }
+
+// marshalSnapshot marshals a value to JSON for audit snapshot_before.
+func marshalSnapshot(v any) *string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil
+	}
+	s := string(b)
+	return &s
 }

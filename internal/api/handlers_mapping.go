@@ -3,10 +3,12 @@ package api
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-
+	"zpush/internal/audit"
 	"zpush/internal/mapping"
 )
 
@@ -30,7 +32,7 @@ func ListMappings(db *sql.DB) http.HandlerFunc {
 }
 
 // CreateMapping creates a new mapping.
-func CreateMapping(db *sql.DB) http.HandlerFunc {
+func CreateMapping(db *sql.DB, auditRepo *audit.Repository) http.HandlerFunc {
 	repo := mapping.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -62,6 +64,17 @@ func CreateMapping(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		// Audit log
+		if auditErr := auditRepo.Insert(r.Context(), &audit.AuditLog{
+			Operator:   GetUsernameFromContext(r.Context()),
+			Action:     "create",
+			TargetType: "mapping",
+			TargetID:   created.ID,
+			Summary:    stringPtr(fmt.Sprintf("created mapping %q", created.Name)),
+		}); auditErr != nil {
+			slog.Error("audit log insert failed", "action", "create", "target_type", "mapping", "error", auditErr)
+		}
+
 		WriteJSON(w, http.StatusCreated, created)
 	}
 }
@@ -81,7 +94,7 @@ func GetMapping(db *sql.DB) http.HandlerFunc {
 }
 
 // UpdateMapping updates an existing mapping, incrementing revision.
-func UpdateMapping(db *sql.DB) http.HandlerFunc {
+func UpdateMapping(db *sql.DB, auditRepo *audit.Repository) http.HandlerFunc {
 	repo := mapping.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
@@ -96,10 +109,25 @@ func UpdateMapping(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		// Fetch existing for audit snapshot
+		oldMapping, _ := repo.GetByID(r.Context(), id)
+
 		updated, err := repo.Update(r.Context(), id, req.Name, req.RuleIDs, req.ContinueOnMatch, req.Fields)
 		if err != nil {
 			WriteError(w, http.StatusNotFound, ErrConfigValidation, "mapping not found")
 			return
+		}
+
+		// Audit log
+		if auditErr := auditRepo.Insert(r.Context(), &audit.AuditLog{
+			Operator:       GetUsernameFromContext(r.Context()),
+			Action:         "update",
+			TargetType:     "mapping",
+			TargetID:       id,
+			SnapshotBefore: marshalSnapshot(oldMapping),
+			Summary:        stringPtr(fmt.Sprintf("updated mapping %q", updated.Name)),
+		}); auditErr != nil {
+			slog.Error("audit log insert failed", "action", "update", "target_type", "mapping", "error", auditErr)
 		}
 
 		WriteJSON(w, http.StatusOK, updated)
@@ -107,14 +135,31 @@ func UpdateMapping(db *sql.DB) http.HandlerFunc {
 }
 
 // DeleteMapping deletes a mapping by ID.
-func DeleteMapping(db *sql.DB) http.HandlerFunc {
+func DeleteMapping(db *sql.DB, auditRepo *audit.Repository) http.HandlerFunc {
 	repo := mapping.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
+
+		// Fetch existing for audit snapshot
+		oldMapping, _ := repo.GetByID(r.Context(), id)
+
 		if err := repo.Delete(r.Context(), id); err != nil {
 			WriteError(w, http.StatusNotFound, ErrConfigValidation, "mapping not found")
 			return
 		}
+
+		// Audit log
+		if auditErr := auditRepo.Insert(r.Context(), &audit.AuditLog{
+			Operator:       GetUsernameFromContext(r.Context()),
+			Action:         "delete",
+			TargetType:     "mapping",
+			TargetID:       id,
+			SnapshotBefore: marshalSnapshot(oldMapping),
+			Summary:        stringPtr(fmt.Sprintf("deleted mapping %q", oldMapping.Name)),
+		}); auditErr != nil {
+			slog.Error("audit log insert failed", "action", "delete", "target_type", "mapping", "error", auditErr)
+		}
+
 		WriteJSON(w, http.StatusNoContent, nil)
 	}
 }

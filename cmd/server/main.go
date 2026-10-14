@@ -17,6 +17,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"zpush/internal/api"
+	"zpush/internal/audit"
 	"zpush/internal/config"
 	"zpush/internal/delivery"
 	"zpush/internal/destination"
@@ -81,6 +82,7 @@ func main() {
 	destRepo := destination.NewRepository(db)
 	eventRepo := event.NewRepository(db)
 	deliveryRepo := delivery.NewRepository(db)
+	auditRepo := audit.NewRepository(db)
 
 	// Create rate limiter
 	globalRate, globalBurst, err := config.ParseGlobalRateLimit(cfg.Ingest.GlobalRateLimit)
@@ -105,11 +107,8 @@ func main() {
 	senderRegistry.Register("email", sender.NewEmailSender())
 	senderRegistry.Register("http_webhook", sender.NewHTTPWebhookSender())
 
-	// Create circuit breaker manager
-	circuitBreaker := delivery.NewCircuitBreakerManager()
-
 	// Create delivery worker
-	deliveryWorker := delivery.NewDeliveryWorker(cfg.Worker, destRepo, deliveryRepo, senderRegistry, circuitBreaker, secretSvc, notifier)
+	deliveryWorker := delivery.NewDeliveryWorker(cfg.Worker, destRepo, deliveryRepo, senderRegistry, secretSvc, notifier)
 
 	// Create event processor
 	eventProcessor := processor.NewEventProcessor(cfg.Worker, sourceRepo, mappingRepo, ruleRepo, templateRepo, destRepo, eventRepo, deliveryRepo, notifier)
@@ -129,7 +128,7 @@ func main() {
 	go delivery.LeaseRecoveryLoop(workerCtx, db, cfg.Worker.LeaseRecoveryInterval, notifier)
 
 	// Create router
-	router := api.NewRouter(db, secretSvc, sourceRepo, mappingRepo, ruleRepo, templateRepo, destRepo, eventRepo, deliveryRepo, ingester, notifier)
+	router := api.NewRouter(db, secretSvc, sourceRepo, mappingRepo, ruleRepo, templateRepo, destRepo, eventRepo, deliveryRepo, ingester, notifier, auditRepo)
 
 	// Start HTTP server
 	srv := &http.Server{

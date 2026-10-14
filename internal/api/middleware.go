@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"log/slog"
 	"net/http"
@@ -9,6 +10,22 @@ import (
 
 	"zpush/internal/storage"
 )
+
+type authContextKey string
+
+const (
+	userIDKey   authContextKey = "user_id"
+	usernameKey authContextKey = "username"
+)
+
+// GetUsernameFromContext extracts the username from the request context.
+// Returns "system" if not found (e.g. internal/system operations).
+func GetUsernameFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(usernameKey).(string); ok {
+		return v
+	}
+	return "system"
+}
 
 // RecoveryMiddleware catches panics and returns a 500 error.
 func RecoveryMiddleware(next http.Handler) http.Handler {
@@ -73,7 +90,15 @@ func AdminAuthMiddleware(db *sql.DB) func(http.Handler) http.Handler {
 				return
 			}
 
-			next.ServeHTTP(w, r)
+			// Lookup username for audit logging
+			var username string
+			_ = db.QueryRowContext(r.Context(),
+				"SELECT username FROM admin_users WHERE id = ?", userID,
+			).Scan(&username)
+
+			ctx := context.WithValue(r.Context(), userIDKey, userID)
+			ctx = context.WithValue(ctx, usernameKey, username)
+			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }

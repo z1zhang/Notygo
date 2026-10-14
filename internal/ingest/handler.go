@@ -153,7 +153,7 @@ func (h *Ingester) HandleIngest(w http.ResponseWriter, r *http.Request) {
 
 	_, err = h.db.ExecContext(ctx,
 		`INSERT INTO events (id, source_id, source_event_id, request_id, received_at, content_type, payload_raw, payload_hash, status, run_type)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		eventID, src.ID, sourceEventID, requestID, receivedAt, src.PayloadContentType, string(body), payloadHash, "received", "initial",
 	)
 	if err != nil {

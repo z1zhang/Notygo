@@ -174,15 +174,6 @@
         <el-form-item :label="$t('destinations.timeoutMs')" prop="timeout_ms">
           <el-input-number v-model="form.timeout_ms" :min="1000" :step="1000" />
         </el-form-item>
-        <el-form-item :label="$t('destinations.circuitBreaker')" prop="circuit_breaker">
-          <el-input
-            v-model="form.circuit_breaker"
-            type="textarea"
-            :rows="3"
-            placeholder='{"failure_threshold":5,"success_threshold":2,"timeout_seconds":60}'
-            class="monospace-input"
-          />
-        </el-form-item>
         <el-form-item :label="$t('common.enabled')">
           <el-switch v-model="form.enabled" />
         </el-form-item>
@@ -240,7 +231,6 @@ const form = reactive({
   type: 'http_webhook',
   secret_ref: '',
   timeout_ms: 10000,
-  circuit_breaker: '',
   enabled: true,
 })
 
@@ -402,7 +392,6 @@ function resetForm() {
   form.type = 'http_webhook'
   form.secret_ref = ''
   form.timeout_ms = 10000
-  form.circuit_breaker = ''
   form.enabled = true
   resetTypeConfig()
 }
@@ -417,10 +406,6 @@ function openDialog(row?: DestinationResponse) {
     form.secret_ref = (row.secret_ref as string) ?? ''
     originalSecretRef.value = form.secret_ref
     form.timeout_ms = row.timeout_ms ?? 10000
-    form.circuit_breaker =
-      typeof row.circuit_breaker === 'string'
-        ? row.circuit_breaker
-        : JSON.stringify(row.circuit_breaker ?? {}, null, 2)
     form.enabled = row.enabled ?? true
     // Parse existing config into typeConfig
     try {
@@ -443,16 +428,6 @@ async function handleSave() {
 
   saving.value = true
   try {
-    let cbParsed: unknown = null
-    if (form.circuit_breaker) {
-      try {
-        cbParsed = JSON.parse(form.circuit_breaker)
-      } catch {
-        ElMessage.error(t('destinations.invalidCbJson'))
-        return
-      }
-    }
-
     const config = buildConfigFromTypeConfig()
 
     const payload: Record<string, unknown> = {
@@ -460,7 +435,6 @@ async function handleSave() {
       type: form.type,
       config,
       timeout_ms: form.timeout_ms,
-      circuit_breaker: cbParsed,
       enabled: form.enabled,
     }
     if (form.secret_ref && form.secret_ref !== originalSecretRef.value) {

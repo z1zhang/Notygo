@@ -3,10 +3,12 @@ package api
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-
+	"zpush/internal/audit"
 	"zpush/internal/delivery"
 	"zpush/internal/notify"
 	"zpush/internal/storage"
@@ -61,7 +63,7 @@ func GetDelivery(db *sql.DB) http.HandlerFunc {
 }
 
 // RetryDelivery resets a delivery back to pending status for retry.
-func RetryDelivery(db *sql.DB, notifier *notify.Notifier) http.HandlerFunc {
+func RetryDelivery(db *sql.DB, notifier *notify.Notifier, auditRepo *audit.Repository) http.HandlerFunc {
 	repo := delivery.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
@@ -100,11 +102,22 @@ func RetryDelivery(db *sql.DB, notifier *notify.Notifier) http.HandlerFunc {
 			"delivery": updated,
 			"message":  "delivery queued for retry",
 		})
+
+		// Audit log
+		if auditErr := auditRepo.Insert(r.Context(), &audit.AuditLog{
+			Operator:   GetUsernameFromContext(r.Context()),
+			Action:     "retry",
+			TargetType: "delivery",
+			TargetID:   id,
+			Summary:    stringPtr(fmt.Sprintf("retried delivery %s", id)),
+		}); auditErr != nil {
+			slog.Error("audit log insert failed", "action", "retry", "target_type", "delivery", "error", auditErr)
+		}
 	}
 }
 
 // BulkRetry resets multiple deliveries back to pending based on filters.
-func BulkRetry(db *sql.DB, notifier *notify.Notifier) http.HandlerFunc {
+func BulkRetry(db *sql.DB, notifier *notify.Notifier, auditRepo *audit.Repository) http.HandlerFunc {
 	repo := delivery.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -140,5 +153,16 @@ func BulkRetry(db *sql.DB, notifier *notify.Notifier) http.HandlerFunc {
 			"reset_count": count,
 			"message":     "deliveries queued for retry",
 		})
+
+		// Audit log
+		if auditErr := auditRepo.Insert(r.Context(), &audit.AuditLog{
+			Operator:   GetUsernameFromContext(r.Context()),
+			Action:     "bulk_retry",
+			TargetType: "delivery",
+			TargetID:   "",
+			Summary:    stringPtr(fmt.Sprintf("bulk retried %d deliveries", count)),
+		}); auditErr != nil {
+			slog.Error("audit log insert failed", "action", "bulk_retry", "target_type", "delivery", "error", auditErr)
+		}
 	}
 }

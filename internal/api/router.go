@@ -9,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 
+	"zpush/internal/audit"
 	"zpush/internal/delivery"
 	"zpush/internal/destination"
 	"zpush/internal/event"
@@ -35,6 +36,7 @@ func NewRouter(
 	deliveryRepo *delivery.Repository,
 	ingester *ingest.Ingester,
 	notifier *notify.Notifier,
+	auditRepo *audit.Repository,
 ) chi.Router {
 	r := chi.NewRouter()
 
@@ -69,51 +71,51 @@ func NewRouter(
 			// Configuration CRUD
 			r.Route("/sources", func(r chi.Router) {
 				r.Get("/", ListSources(db))
-				r.Post("/", CreateSource(db, secretSvc))
+				r.Post("/", CreateSource(db, secretSvc, auditRepo))
 				r.Route("/{id}", func(r chi.Router) {
 					r.Get("/", GetSource(db))
-					r.Put("/", UpdateSource(db, secretSvc))
-					r.Delete("/", DeleteSource(db))
+					r.Put("/", UpdateSource(db, secretSvc, auditRepo))
+					r.Delete("/", DeleteSource(db, auditRepo))
 				})
 			})
 
 			r.Route("/mappings", func(r chi.Router) {
 				r.Get("/", ListMappings(db))
-				r.Post("/", CreateMapping(db))
+				r.Post("/", CreateMapping(db, auditRepo))
 				r.Route("/{id}", func(r chi.Router) {
 					r.Get("/", GetMapping(db))
-					r.Put("/", UpdateMapping(db))
-					r.Delete("/", DeleteMapping(db))
+					r.Put("/", UpdateMapping(db, auditRepo))
+					r.Delete("/", DeleteMapping(db, auditRepo))
 				})
 			})
 
 			r.Route("/rules", func(r chi.Router) {
 				r.Get("/", ListRules(db))
-				r.Post("/", CreateRule(db))
+				r.Post("/", CreateRule(db, auditRepo))
 				r.Route("/{id}", func(r chi.Router) {
 					r.Get("/", GetRule(db))
-					r.Put("/", UpdateRule(db))
-					r.Delete("/", DeleteRule(db))
+					r.Put("/", UpdateRule(db, auditRepo))
+					r.Delete("/", DeleteRule(db, auditRepo))
 				})
 			})
 
 			r.Route("/templates", func(r chi.Router) {
 				r.Get("/", ListTemplates(db))
-				r.Post("/", CreateTemplate(db))
+				r.Post("/", CreateTemplate(db, auditRepo))
 				r.Route("/{id}", func(r chi.Router) {
 					r.Get("/", GetTemplate(db))
-					r.Put("/", UpdateTemplate(db))
-					r.Delete("/", DeleteTemplate(db))
+					r.Put("/", UpdateTemplate(db, auditRepo))
+					r.Delete("/", DeleteTemplate(db, auditRepo))
 				})
 			})
 
 			r.Route("/destinations", func(r chi.Router) {
 				r.Get("/", ListDestinations(db, secretSvc))
-				r.Post("/", CreateDestination(db, secretSvc))
+				r.Post("/", CreateDestination(db, secretSvc, auditRepo))
 				r.Route("/{id}", func(r chi.Router) {
 					r.Get("/", GetDestination(db, secretSvc))
-					r.Put("/", UpdateDestination(db, secretSvc))
-					r.Delete("/", DeleteDestination(db))
+					r.Put("/", UpdateDestination(db, secretSvc, auditRepo))
+					r.Delete("/", DeleteDestination(db, auditRepo))
 					r.Post("/test", placeholderHandler("destination.test"))
 				})
 			})
@@ -123,7 +125,7 @@ func NewRouter(
 				r.Get("/", ListEvents(db))
 				r.Route("/{id}", func(r chi.Router) {
 					r.Get("/", GetEvent(db))
-					r.Post("/replay", ReplayEvent(db, notifier))
+					r.Post("/replay", ReplayEvent(db, notifier, auditRepo))
 				})
 			})
 
@@ -131,9 +133,9 @@ func NewRouter(
 				r.Get("/", ListDeliveries(db))
 				r.Route("/{id}", func(r chi.Router) {
 					r.Get("/", GetDelivery(db))
-					r.Post("/retry", RetryDelivery(db, notifier))
+					r.Post("/retry", RetryDelivery(db, notifier, auditRepo))
 				})
-				r.Post("/bulk-retry", BulkRetry(db, notifier))
+				r.Post("/bulk-retry", BulkRetry(db, notifier, auditRepo))
 			})
 
 			// Audit logs

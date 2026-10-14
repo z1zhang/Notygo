@@ -9,7 +9,6 @@ type Rule struct {
 	Enabled         bool          `json:"enabled"`
 	Priority        int           `json:"priority"`
 	Conditions      ConditionGroup `json:"conditions"`
-	ConditionMode   string        `json:"condition_mode"`
 	TemplateID      *string       `json:"template_id,omitempty"`
 	DestinationIDs  []string      `json:"destination_ids"`
 	DedupeConfig    *DedupeConfig `json:"dedupe_config,omitempty"`

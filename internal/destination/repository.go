@@ -62,26 +62,18 @@ func (r *Repository) Create(ctx context.Context, req CreateDestinationRequest) (
 	if err != nil {
 		return nil, fmt.Errorf("marshal config: %w", err)
 	}
-	var cbJSON *string
-	if req.CircuitBreaker != nil {
-		b, err := json.Marshal(req.CircuitBreaker)
-		if err != nil {
-			return nil, fmt.Errorf("marshal circuit_breaker: %w", err)
-		}
-		s := string(b)
-		cbJSON = &s
-	}
+
 	timeoutMs := 10000
 	if req.TimeoutMs != nil {
 		timeoutMs = *req.TimeoutMs
 	}
 
 	_, err = r.db.ExecContext(ctx,
-		`INSERT INTO destinations (id, name, type, enabled, config, secret_ref, timeout_ms, rate_limit, circuit_breaker, revision, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+		`INSERT INTO destinations (id, name, type, enabled, config, secret_ref, timeout_ms, revision, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
 		id, name, string(destType), boolToInt(enabled),
-		string(configJSON), req.SecretRef, timeoutMs, req.RateLimit,
-		cbJSON, nowStr, nowStr,
+		string(configJSON), req.SecretRef, timeoutMs,
+		nowStr, nowStr,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("insert destination: %w", err)
@@ -93,7 +85,7 @@ func (r *Repository) Create(ctx context.Context, req CreateDestinationRequest) (
 // GetByID retrieves a destination by its ID.
 func (r *Repository) GetByID(ctx context.Context, id string) (*Destination, error) {
 	row := r.db.QueryRowContext(ctx,
-		`SELECT id, name, type, enabled, config, secret_ref, timeout_ms, rate_limit, circuit_breaker, revision, created_at, updated_at
+		`SELECT id, name, type, enabled, config, secret_ref, timeout_ms, revision, created_at, updated_at
 		 FROM destinations WHERE id = ?`, id)
 	return scanDestination(row)
 }
@@ -111,7 +103,7 @@ func (r *Repository) List(ctx context.Context, page, size int) ([]Destination, i
 
 	offset := (page - 1) * size
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT id, name, type, enabled, config, secret_ref, timeout_ms, rate_limit, circuit_breaker, revision, created_at, updated_at
+		`SELECT id, name, type, enabled, config, secret_ref, timeout_ms, revision, created_at, updated_at
 		 FROM destinations ORDER BY created_at DESC LIMIT ? OFFSET ?`, size, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list destinations: %w", err)
@@ -165,37 +157,20 @@ func (r *Repository) Update(ctx context.Context, id string, req UpdateDestinatio
 	if req.TimeoutMs != nil {
 		timeoutMs = *req.TimeoutMs
 	}
-	rateLimit := existing.RateLimit
-	if req.RateLimit != nil {
-		rateLimit = req.RateLimit
-	}
-	circuitBreaker := existing.CircuitBreaker
-	if req.CircuitBreaker != nil {
-		circuitBreaker = req.CircuitBreaker
-	}
 
 	configJSON, err := json.Marshal(config)
 	if err != nil {
 		return nil, fmt.Errorf("marshal config: %w", err)
 	}
-	var cbJSON *string
-	if circuitBreaker != nil {
-		b, err := json.Marshal(circuitBreaker)
-		if err != nil {
-			return nil, fmt.Errorf("marshal circuit_breaker: %w", err)
-		}
-		s := string(b)
-		cbJSON = &s
-	}
 
 	newRevision := existing.Revision + 1
 	nowStr := storage.FormatNow()
 	_, err = r.db.ExecContext(ctx,
-		`UPDATE destinations SET name=?, type=?, enabled=?, config=?, secret_ref=?, timeout_ms=?, rate_limit=?, circuit_breaker=?, revision=?, updated_at=?
+		`UPDATE destinations SET name=?, type=?, enabled=?, config=?, secret_ref=?, timeout_ms=?, revision=?, updated_at=?
 		 WHERE id=?`,
 		name, string(destType), boolToInt(enabled),
-		string(configJSON), secretRef, timeoutMs, rateLimit,
-		cbJSON, newRevision, nowStr, id,
+		string(configJSON), secretRef, timeoutMs,
+		newRevision, nowStr, id,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("update destination: %w", err)
@@ -221,12 +196,11 @@ func scanDestination(row *sql.Row) (*Destination, error) {
 	var d Destination
 	var enabled int
 	var configJSON string
-	var cbJSON sql.NullString
 	var createdAt, updatedAt string
 
 	err := row.Scan(
 		&d.ID, &d.Name, &d.Type, &enabled, &configJSON, &d.SecretRef,
-		&d.TimeoutMs, &d.RateLimit, &cbJSON, &d.Revision,
+		&d.TimeoutMs, &d.Revision,
 		&createdAt, &updatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -240,11 +214,6 @@ func scanDestination(row *sql.Row) (*Destination, error) {
 	if err := json.Unmarshal([]byte(configJSON), &d.Config); err != nil {
 		return nil, fmt.Errorf("unmarshal config: %w", err)
 	}
-	if cbJSON.Valid && cbJSON.String != "" {
-		if err := json.Unmarshal([]byte(cbJSON.String), &d.CircuitBreaker); err != nil {
-			return nil, fmt.Errorf("unmarshal circuit_breaker: %w", err)
-		}
-	}
 
 	d.CreatedAt, _ = storage.ParseTime(createdAt)
 	d.UpdatedAt, _ = storage.ParseTime(updatedAt)
@@ -255,12 +224,11 @@ func scanDestinationFromRows(rows *sql.Rows) (*Destination, error) {
 	var d Destination
 	var enabled int
 	var configJSON string
-	var cbJSON sql.NullString
 	var createdAt, updatedAt string
 
 	err := rows.Scan(
 		&d.ID, &d.Name, &d.Type, &enabled, &configJSON, &d.SecretRef,
-		&d.TimeoutMs, &d.RateLimit, &cbJSON, &d.Revision,
+		&d.TimeoutMs, &d.Revision,
 		&createdAt, &updatedAt,
 	)
 	if err != nil {
@@ -270,11 +238,6 @@ func scanDestinationFromRows(rows *sql.Rows) (*Destination, error) {
 	d.Enabled = intToBool(enabled)
 	if err := json.Unmarshal([]byte(configJSON), &d.Config); err != nil {
 		return nil, fmt.Errorf("unmarshal config: %w", err)
-	}
-	if cbJSON.Valid && cbJSON.String != "" {
-		if err := json.Unmarshal([]byte(cbJSON.String), &d.CircuitBreaker); err != nil {
-			return nil, fmt.Errorf("unmarshal circuit_breaker: %w", err)
-		}
 	}
 
 	d.CreatedAt, _ = storage.ParseTime(createdAt)

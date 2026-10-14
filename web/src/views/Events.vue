@@ -95,7 +95,7 @@
           <el-input
             :model-value="payloadDisplay"
             type="textarea"
-            :rows="8"
+            :rows="3"
             readonly
           />
 
@@ -126,6 +126,18 @@
 
             <div v-if="latestRun.error_summary" style="margin-top: 8px">
               <el-text type="danger">{{ latestRun.error_code }}: {{ latestRun.error_summary }}</el-text>
+            </div>
+
+            <div v-if="latestRun.validation_result && Object.keys(latestRun.validation_result).length" style="margin-top: 8px">
+              <el-divider content-position="left">{{ $t('events.validationErrors') }}</el-divider>
+              <el-table :data="validationEntries" border>
+                <el-table-column prop="key" :label="$t('events.key')" min-width="120" />
+                <el-table-column prop="value" :label="$t('events.detail')" min-width="200">
+                  <template #default="{ row }">
+                    <el-text type="danger">{{ row.value }}</el-text>
+                  </template>
+                </el-table-column>
+              </el-table>
             </div>
           </div>
           <el-empty v-else :description="$t('events.noEventRun')" :image-size="40" />
@@ -272,6 +284,16 @@ const matchedRules = computed<RuleSnapshot[]>(() => {
   return rule_set_snapshot.filter((r) => matched_rule_ids.includes(r.id))
 })
 
+// Build validation error entries from latestRun.validation_result
+const validationEntries = computed<KeyValue[]>(() => {
+  if (!latestRun.value?.validation_result) return []
+  const vr = latestRun.value.validation_result
+  return Object.entries(vr).map(([key, value]) => ({
+    key,
+    value: typeof value === 'string' ? value : JSON.stringify(value),
+  }))
+})
+
 async function fetchData() {
   loading.value = true
   try {
@@ -395,3 +417,4 @@ onMounted(() => {
   }
 }
 </style>
+

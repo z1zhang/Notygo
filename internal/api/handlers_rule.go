@@ -3,10 +3,12 @@ package api
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-
+	"zpush/internal/audit"
 	"zpush/internal/rules"
 )
 
@@ -30,7 +32,7 @@ func ListRules(db *sql.DB) http.HandlerFunc {
 }
 
 // CreateRule creates a new rule.
-func CreateRule(db *sql.DB) http.HandlerFunc {
+func CreateRule(db *sql.DB, auditRepo *audit.Repository) http.HandlerFunc {
 	repo := rules.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		var rule rules.Rule
@@ -57,6 +59,17 @@ func CreateRule(db *sql.DB) http.HandlerFunc {
 		}
 
 		WriteJSON(w, http.StatusCreated, created)
+
+		// Audit log
+		if auditErr := auditRepo.Insert(r.Context(), &audit.AuditLog{
+			Operator:   GetUsernameFromContext(r.Context()),
+			Action:     "create",
+			TargetType: "rule",
+			TargetID:   created.ID,
+			Summary:    stringPtr(fmt.Sprintf("created rule %q", created.Name)),
+		}); auditErr != nil {
+			slog.Error("audit log insert failed", "action", "create", "target_type", "rule", "error", auditErr)
+		}
 	}
 }
 
@@ -75,7 +88,7 @@ func GetRule(db *sql.DB) http.HandlerFunc {
 }
 
 // UpdateRule updates an existing rule, incrementing revision and validating conditions.
-func UpdateRule(db *sql.DB) http.HandlerFunc {
+func UpdateRule(db *sql.DB, auditRepo *audit.Repository) http.HandlerFunc {
 	repo := rules.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
@@ -96,6 +109,9 @@ func UpdateRule(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		// Fetch old record for audit snapshot
+		oldRule, _ := repo.GetByID(r.Context(), id)
+
 		updated, err := repo.Update(r.Context(), id, &rule)
 		if err != nil {
 			WriteError(w, http.StatusNotFound, ErrConfigValidation, "rule not found")
@@ -103,19 +119,47 @@ func UpdateRule(db *sql.DB) http.HandlerFunc {
 		}
 
 		WriteJSON(w, http.StatusOK, updated)
+
+		// Audit log
+		if auditErr := auditRepo.Insert(r.Context(), &audit.AuditLog{
+			Operator:       GetUsernameFromContext(r.Context()),
+			Action:         "update",
+			TargetType:     "rule",
+			TargetID:       id,
+			SnapshotBefore: marshalSnapshot(oldRule),
+			Summary:        stringPtr(fmt.Sprintf("updated rule %q", updated.Name)),
+		}); auditErr != nil {
+			slog.Error("audit log insert failed", "action", "update", "target_type", "rule", "error", auditErr)
+		}
 	}
 }
 
 // DeleteRule deletes a rule by ID.
-func DeleteRule(db *sql.DB) http.HandlerFunc {
+func DeleteRule(db *sql.DB, auditRepo *audit.Repository) http.HandlerFunc {
 	repo := rules.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
+
+		// Fetch old record for audit snapshot
+		oldRule, _ := repo.GetByID(r.Context(), id)
+
 		if err := repo.Delete(r.Context(), id); err != nil {
 			WriteError(w, http.StatusNotFound, ErrConfigValidation, "rule not found")
 			return
 		}
 		WriteJSON(w, http.StatusNoContent, nil)
+
+		// Audit log
+		if auditErr := auditRepo.Insert(r.Context(), &audit.AuditLog{
+			Operator:       GetUsernameFromContext(r.Context()),
+			Action:         "delete",
+			TargetType:     "rule",
+			TargetID:       id,
+			SnapshotBefore: marshalSnapshot(oldRule),
+			Summary:        stringPtr(fmt.Sprintf("deleted rule %s", id)),
+		}); auditErr != nil {
+			slog.Error("audit log insert failed", "action", "delete", "target_type", "rule", "error", auditErr)
+		}
 	}
 }
 

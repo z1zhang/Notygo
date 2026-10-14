@@ -50,21 +50,21 @@ const (
 // --- Template errors ---
 
 const (
-	ErrTplSyntax     = "TPL_001"
-	ErrTplTimeout    = "TPL_002"
-	ErrTplForbidden  = "TPL_003"
+	ErrTplSyntax    = "TPL_001"
+	ErrTplTimeout   = "TPL_002"
+	ErrTplForbidden = "TPL_003"
 )
 
 // --- Delivery errors ---
 
 const (
-	ErrDeliverConnectFailed  = "DELIVER_001"
-	ErrDeliverAuthFailed     = "DELIVER_002"
-	ErrDeliverTimeout        = "DELIVER_003"
-	ErrDeliverBusinessError  = "DELIVER_004"
-	ErrDeliverRateLimited    = "DELIVER_005"
-	ErrDeliverCircuitOpen    = "DELIVER_006"
-	ErrDeliverLeaseExpired   = "DELIVER_007"
+	ErrDeliverConnectFailed = "DELIVER_001"
+	ErrDeliverAuthFailed    = "DELIVER_002"
+	ErrDeliverTimeout       = "DELIVER_003"
+	ErrDeliverBusinessError = "DELIVER_004"
+	ErrDeliverRateLimited   = "DELIVER_005"
+	ErrDeliverCircuitOpen   = "DELIVER_006"
+	ErrDeliverLeaseExpired  = "DELIVER_007"
 )
 
 // --- Config errors ---
@@ -77,6 +77,6 @@ const (
 // --- System errors ---
 
 const (
-	ErrSystemMigration = "SYSTEM_001"
+	ErrSystemMigration  = "SYSTEM_001"
 	ErrSystemKeyInvalid = "SYSTEM_002"
 )

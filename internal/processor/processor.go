@@ -438,7 +438,7 @@ func (p *EventProcessor) renderAndCreateDeliveries(ctx context.Context, evt *eve
 
 // evaluateRule evaluates a rule against parsed fields.
 func evaluateRule(rule rules.Rule, fields map[string]any) (bool, error) {
-	return evaluateConditionGroup(rule.Conditions, rule.ConditionMode, fields)
+	return evaluateConditionGroup(rule.Conditions, rule.Conditions.Operator, fields)
 }
 
 // evaluateConditionGroup evaluates a condition group against parsed fields.

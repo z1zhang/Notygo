@@ -39,7 +39,6 @@ type Event struct {
 	RunType       string     `json:"run_type"`
 	ErrorCode     *string    `json:"error_code,omitempty"`
 	ErrorSummary  *string    `json:"error_summary,omitempty"`
-	ExpireAt      *time.Time  `json:"expire_at,omitempty"`
 	LeaseUntil    *time.Time  `json:"lease_until,omitempty"`
 	LeaseOwner    *string    `json:"lease_owner,omitempty"`
 }

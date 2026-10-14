@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	mathrand "math/rand"
+	"strings"
 	"sync"
 	"time"
 
@@ -25,7 +26,6 @@ type DeliveryWorker struct {
 	destRepo       *destination.Repository
 	deliveryRepo   *Repository
 	senderRegistry *sender.Registry
-	circuitBreaker *CircuitBreakerManager
 	secretSvc      *secret.Service
 	notifier       *notify.Notifier
 	workerID       string
@@ -37,7 +37,6 @@ func NewDeliveryWorker(
 	destRepo *destination.Repository,
 	deliveryRepo *Repository,
 	senderRegistry *sender.Registry,
-	circuitBreaker *CircuitBreakerManager,
 	secretSvc *secret.Service,
 	notifier *notify.Notifier,
 ) *DeliveryWorker {
@@ -47,7 +46,6 @@ func NewDeliveryWorker(
 		destRepo:       destRepo,
 		deliveryRepo:   deliveryRepo,
 		senderRegistry: senderRegistry,
-		circuitBreaker: circuitBreaker,
 		secretSvc:      secretSvc,
 		notifier:       notifier,
 		workerID:       workerID,
@@ -174,6 +172,39 @@ func drainDeliveryChannel(ch <-chan struct{}) {
 	}
 }
 
+// buildRequestSummary creates a JSON summary of the request that will be sent,
+// suitable for storing in delivery_attempts.request_summary.
+// Sensitive headers (auth, token, key, secret) are redacted.
+func buildRequestSummary(cfg sender.DestinationConfig, msg sender.RenderedMessage) string {
+	summary := map[string]any{
+		"type":   cfg.Type,
+		"method": cfg.Method,
+		"url":    cfg.URL,
+	}
+	if len(cfg.Headers) > 0 {
+		redacted := make(map[string]string)
+		for k, v := range cfg.Headers {
+			lower := strings.ToLower(k)
+			if strings.Contains(lower, "auth") || strings.Contains(lower, "key") ||
+				strings.Contains(lower, "token") || strings.Contains(lower, "secret") {
+				redacted[k] = "***"
+			} else {
+				redacted[k] = v
+			}
+		}
+		summary["headers"] = redacted
+	}
+	bodySnippet := msg.Body
+	if len(bodySnippet) > 512 {
+		bodySnippet = bodySnippet[:512] + "...(truncated)"
+	}
+	if bodySnippet != "" {
+		summary["body_snippet"] = bodySnippet
+	}
+	b, _ := json.Marshal(summary)
+	return string(b)
+}
+
 // sendDelivery handles a single delivery attempt.
 func (w *DeliveryWorker) sendDelivery(ctx context.Context, d *Delivery) {
 	slog.Info("sending delivery", "delivery_id", d.ID, "event_id", d.EventID, "destination_id", d.DestinationID, "attempt", d.AttemptCount)
@@ -186,32 +217,6 @@ func (w *DeliveryWorker) sendDelivery(ctx context.Context, d *Delivery) {
 		_ = w.deliveryRepo.UpdateStatus(ctx, d.ID, DeliveryStatusFailed)
 		return
 	}
-
-	var cbConfig CircuitBreakerConfig
-	if dest.CircuitBreaker != nil {
-		cbConfig = CircuitBreakerConfig{
-			FailureThreshold: dest.CircuitBreaker.FailureThreshold,
-			RecoveryInterval: fmt.Sprintf("%ds", dest.CircuitBreaker.TimeoutSeconds),
-			HalfOpenMaxProbe: dest.CircuitBreaker.HalfOpenMaxCalls,
-		}
-	} else {
-		// Default circuit breaker config
-		cbConfig = CircuitBreakerConfig{
-			FailureThreshold: 5,
-			RecoveryInterval: "60s",
-			HalfOpenMaxProbe: 1,
-		}
-	}
-
-	if w.circuitBreaker.IsOpen(d.DestinationID, cbConfig) {
-		slog.Warn("circuit breaker open for destination", "destination_id", d.DestinationID)
-		_ = w.deliveryRepo.ResetToPending(ctx, d.ID)
-		w.circuitBreaker.RecordFailure(d.DestinationID, cbConfig)
-		return
-	}
-
-	// Record half-open probe if applicable
-	w.circuitBreaker.RecordHalfOpenProbe(d.DestinationID)
 
 	// 2. Get destination config
 	destConfig := buildDestinationConfig(dest, w.secretSvc)
@@ -232,17 +237,21 @@ func (w *DeliveryWorker) sendDelivery(ctx context.Context, d *Delivery) {
 		return
 	}
 
-	// 5. Send
+	// 5. Build request summary for audit/debug
+	requestSummary := buildRequestSummary(destConfig, msg)
+
+	// 6. Send
 	startTime := time.Now()
 	result, err := s.Send(ctx, destConfig, msg)
 	duration := time.Since(startTime)
 
-	// 6. Record delivery attempt
+	// 7. Record delivery attempt
 	attempt := &DeliveryAttempt{
-		DeliveryID: d.ID,
-		AttemptNo:  d.AttemptCount,
-		StartedAt:  startTime,
-		DurationMs: intPtr(int(duration.Milliseconds())),
+		DeliveryID:     d.ID,
+		AttemptNo:      d.AttemptCount,
+		StartedAt:      startTime,
+		DurationMs:     intPtr(int(duration.Milliseconds())),
+		RequestSummary: &requestSummary,
 	}
 
 	if result != nil {
@@ -256,7 +265,7 @@ func (w *DeliveryWorker) sendDelivery(ctx context.Context, d *Delivery) {
 		attempt.FinishedAt = &finished
 	}
 
-	// 7. Handle result
+	// 8. Handle result
 	if err != nil {
 		// Non-HTTP error (connection, timeout, etc.)
 		slog.Error("delivery send error", "delivery_id", d.ID, "event_id", d.EventID, "error", err)
@@ -265,7 +274,6 @@ func (w *DeliveryWorker) sendDelivery(ctx context.Context, d *Delivery) {
 		_, _ = w.deliveryRepo.RecordDeliveryAttempt(ctx, attempt)
 
 		w.handleRetryableFailure(ctx, d, "DELIVER_001", err.Error())
-		w.circuitBreaker.RecordFailure(d.DestinationID, cbConfig)
 		return
 	}
 
@@ -274,7 +282,6 @@ func (w *DeliveryWorker) sendDelivery(ctx context.Context, d *Delivery) {
 		slog.Info("delivery succeeded", "delivery_id", d.ID, "event_id", d.EventID, "status_code", result.StatusCode)
 		_, _ = w.deliveryRepo.RecordDeliveryAttempt(ctx, attempt)
 		_ = w.deliveryRepo.UpdateStatus(ctx, d.ID, DeliveryStatusDelivered)
-		w.circuitBreaker.RecordSuccess(d.DestinationID)
 		return
 	}
 
@@ -294,15 +301,12 @@ func (w *DeliveryWorker) sendDelivery(ctx context.Context, d *Delivery) {
 
 	if result.IsRetryable || isRetryableHTTPStatus(statusCode) {
 		w.handleRetryableFailure(ctx, d, errCode, errMsg)
-		w.circuitBreaker.RecordFailure(d.DestinationID, cbConfig)
 	} else if d.AttemptCount >= d.MaxAttempts {
 		// Max attempts reached, non-retryable
 		_ = w.deliveryRepo.UpdateStatus(ctx, d.ID, DeliveryStatusFailed)
-		w.circuitBreaker.RecordFailure(d.DestinationID, cbConfig)
 	} else {
 		// Non-retryable error, go to dead letter
 		_ = w.deliveryRepo.UpdateStatus(ctx, d.ID, DeliveryStatusFailed)
-		w.circuitBreaker.RecordFailure(d.DestinationID, cbConfig)
 	}
 }
 

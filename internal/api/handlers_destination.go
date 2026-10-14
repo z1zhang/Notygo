@@ -3,10 +3,12 @@ package api
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-
+	"zpush/internal/audit"
 	"zpush/internal/destination"
 	"zpush/internal/secret"
 )
@@ -38,7 +40,7 @@ func ListDestinations(db *sql.DB, secretSvc *secret.Service) http.HandlerFunc {
 }
 
 // CreateDestination creates a new destination.
-func CreateDestination(db *sql.DB, secretSvc *secret.Service) http.HandlerFunc {
+func CreateDestination(db *sql.DB, secretSvc *secret.Service, auditRepo *audit.Repository) http.HandlerFunc {
 	repo := destination.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req destination.CreateDestinationRequest
@@ -74,6 +76,17 @@ func CreateDestination(db *sql.DB, secretSvc *secret.Service) http.HandlerFunc {
 
 		resp := toDestinationResponse(created, secretSvc)
 		WriteJSON(w, http.StatusCreated, resp)
+
+		// Audit log
+		if auditErr := auditRepo.Insert(r.Context(), &audit.AuditLog{
+			Operator:   GetUsernameFromContext(r.Context()),
+			Action:     "create",
+			TargetType: "destination",
+			TargetID:   created.ID,
+			Summary:    stringPtr(fmt.Sprintf("created destination %q", created.Name)),
+		}); auditErr != nil {
+			slog.Error("audit log insert failed", "action", "create", "target_type", "destination", "error", auditErr)
+		}
 	}
 }
 
@@ -95,7 +108,7 @@ func GetDestination(db *sql.DB, secretSvc *secret.Service) http.HandlerFunc {
 
 // UpdateDestination updates an existing destination, incrementing revision.
 // Uses UpdateDestinationRequest with pointer fields for partial updates.
-func UpdateDestination(db *sql.DB, secretSvc *secret.Service) http.HandlerFunc {
+func UpdateDestination(db *sql.DB, secretSvc *secret.Service, auditRepo *audit.Repository) http.HandlerFunc {
 	repo := destination.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
@@ -115,6 +128,9 @@ func UpdateDestination(db *sql.DB, secretSvc *secret.Service) http.HandlerFunc {
 			req.SecretRef = &encrypted
 		}
 
+		// Fetch old record for audit snapshot
+		oldDest, _ := repo.GetByID(r.Context(), id)
+
 		updated, err := repo.Update(r.Context(), id, req)
 		if err != nil {
 			WriteError(w, http.StatusNotFound, ErrConfigValidation, "destination not found")
@@ -123,19 +139,47 @@ func UpdateDestination(db *sql.DB, secretSvc *secret.Service) http.HandlerFunc {
 
 		resp := toDestinationResponse(updated, secretSvc)
 		WriteJSON(w, http.StatusOK, resp)
+
+		// Audit log
+		if auditErr := auditRepo.Insert(r.Context(), &audit.AuditLog{
+			Operator:       GetUsernameFromContext(r.Context()),
+			Action:         "update",
+			TargetType:     "destination",
+			TargetID:       id,
+			SnapshotBefore: marshalSnapshot(oldDest),
+			Summary:        stringPtr(fmt.Sprintf("updated destination %q", updated.Name)),
+		}); auditErr != nil {
+			slog.Error("audit log insert failed", "action", "update", "target_type", "destination", "error", auditErr)
+		}
 	}
 }
 
 // DeleteDestination deletes a destination by ID.
-func DeleteDestination(db *sql.DB) http.HandlerFunc {
+func DeleteDestination(db *sql.DB, auditRepo *audit.Repository) http.HandlerFunc {
 	repo := destination.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
+
+		// Fetch old record for audit snapshot
+		oldDest, _ := repo.GetByID(r.Context(), id)
+
 		if err := repo.Delete(r.Context(), id); err != nil {
 			WriteError(w, http.StatusNotFound, ErrConfigValidation, "destination not found")
 			return
 		}
 		WriteJSON(w, http.StatusNoContent, nil)
+
+		// Audit log
+		if auditErr := auditRepo.Insert(r.Context(), &audit.AuditLog{
+			Operator:       GetUsernameFromContext(r.Context()),
+			Action:         "delete",
+			TargetType:     "destination",
+			TargetID:       id,
+			SnapshotBefore: marshalSnapshot(oldDest),
+			Summary:        stringPtr(fmt.Sprintf("deleted destination %s", id)),
+		}); auditErr != nil {
+			slog.Error("audit log insert failed", "action", "delete", "target_type", "destination", "error", auditErr)
+		}
 	}
 }
 
@@ -143,18 +187,16 @@ func DeleteDestination(db *sql.DB) http.HandlerFunc {
 func toDestinationResponse(d *destination.Destination, secretSvc *secret.Service) destination.DestinationResponse {
 	maskedSecretRef := maskDestSecretRef(d.SecretRef, secretSvc)
 	return destination.DestinationResponse{
-		ID:             d.ID,
-		Name:           d.Name,
-		Type:           d.Type,
-		Enabled:        d.Enabled,
-		Config:         d.Config,
-		SecretRef:      maskedSecretRef,
-		TimeoutMs:      d.TimeoutMs,
-		RateLimit:      d.RateLimit,
-		CircuitBreaker: d.CircuitBreaker,
-		Revision:       d.Revision,
-		CreatedAt:      formatTimeOrNil(d.CreatedAt),
-		UpdatedAt:      formatTimeOrNil(d.UpdatedAt),
+		ID:        d.ID,
+		Name:      d.Name,
+		Type:      d.Type,
+		Enabled:   d.Enabled,
+		Config:    d.Config,
+		SecretRef: maskedSecretRef,
+		TimeoutMs: d.TimeoutMs,
+		Revision:  d.Revision,
+		CreatedAt: formatTimeOrNil(d.CreatedAt),
+		UpdatedAt: formatTimeOrNil(d.UpdatedAt),
 	}
 }
 

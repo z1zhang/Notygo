@@ -64,9 +64,9 @@ func (r *Repository) Create(ctx context.Context, req CreateSourceRequest) (*Sour
 	}
 
 	_, err := r.db.ExecContext(ctx,
-		`INSERT INTO sources (id, name, slug, enabled, auth_type, secret_ref, payload_content_type, max_body_bytes, rate_limit, mapping_id, expected_response, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, req.Name, req.Slug, boolToInt(enabled), authType, req.SecretRef, payloadContentType, maxBodyBytes, req.RateLimit, req.MappingID, req.ExpectedResponse, nowStr, nowStr,
+		`INSERT INTO sources (id, name, slug, enabled, auth_type, secret_ref, payload_content_type, max_body_bytes, rate_limit, mapping_id, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, req.Name, req.Slug, boolToInt(enabled), authType, req.SecretRef, payloadContentType, maxBodyBytes, req.RateLimit, req.MappingID, nowStr, nowStr,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("insert source: %w", err)
@@ -78,7 +78,7 @@ func (r *Repository) Create(ctx context.Context, req CreateSourceRequest) (*Sour
 // GetByID retrieves a source by its ID.
 func (r *Repository) GetByID(ctx context.Context, id string) (*Source, error) {
 	row := r.db.QueryRowContext(ctx,
-		`SELECT id, name, slug, enabled, auth_type, secret_ref, payload_content_type, max_body_bytes, rate_limit, mapping_id, expected_response, created_at, updated_at
+		`SELECT id, name, slug, enabled, auth_type, secret_ref, payload_content_type, max_body_bytes, rate_limit, mapping_id, created_at, updated_at
 		 FROM sources WHERE id = ?`, id)
 	return scanSource(row)
 }
@@ -86,7 +86,7 @@ func (r *Repository) GetByID(ctx context.Context, id string) (*Source, error) {
 // GetBySlug retrieves a source by its slug.
 func (r *Repository) GetBySlug(ctx context.Context, slug string) (*Source, error) {
 	row := r.db.QueryRowContext(ctx,
-		`SELECT id, name, slug, enabled, auth_type, secret_ref, payload_content_type, max_body_bytes, rate_limit, mapping_id, expected_response, created_at, updated_at
+		`SELECT id, name, slug, enabled, auth_type, secret_ref, payload_content_type, max_body_bytes, rate_limit, mapping_id, created_at, updated_at
 		 FROM sources WHERE slug = ?`, slug)
 	return scanSource(row)
 }
@@ -134,16 +134,11 @@ func (r *Repository) Update(ctx context.Context, id string, req UpdateSourceRequ
 	if req.MappingID != nil {
 		mappingID = req.MappingID
 	}
-	expectedResponse := existing.ExpectedResponse
-	if req.ExpectedResponse != nil {
-		expectedResponse = req.ExpectedResponse
-	}
-
 	nowStr := storage.FormatNow()
 	_, err = r.db.ExecContext(ctx,
-		`UPDATE sources SET name=?, slug=?, enabled=?, auth_type=?, secret_ref=?, payload_content_type=?, max_body_bytes=?, rate_limit=?, mapping_id=?, expected_response=?, updated_at=?
+		`UPDATE sources SET name=?, slug=?, enabled=?, auth_type=?, secret_ref=?, payload_content_type=?, max_body_bytes=?, rate_limit=?, mapping_id=?, updated_at=?
 		 WHERE id=?`,
-		name, slug, boolToInt(enabled), authType, secretRef, payloadContentType, maxBodyBytes, rateLimit, mappingID, expectedResponse, nowStr, id,
+		name, slug, boolToInt(enabled), authType, secretRef, payloadContentType, maxBodyBytes, rateLimit, mappingID, nowStr, id,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("update source: %w", err)
@@ -178,7 +173,7 @@ func (r *Repository) List(ctx context.Context, page, size int) ([]Source, int64,
 
 	offset := (page - 1) * size
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT id, name, slug, enabled, auth_type, secret_ref, payload_content_type, max_body_bytes, rate_limit, mapping_id, expected_response, created_at, updated_at
+		`SELECT id, name, slug, enabled, auth_type, secret_ref, payload_content_type, max_body_bytes, rate_limit, mapping_id, created_at, updated_at
 		 FROM sources ORDER BY created_at DESC LIMIT ? OFFSET ?`, size, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list sources: %w", err)
@@ -220,7 +215,7 @@ func scanSource(row *sql.Row) (*Source, error) {
 	var createdAt, updatedAt string
 	err := row.Scan(
 		&s.ID, &s.Name, &s.Slug, &enabled, &s.AuthType, &s.SecretRef,
-		&s.PayloadContentType, &s.MaxBodyBytes, &s.RateLimit, &s.MappingID, &s.ExpectedResponse,
+		&s.PayloadContentType, &s.MaxBodyBytes, &s.RateLimit, &s.MappingID,
 		&createdAt, &updatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -241,7 +236,7 @@ func scanSourceFromRows(rows *sql.Rows) (*Source, error) {
 	var createdAt, updatedAt string
 	err := rows.Scan(
 		&s.ID, &s.Name, &s.Slug, &enabled, &s.AuthType, &s.SecretRef,
-		&s.PayloadContentType, &s.MaxBodyBytes, &s.RateLimit, &s.MappingID, &s.ExpectedResponse,
+		&s.PayloadContentType, &s.MaxBodyBytes, &s.RateLimit, &s.MappingID,
 		&createdAt, &updatedAt,
 	)
 	if err != nil {

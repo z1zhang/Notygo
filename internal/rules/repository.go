@@ -33,7 +33,7 @@ func intToBool(i int) bool {
 }
 
 // ruleColumns is the standard column list for rule queries.
-const ruleColumns = `id, name, enabled, priority, conditions, condition_mode, template_id, destination_ids, dedupe_config, revision, created_at, updated_at`
+const ruleColumns = `id, name, enabled, priority, conditions, template_id, destination_ids, dedupe_config, revision, created_at, updated_at`
 
 // Repository provides CRUD operations for rules.
 type Repository struct {
@@ -69,10 +69,10 @@ func (r *Repository) Create(ctx context.Context, rule *Rule) (*Rule, error) {
 	}
 
 	_, err = r.db.ExecContext(ctx,
-		`INSERT INTO rules (id, name, enabled, priority, conditions, condition_mode, template_id, destination_ids, dedupe_config, revision, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+		`INSERT INTO rules (id, name, enabled, priority, conditions, template_id, destination_ids, dedupe_config, revision, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
 		id, rule.Name, boolToInt(rule.Enabled), rule.Priority, string(conditionsJSON),
-		rule.ConditionMode, rule.TemplateID,
+		rule.TemplateID,
 		string(destIDsJSON), dedupeJSON, nowStr, nowStr,
 	)
 	if err != nil {
@@ -215,10 +215,10 @@ func (r *Repository) Update(ctx context.Context, id string, rule *Rule) (*Rule, 
 	newRevision := existing.Revision + 1
 	nowStr := storage.FormatNow()
 	_, err = r.db.ExecContext(ctx,
-		`UPDATE rules SET name=?, enabled=?, priority=?, conditions=?, condition_mode=?, template_id=?, destination_ids=?, dedupe_config=?, revision=?, updated_at=?
+		`UPDATE rules SET name=?, enabled=?, priority=?, conditions=?, template_id=?, destination_ids=?, dedupe_config=?, revision=?, updated_at=?
 		 WHERE id=?`,
 		rule.Name, boolToInt(rule.Enabled), rule.Priority, string(conditionsJSON),
-		rule.ConditionMode, rule.TemplateID,
+		rule.TemplateID,
 		string(destIDsJSON), dedupeJSON, newRevision, nowStr, id,
 	)
 	if err != nil {
@@ -250,7 +250,7 @@ func scanRule(row *sql.Row) (*Rule, error) {
 	var createdAt, updatedAt string
 
 	err := row.Scan(
-		&r.ID, &r.Name, &enabled, &r.Priority, &conditionsJSON, &r.ConditionMode,
+		&r.ID, &r.Name, &enabled, &r.Priority, &conditionsJSON,
 		&r.TemplateID, &destIDsJSON, &dedupeJSON, &r.Revision,
 		&createdAt, &updatedAt,
 	)
@@ -289,7 +289,7 @@ func scanRuleFromRows(rows *sql.Rows) (*Rule, error) {
 	var createdAt, updatedAt string
 
 	err := rows.Scan(
-		&r.ID, &r.Name, &enabled, &r.Priority, &conditionsJSON, &r.ConditionMode,
+		&r.ID, &r.Name, &enabled, &r.Priority, &conditionsJSON,
 		&r.TemplateID, &destIDsJSON, &dedupeJSON, &r.Revision,
 		&createdAt, &updatedAt,
 	)

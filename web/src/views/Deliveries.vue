@@ -132,6 +132,10 @@
             <el-table-column type="expand">
               <template #default="{ row }">
                 <div class="attempt-detail">
+                  <div v-if="row.request_summary" class="attempt-section">
+                    <div class="attempt-label">{{ $t('deliveries.requestSummary') }}</div>
+                    <pre class="attempt-response-body">{{ formatResponseBody(row.request_summary) }}</pre>
+                  </div>
                   <div v-if="row.error_code" class="attempt-section">
                     <div class="attempt-label">{{ $t('common.error') }}</div>
                     <el-text type="danger">{{ row.error_code }}: {{ row.error_summary }}</el-text>
@@ -429,3 +433,4 @@ onMounted(() => {
   }
 }
 </style>
+

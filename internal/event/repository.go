@@ -43,19 +43,13 @@ func (r *Repository) Insert(ctx context.Context, e *Event) (*Event, error) {
 		e.ReceivedAt = time.Now().UTC()
 	}
 
-	var expireAt *string
-	if e.ExpireAt != nil {
-		s := storage.FormatTime(*e.ExpireAt)
-		expireAt = &s
-	}
-
 	_, err := r.db.ExecContext(ctx,
-		`INSERT INTO events (id, source_id, source_event_id, request_id, received_at, content_type, payload_raw, payload_hash, status, run_type, error_code, error_summary, expire_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO events (id, source_id, source_event_id, request_id, received_at, content_type, payload_raw, payload_hash, status, run_type, error_code, error_summary)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		e.ID, e.SourceID, e.SourceEventID, e.RequestID,
 		storage.FormatTime(e.ReceivedAt),
 		e.ContentType, e.PayloadRaw, e.PayloadHash,
-		e.Status, e.RunType, e.ErrorCode, e.ErrorSummary, expireAt,
+		e.Status, e.RunType, e.ErrorCode, e.ErrorSummary,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("insert event: %w", err)
@@ -67,7 +61,7 @@ func (r *Repository) Insert(ctx context.Context, e *Event) (*Event, error) {
 // GetByID retrieves an event by its ID.
 func (r *Repository) GetByID(ctx context.Context, id string) (*Event, error) {
 	row := r.db.QueryRowContext(ctx,
-		`SELECT id, source_id, source_event_id, request_id, received_at, content_type, payload_raw, payload_hash, status, run_type, error_code, error_summary, expire_at, lease_until, lease_owner
+		`SELECT id, source_id, source_event_id, request_id, received_at, content_type, payload_raw, payload_hash, status, run_type, error_code, error_summary, lease_until, lease_owner
 		 FROM events WHERE id = ?`, id)
 	return scanEvent(row)
 }
@@ -77,7 +71,7 @@ func (r *Repository) GetByID(ctx context.Context, id string) (*Event, error) {
 func (r *Repository) List(ctx context.Context, page, size int, statusFilter string) ([]Event, int64, error) {
 	var total int64
 	countQuery := `SELECT COUNT(*) FROM events`
-	listQuery := `SELECT id, source_id, source_event_id, request_id, received_at, content_type, payload_raw, payload_hash, status, run_type, error_code, error_summary, expire_at, lease_until, lease_owner
+	listQuery := `SELECT id, source_id, source_event_id, request_id, received_at, content_type, payload_raw, payload_hash, status, run_type, error_code, error_summary, lease_until, lease_owner
 		 FROM events`
 	var args []any
 
@@ -315,13 +309,13 @@ func (r *Repository) FailEventRun(ctx context.Context, id string, errorCode, err
 func scanEvent(row *sql.Row) (*Event, error) {
 	var e Event
 	var receivedAt string
-	var expireAt, leaseUntil sql.NullString
+	var leaseUntil sql.NullString
 	var leaseOwner sql.NullString
 
 	err := row.Scan(
 		&e.ID, &e.SourceID, &e.SourceEventID, &e.RequestID, &receivedAt,
 		&e.ContentType, &e.PayloadRaw, &e.PayloadHash, &e.Status, &e.RunType,
-		&e.ErrorCode, &e.ErrorSummary, &expireAt, &leaseUntil, &leaseOwner,
+		&e.ErrorCode, &e.ErrorSummary, &leaseUntil, &leaseOwner,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -331,10 +325,6 @@ func scanEvent(row *sql.Row) (*Event, error) {
 	}
 
 	e.ReceivedAt, _ = storage.ParseTime(receivedAt)
-	if expireAt.Valid {
-		t, _ := storage.ParseTime(expireAt.String)
-		e.ExpireAt = &t
-	}
 	if leaseUntil.Valid {
 		t, _ := storage.ParseTime(leaseUntil.String)
 		e.LeaseUntil = &t
@@ -357,23 +347,19 @@ func scanEventValue(row *sql.Row) (Event, error) {
 func scanEventFromRows(rows *sql.Rows) (*Event, error) {
 	var e Event
 	var receivedAt string
-	var expireAt, leaseUntil sql.NullString
+	var leaseUntil sql.NullString
 	var leaseOwner sql.NullString
 
 	err := rows.Scan(
 		&e.ID, &e.SourceID, &e.SourceEventID, &e.RequestID, &receivedAt,
 		&e.ContentType, &e.PayloadRaw, &e.PayloadHash, &e.Status, &e.RunType,
-		&e.ErrorCode, &e.ErrorSummary, &expireAt, &leaseUntil, &leaseOwner,
+		&e.ErrorCode, &e.ErrorSummary, &leaseUntil, &leaseOwner,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("scan event: %w", err)
 	}
 
 	e.ReceivedAt, _ = storage.ParseTime(receivedAt)
-	if expireAt.Valid {
-		t, _ := storage.ParseTime(expireAt.String)
-		e.ExpireAt = &t
-	}
 	if leaseUntil.Valid {
 		t, _ := storage.ParseTime(leaseUntil.String)
 		e.LeaseUntil = &t

@@ -3,11 +3,13 @@ package api
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
-
+	"zpush/internal/audit"
 	"zpush/internal/templates"
 )
 
@@ -31,14 +33,14 @@ func ListTemplates(db *sql.DB) http.HandlerFunc {
 }
 
 // CreateTemplate creates a new template.
-func CreateTemplate(db *sql.DB) http.HandlerFunc {
+func CreateTemplate(db *sql.DB, auditRepo *audit.Repository) http.HandlerFunc {
 	repo := templates.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
-			Name           string `json:"name"`
-			Format         string `json:"format"`
-			TitleTemplate  string `json:"title_template"`
-			BodyTemplate   string `json:"body_template"`
+			Name          string `json:"name"`
+			Format        string `json:"format"`
+			TitleTemplate string `json:"title_template"`
+			BodyTemplate  string `json:"body_template"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "invalid request body")
@@ -67,6 +69,17 @@ func CreateTemplate(db *sql.DB) http.HandlerFunc {
 		}
 
 		WriteJSON(w, http.StatusCreated, created)
+
+		// Audit log
+		if auditErr := auditRepo.Insert(r.Context(), &audit.AuditLog{
+			Operator:   GetUsernameFromContext(r.Context()),
+			Action:     "create",
+			TargetType: "template",
+			TargetID:   created.ID,
+			Summary:    stringPtr(fmt.Sprintf("created template %q", created.Name)),
+		}); auditErr != nil {
+			slog.Error("audit log insert failed", "action", "create", "target_type", "template", "error", auditErr)
+		}
 	}
 }
 
@@ -85,7 +98,7 @@ func GetTemplate(db *sql.DB) http.HandlerFunc {
 }
 
 // UpdateTemplate updates an existing template, incrementing revision and validating syntax.
-func UpdateTemplate(db *sql.DB) http.HandlerFunc {
+func UpdateTemplate(db *sql.DB, auditRepo *audit.Repository) http.HandlerFunc {
 	repo := templates.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
@@ -116,6 +129,9 @@ func UpdateTemplate(db *sql.DB) http.HandlerFunc {
 			}
 		}
 
+		// Fetch old record for audit snapshot
+		oldTemplate, _ := repo.GetByID(r.Context(), id)
+
 		updated, err := repo.Update(r.Context(), id, req.Name, req.Format, req.TitleTemplate, req.BodyTemplate)
 		if err != nil {
 			WriteError(w, http.StatusNotFound, ErrConfigValidation, "template not found")
@@ -123,19 +139,47 @@ func UpdateTemplate(db *sql.DB) http.HandlerFunc {
 		}
 
 		WriteJSON(w, http.StatusOK, updated)
+
+		// Audit log
+		if auditErr := auditRepo.Insert(r.Context(), &audit.AuditLog{
+			Operator:       GetUsernameFromContext(r.Context()),
+			Action:         "update",
+			TargetType:     "template",
+			TargetID:       id,
+			SnapshotBefore: marshalSnapshot(oldTemplate),
+			Summary:        stringPtr(fmt.Sprintf("updated template %q", updated.Name)),
+		}); auditErr != nil {
+			slog.Error("audit log insert failed", "action", "update", "target_type", "template", "error", auditErr)
+		}
 	}
 }
 
 // DeleteTemplate deletes a template by ID.
-func DeleteTemplate(db *sql.DB) http.HandlerFunc {
+func DeleteTemplate(db *sql.DB, auditRepo *audit.Repository) http.HandlerFunc {
 	repo := templates.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
+
+		// Fetch old record for audit snapshot
+		oldTemplate, _ := repo.GetByID(r.Context(), id)
+
 		if err := repo.Delete(r.Context(), id); err != nil {
 			WriteError(w, http.StatusNotFound, ErrConfigValidation, "template not found")
 			return
 		}
 		WriteJSON(w, http.StatusNoContent, nil)
+
+		// Audit log
+		if auditErr := auditRepo.Insert(r.Context(), &audit.AuditLog{
+			Operator:       GetUsernameFromContext(r.Context()),
+			Action:         "delete",
+			TargetType:     "template",
+			TargetID:       id,
+			SnapshotBefore: marshalSnapshot(oldTemplate),
+			Summary:        stringPtr(fmt.Sprintf("deleted template %s", id)),
+		}); auditErr != nil {
+			slog.Error("audit log insert failed", "action", "delete", "target_type", "template", "error", auditErr)
+		}
 	}
 }
 

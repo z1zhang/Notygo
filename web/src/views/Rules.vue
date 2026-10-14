@@ -88,7 +88,7 @@
         <el-divider content-position="left">{{ $t('rules.conditions') }}</el-divider>
 
         <el-form-item :label="$t('rules.conditionMode')">
-          <el-radio-group v-model="form.condition_mode">
+          <el-radio-group v-model="form.condition_operator">
             <el-radio value="and">{{ $t('rules.andMode') }}</el-radio>
             <el-radio value="or">{{ $t('rules.orMode') }}</el-radio>
           </el-radio-group>
@@ -251,7 +251,7 @@ const form = reactive({
   name: '',
   priority: 0,
   enabled: true,
-  condition_mode: 'and',
+  condition_operator: 'and',
   conditions: [] as ConditionRow[],
   template_id: '',
   destination_ids: [] as string[],
@@ -290,7 +290,7 @@ function resetForm() {
   form.name = ''
   form.priority = 0
   form.enabled = true
-  form.condition_mode = 'and'
+  form.condition_operator = 'and'
   form.conditions = []
   form.template_id = ''
   form.destination_ids = []
@@ -306,7 +306,7 @@ function openDialog(row?: RuleResponse) {
     form.name = row.name ?? ''
     form.priority = row.priority ?? 0
     form.enabled = row.enabled ?? true
-    form.condition_mode = row.condition_mode ?? 'and'
+    form.condition_operator = row.conditions?.operator ?? 'and'
 
     // Backend stores conditions as ConditionGroup { operator, conditions: [...] }
     // Extract the flat conditions array from the group
@@ -322,7 +322,7 @@ function openDialog(row?: RuleResponse) {
         ? groupConds.map((c) => ({ ...createEmptyCondition(), ...c }))
         : []
       if (group.operator) {
-        form.condition_mode = group.operator
+        form.condition_operator = group.operator
       }
     } else {
       form.conditions = []
@@ -353,7 +353,7 @@ async function handleSave() {
     // Build the ConditionGroup structure that the backend expects:
     // { operator: "and"|"or", conditions: [...] }
     const conditionGroup = {
-      operator: form.condition_mode,
+      operator: form.condition_operator,
       conditions: form.conditions
         .filter((c) => c.field)
         .map((c) => ({
@@ -372,7 +372,6 @@ async function handleSave() {
       name: form.name,
       priority: form.priority,
       enabled: form.enabled,
-      condition_mode: form.condition_mode,
       conditions: conditionGroup,
       template_id: form.template_id || null,
       destination_ids: form.destination_ids,

@@ -22,7 +22,6 @@ export interface SourceResponse {
   max_body_bytes: number
   rate_limit?: string | null
   mapping_id?: string | null
-  expected_response?: string | null
   created_at?: string
   updated_at?: string
 }
@@ -75,7 +74,6 @@ export interface RuleResponse {
   enabled: boolean
   priority: number
   conditions: ConditionGroup
-  condition_mode: string
   template_id?: string | null
   destination_ids: string[]
   dedupe_config?: DedupeConfig | null
@@ -99,13 +97,6 @@ export interface TemplateResponse {
 
 // ── Destination ──────────────────────────────────────────
 
-export interface CircuitBreakerConfig {
-  failure_threshold: number
-  success_threshold: number
-  timeout_seconds: number
-  half_open_max_calls?: number
-}
-
 export interface DestinationResponse {
   id: string
   name: string
@@ -114,8 +105,6 @@ export interface DestinationResponse {
   config: Record<string, unknown>
   secret_ref?: string | null
   timeout_ms: number
-  rate_limit?: string | null
-  circuit_breaker?: CircuitBreakerConfig | null
   revision: number
   created_at?: string
   updated_at?: string
@@ -135,7 +124,6 @@ export interface EventResponse {
   status: string
   error_code?: string | null
   error_summary?: string | null
-  expire_at?: string | null
   lease_until?: string | null
   lease_owner?: string | null
 }

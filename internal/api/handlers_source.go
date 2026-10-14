@@ -8,7 +8,9 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"log/slog"
 
+	"zpush/internal/audit"
 	"zpush/internal/secret"
 	"zpush/internal/source"
 )
@@ -43,7 +45,7 @@ func ListSources(db *sql.DB) http.HandlerFunc {
 }
 
 // CreateSource creates a new source.
-func CreateSource(db *sql.DB, secretSvc *secret.Service) http.HandlerFunc {
+func CreateSource(db *sql.DB, secretSvc *secret.Service, auditRepo *audit.Repository) http.HandlerFunc {
 	repo := source.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req source.CreateSourceRequest
@@ -57,7 +59,7 @@ func CreateSource(db *sql.DB, secretSvc *secret.Service) http.HandlerFunc {
 			return
 		}
 
-		// Auto-generate 6-char random slug if not provided
+		// Auto-generate 32-char UUID slug if not provided
 		if req.Slug == "" {
 			req.Slug = generateSlug()
 		}
@@ -78,9 +80,20 @@ func CreateSource(db *sql.DB, secretSvc *secret.Service) http.HandlerFunc {
 			return
 		}
 
-		// Mask secret in response
+		// Audit log
+		if auditErr := auditRepo.Insert(r.Context(), &audit.AuditLog{
+			Operator:   GetUsernameFromContext(r.Context()),
+			Action:     "create",
+			TargetType: "source",
+			TargetID:   created.ID,
+			Summary:    stringPtr(fmt.Sprintf("created source %q", created.Name)),
+		}); auditErr != nil {
+			slog.Error("audit log insert failed", "action", "create", "target_type", "source", "error", auditErr)
+		}
+
 		resp := toSourceResponse(created)
 		WriteJSON(w, http.StatusCreated, resp)
+
 	}
 }
 
@@ -101,7 +114,7 @@ func GetSource(db *sql.DB) http.HandlerFunc {
 }
 
 // UpdateSource updates an existing source.
-func UpdateSource(db *sql.DB, secretSvc *secret.Service) http.HandlerFunc {
+func UpdateSource(db *sql.DB, secretSvc *secret.Service, auditRepo *audit.Repository) http.HandlerFunc {
 	repo := source.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
@@ -121,10 +134,25 @@ func UpdateSource(db *sql.DB, secretSvc *secret.Service) http.HandlerFunc {
 			req.SecretRef = &encrypted
 		}
 
+		// Fetch old record for audit snapshot
+		oldSource, _ := repo.GetByID(r.Context(), id)
+
 		updated, err := repo.Update(r.Context(), id, req)
 		if err != nil {
 			WriteError(w, http.StatusNotFound, ErrConfigValidation, "source not found")
 			return
+		}
+
+		// Audit log
+		if auditErr := auditRepo.Insert(r.Context(), &audit.AuditLog{
+			Operator:       GetUsernameFromContext(r.Context()),
+			Action:         "update",
+			TargetType:     "source",
+			TargetID:       id,
+			SnapshotBefore: marshalSnapshot(oldSource),
+			Summary:        stringPtr(fmt.Sprintf("updated source %q", updated.Name)),
+		}); auditErr != nil {
+			slog.Error("audit log insert failed", "action", "update", "target_type", "source", "error", auditErr)
 		}
 
 		resp := toSourceResponse(updated)
@@ -133,14 +161,31 @@ func UpdateSource(db *sql.DB, secretSvc *secret.Service) http.HandlerFunc {
 }
 
 // DeleteSource deletes a source by ID.
-func DeleteSource(db *sql.DB) http.HandlerFunc {
+func DeleteSource(db *sql.DB, auditRepo *audit.Repository) http.HandlerFunc {
 	repo := source.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
+
+		// Fetch old record for audit snapshot
+		oldSource, _ := repo.GetByID(r.Context(), id)
+
 		if err := repo.Delete(r.Context(), id); err != nil {
 			WriteError(w, http.StatusNotFound, ErrConfigValidation, "source not found")
 			return
 		}
+
+		// Audit log
+		if auditErr := auditRepo.Insert(r.Context(), &audit.AuditLog{
+			Operator:       GetUsernameFromContext(r.Context()),
+			Action:         "delete",
+			TargetType:     "source",
+			TargetID:       id,
+			SnapshotBefore: marshalSnapshot(oldSource),
+			Summary:        stringPtr(fmt.Sprintf("deleted source %s", id)),
+		}); auditErr != nil {
+			slog.Error("audit log insert failed", "action", "delete", "target_type", "source", "error", auditErr)
+		}
+
 		WriteJSON(w, http.StatusNoContent, nil)
 	}
 }
@@ -159,7 +204,6 @@ func toSourceResponse(s *source.Source) source.SourceResponse {
 		MaxBodyBytes:       s.MaxBodyBytes,
 		RateLimit:          s.RateLimit,
 		MappingID:          s.MappingID,
-		ExpectedResponse:   s.ExpectedResponse,
 		CreatedAt:          formatTimeOrNil(s.CreatedAt),
 		UpdatedAt:          formatTimeOrNil(s.UpdatedAt),
 	}
