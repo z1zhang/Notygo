@@ -1,0 +1,198 @@
+import { useState, type ReactNode } from 'react'
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router'
+import {
+  Bell,
+  ChevronsLeft,
+  FileText,
+  Gauge,
+  List,
+  LogOut,
+  Menu,
+  Notebook,
+  Plug,
+  Settings,
+  Shuffle,
+  Truck,
+  Wand2,
+} from 'lucide-react'
+import { useI18n } from '@/i18n'
+import { cn } from '@/lib/utils'
+import { clearSession } from '@/lib/api-client'
+import { Button } from '@/components/ui/button'
+import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
+import { LocaleSwitch } from './LocaleSwitch'
+import { ThemeToggle } from './ThemeToggle'
+
+interface NavItem {
+  to: string
+  titleKey: string
+  icon: ReactNode
+}
+
+const mainNav: NavItem[] = [
+  { to: '/dashboard', titleKey: 'nav.dashboard', icon: <Gauge className="size-4.5" /> },
+  { to: '/sources', titleKey: 'nav.sources', icon: <Plug className="size-4.5" /> },
+  { to: '/mappings', titleKey: 'nav.mappings', icon: <Shuffle className="size-4.5" /> },
+  { to: '/rules', titleKey: 'nav.rules', icon: <List className="size-4.5" /> },
+  { to: '/templates', titleKey: 'nav.templates', icon: <FileText className="size-4.5" /> },
+  { to: '/destinations', titleKey: 'nav.destinations', icon: <Truck className="size-4.5" /> },
+]
+
+const logsNav: NavItem[] = [
+  { to: '/events', titleKey: 'nav.eventLogs', icon: <Bell className="size-4.5" /> },
+  { to: '/deliveries', titleKey: 'nav.deliveryLogs', icon: <Truck className="size-4.5" /> },
+  { to: '/audit', titleKey: 'nav.auditLogs', icon: <List className="size-4.5" /> },
+]
+
+const bottomNav: NavItem[] = [
+  { to: '/playground', titleKey: 'nav.playground', icon: <Wand2 className="size-4.5" /> },
+  { to: '/settings', titleKey: 'nav.settings', icon: <Settings className="size-4.5" /> },
+]
+
+function NavLinks({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
+  const { t } = useI18n()
+
+  function renderLink(item: NavItem) {
+    return (
+      <NavLink
+        key={item.to}
+        to={item.to}
+        onClick={onNavigate}
+        title={collapsed ? t(item.titleKey) : undefined}
+        className={({ isActive }) =>
+          cn(
+            'flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm text-muted-foreground transition-colors',
+            'hover:bg-accent hover:text-foreground',
+            isActive && 'bg-accent font-medium text-foreground',
+          )
+        }
+      >
+        {item.icon}
+        {!collapsed && <span>{t(item.titleKey)}</span>}
+      </NavLink>
+    )
+  }
+
+  return (
+    <nav className="flex flex-col gap-0.5">
+      {mainNav.map(renderLink)}
+      {!collapsed && (
+        <div className="mt-4 mb-1 flex items-center gap-2 px-2.5 text-xs font-medium tracking-wide text-muted-foreground/70 uppercase">
+          <Notebook className="size-3.5" />
+          {t('nav.logs')}
+        </div>
+      )}
+      {collapsed && <div className="my-2 border-t" />}
+      {logsNav.map(renderLink)}
+      <div className="my-2 border-t" />
+      {bottomNav.map(renderLink)}
+    </nav>
+  )
+}
+
+function SidebarBrand({ collapsed }: { collapsed: boolean }) {
+  return (
+    <div className="flex h-14 items-center gap-2 px-3">
+      <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary font-bold text-primary-foreground text-sm">
+        z
+      </div>
+      {!collapsed && <span className="text-base font-semibold tracking-wide">zPush</span>}
+    </div>
+  )
+}
+
+export function AppShell() {
+  const { t } = useI18n()
+  const location = useLocation()
+  const navigate = useNavigate()
+  const [collapsed, setCollapsed] = useState(false)
+  const [mobileOpen, setMobileOpen] = useState(false)
+
+  const currentTitleKey = [...mainNav, ...logsNav, ...bottomNav].find(
+    (item) => location.pathname.startsWith(item.to),
+  )?.titleKey
+
+  function handleLogout() {
+    clearSession()
+    navigate('/login', { replace: true })
+  }
+
+  return (
+    <div className="flex h-dvh overflow-hidden">
+      {/* Desktop sidebar */}
+      <aside
+        className={cn(
+          'hidden shrink-0 flex-col border-r bg-sidebar transition-[width] duration-200 md:flex',
+          collapsed ? 'w-14' : 'w-56',
+        )}
+      >
+        <SidebarBrand collapsed={collapsed} />
+        <div className="flex-1 overflow-y-auto p-2">
+          <NavLinks collapsed={collapsed} />
+        </div>
+        <div className="border-t p-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="w-full"
+            aria-label={collapsed ? t('layout.expand') : t('layout.collapse')}
+            onClick={() => setCollapsed(!collapsed)}
+          >
+            <ChevronsLeft
+              className={cn('size-4.5 transition-transform', collapsed && 'rotate-180')}
+            />
+          </Button>
+        </div>
+      </aside>
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* Top bar */}
+        <header className="flex h-14 shrink-0 items-center gap-2 border-b bg-background px-4">
+          {/* Mobile nav trigger */}
+          <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+            <SheetTrigger asChild>
+              <Button variant="ghost" size="icon" className="md:hidden" aria-label={t('nav.logs')}>
+                <Menu className="size-5" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="w-64 p-0">
+              <div className="flex h-14 items-center border-b px-3">
+                <SheetTitle className="flex items-center gap-2">
+                  <div className="flex size-7 items-center justify-center rounded-md bg-primary font-bold text-primary-foreground text-sm">
+                    z
+                  </div>
+                  zPush
+                </SheetTitle>
+              </div>
+              <div className="p-2">
+                <NavLinks collapsed={false} onNavigate={() => setMobileOpen(false)} />
+              </div>
+            </SheetContent>
+          </Sheet>
+          <h2 className="truncate text-sm font-semibold">
+            {currentTitleKey ? t(currentTitleKey) : 'zPush'}
+          </h2>
+          <div className="ml-auto flex items-center gap-1">
+            <LocaleSwitch />
+            <ThemeToggle />
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label={t('nav.logout')}
+              onClick={handleLogout}
+            >
+              <LogOut className="mr-1 size-4" />
+              <span className="hidden sm:inline">{t('nav.logout')}</span>
+            </Button>
+          </div>
+        </header>
+
+        <main className="min-h-0 flex-1 overflow-y-auto bg-background">
+          <div className="mx-auto max-w-7xl space-y-5 p-4 md:p-6">
+            <Outlet />
+          </div>
+        </main>
+      </div>
+    </div>
+  )
+}
