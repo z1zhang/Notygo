@@ -460,20 +460,21 @@ func PreviewDelivery() http.HandlerFunc {
 // ---------------------------------------------------------------------------
 
 // PreviewTemplate renders a template with sample data using the real Go template engine.
+// It accepts either a stored template_id, or an inline template spec (title_template /
+// body_template / format) for previewing unsaved content — no database writes either way.
 func PreviewTemplate(db *sql.DB) http.HandlerFunc {
 	repo := templates.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
-			TemplateID string         `json:"template_id"`
-			SampleData map[string]any `json:"sample_data"`
+			TemplateID string `json:"template_id"`
+			// Inline spec — used when template_id is empty
+			TitleTemplate string         `json:"title_template"`
+			BodyTemplate  string         `json:"body_template"`
+			Format        string         `json:"format"`
+			SampleData    map[string]any `json:"sample_data"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "invalid request body")
-			return
-		}
-
-		if req.TemplateID == "" {
-			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "template_id is required")
 			return
 		}
 
@@ -481,10 +482,27 @@ func PreviewTemplate(db *sql.DB) http.HandlerFunc {
 			req.SampleData = map[string]any{}
 		}
 
-		// Look up the template
-		tmpl, err := repo.GetByID(r.Context(), req.TemplateID)
-		if err != nil {
-			WriteError(w, http.StatusNotFound, ErrConfigValidation, "template not found")
+		var tmpl *templates.Template
+		if req.TemplateID != "" {
+			// Look up the stored template
+			t, err := repo.GetByID(r.Context(), req.TemplateID)
+			if err != nil {
+				WriteError(w, http.StatusNotFound, ErrConfigValidation, "template not found")
+				return
+			}
+			tmpl = t
+		} else if req.TitleTemplate != "" || req.BodyTemplate != "" {
+			// Inline content preview
+			if req.Format == "" {
+				req.Format = "text"
+			}
+			tmpl = &templates.Template{
+				TitleTemplate: req.TitleTemplate,
+				BodyTemplate:  req.BodyTemplate,
+				Format:        req.Format,
+			}
+		} else {
+			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "template_id or template content is required")
 			return
 		}
 

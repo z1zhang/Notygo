@@ -54,3 +54,10 @@ docker-compose.override.yml
 # Claude Code
 CLAUDE.md
 .claude/
+
+docs
+
+# Frontend (React rewrite)
+frontend/node_modules/
+frontend/dist/
+
