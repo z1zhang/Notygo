@@ -34,6 +34,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { JsonViewer } from '@/components/data-display/JsonViewer'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { RenderedBody } from './RenderedBody'
 import { cn } from '@/lib/utils'
 
@@ -63,6 +64,27 @@ const emptyField: FieldRow = {
   multi_result_mode: null,
   default_value: '',
   _sample_value: '',
+}
+
+/** Same key logic as the mappings smart-import list ('first' is the default mode). */
+function suggestionKey(sf: SuggestedField): string {
+  const mode = sf.multi_result_mode && sf.multi_result_mode !== 'first' ? sf.multi_result_mode : ''
+  return sf.source_path + mode
+}
+
+function valueTypeBadgeVariant(valueType: string): 'secondary' | 'outline' | 'default' | 'destructive' {
+  switch (valueType) {
+    case 'string':
+      return 'secondary'
+    case 'number':
+      return 'outline'
+    case 'boolean':
+      return 'default'
+    case 'array':
+      return 'destructive'
+    default:
+      return 'secondary'
+  }
 }
 
 export default function PlaygroundPage() {
@@ -106,7 +128,8 @@ export default function PlaygroundPage() {
   const addedKeys = useMemo(() => {
     const s = new Set<string>()
     for (const f of mappingFields) {
-      s.add(f.source_path + (f.multi_result_mode ?? ''))
+      const mode = f.multi_result_mode && f.multi_result_mode !== 'first' ? f.multi_result_mode : ''
+      s.add(f.source_path + mode)
     }
     return s
   }, [mappingFields])
@@ -332,7 +355,7 @@ export default function PlaygroundPage() {
             onChange={(e) => setRawPayload(e.target.value)}
             placeholder={t('playground.payloadPlaceholder')}
             spellCheck={false}
-            className="font-mono text-xs"
+            className="field-sizing-fixed min-w-0 resize-y font-mono text-xs"
           />
           <Button onClick={handleAnalyze} disabled={parseMutation.isPending}>
             {parseMutation.isPending ? (
@@ -348,41 +371,63 @@ export default function PlaygroundPage() {
       {/* Section 2: structure + mapping fields */}
       {structureInfo ? (
         <section className="rounded-lg border">
-          <div className="border-b px-4 py-3">
+          <div className="flex items-center justify-between gap-2 border-b px-4 py-3">
             <h2 className="text-sm font-semibold">
               {t('playground.mappingFields')} / {t('playground.extractionResults')}
             </h2>
+            <Button variant="outline" size="sm" onClick={addField}>
+              <Plus />
+              {t('playground.addField')}
+            </Button>
           </div>
 
           <div className="grid gap-4 p-4 lg:grid-cols-5">
             {/* Left: structure / suggested fields */}
-            <div className="space-y-2 lg:col-span-2">
+            <div className="space-y-3 lg:col-span-2">
               <h3 className="text-xs font-semibold text-muted-foreground uppercase">
                 {t('playground.structure')}
               </h3>
-              <div className="max-h-[500px] overflow-y-auto rounded-md border bg-muted/20">
+              <div className="max-h-60 overflow-y-auto rounded-md border">
                 {suggestedFields.map((sf) => {
-                  const added = addedKeys.has(sf.source_path + (sf.multi_result_mode ?? ''))
+                  const added = addedKeys.has(suggestionKey(sf))
                   return (
                     <div
-                      key={sf.source_path + (sf.multi_result_mode ?? '')}
+                      key={suggestionKey(sf)}
                       className={cn(
-                        'flex items-center gap-2 border-b px-3 py-2 last:border-b-0 hover:bg-muted/50',
+                        'flex items-center gap-2 border-b px-2.5 py-1.5 text-sm last:border-b-0',
                         added && 'opacity-50',
                       )}
                     >
-                      <span className="min-w-0 shrink-0 font-mono text-xs font-medium text-primary">
-                        {sf.source_path}
-                      </span>
-                      <Badge variant="secondary" className="shrink-0">
-                        {t(`mappings.${valueTypeKey(sf.value_type)}`, sf.value_type)}
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="w-40 shrink-0 truncate font-medium text-primary">
+                            {sf.source_path}
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-md">
+                          <p className="break-all">{sf.source_path}</p>
+                        </TooltipContent>
+                      </Tooltip>
+                      <Badge variant={valueTypeBadgeVariant(sf.value_type)}>
+                        {sf.value_type}
                       </Badge>
-                      <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-                        {sf.sample_value}
-                      </span>
+                      {sf.sample_value ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                              {sf.sample_value}
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-md">
+                            <p className="break-all">{sf.sample_value}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        <span className="min-w-0 flex-1" />
+                      )}
                       {added ? (
-                        <span className="flex size-6 shrink-0 items-center justify-center text-emerald-500">
-                          <Check className="size-3.5" />
+                        <span className="flex size-8 shrink-0 items-center justify-center">
+                          <Check className="size-4 text-primary" />
                         </span>
                       ) : (
                         <Button
@@ -403,15 +448,9 @@ export default function PlaygroundPage() {
 
             {/* Right: mapping field cards */}
             <div className="space-y-3 lg:col-span-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xs font-semibold text-muted-foreground uppercase">
-                  {t('playground.mappingFields')} ({mappingFields.length})
-                </h3>
-                <Button variant="outline" size="sm" onClick={addField}>
-                  <Plus />
-                  {t('playground.addField')}
-                </Button>
-              </div>
+              <h3 className="text-xs font-semibold text-muted-foreground uppercase">
+                {t('playground.mappingFields')} ({mappingFields.length})
+              </h3>
 
               {mappingFields.length === 0 ? (
                 <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
@@ -517,12 +556,19 @@ export default function PlaygroundPage() {
                     </div>
 
                     {field._sample_value !== '' ? (
-                      <div>
-                        <Badge variant="secondary" className="max-w-full">
-                          <span className="truncate">
-                            {t('playground.sampleValue')}: {field._sample_value}
-                          </span>
-                        </Badge>
+                      <div className="min-w-0">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Badge variant="secondary" className="max-w-full">
+                              <span className="min-w-0 truncate">
+                                {t('playground.sampleValue')}: {field._sample_value}
+                              </span>
+                            </Badge>
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-md">
+                            <p className="break-all">{field._sample_value}</p>
+                          </TooltipContent>
+                        </Tooltip>
                       </div>
                     ) : null}
                   </div>
@@ -735,7 +781,6 @@ export default function PlaygroundPage() {
                 value={mappingName}
                 onChange={(e) => setMappingName(e.target.value)}
                 placeholder={t('playground.mappingNamePrompt')}
-                autoFocus
               />
             </div>
             <DialogFooter>
@@ -790,7 +835,6 @@ export default function PlaygroundPage() {
                 value={templateName}
                 onChange={(e) => setTemplateName(e.target.value)}
                 placeholder={t('playground.templateNamePrompt')}
-                autoFocus
               />
             </div>
             <DialogFooter>

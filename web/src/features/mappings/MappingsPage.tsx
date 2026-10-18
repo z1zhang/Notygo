@@ -35,6 +35,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Pagination } from '@/components/data-display/Pagination'
 import { EmptyState } from '@/components/feedback/EmptyState'
 import { ErrorState } from '@/components/feedback/ErrorState'
@@ -430,7 +431,7 @@ export default function MappingsPage() {
                       {ruleIdList.length > 0 ? (
                         <span className="inline-flex flex-wrap items-center gap-1">
                           {ruleIdList.slice(0, 3).map((rId) => (
-                            <Badge key={rId} variant="outline" className="max-w-40">
+                            <Badge key={rId} variant="secondary" className="max-w-40">
                               <span className="truncate">{lookupName(ruleOptions.data, rId)}</span>
                             </Badge>
                           ))}
@@ -602,9 +603,12 @@ export default function MappingsPage() {
                                 ? t('playground.rootArray')
                                 : t('playground.rootObject')}
                             </Badge>
-                            <Badge variant="secondary" title={t('playground.itemCount')}>
-                              {structure.item_count}
-                            </Badge>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Badge variant="secondary">{structure.item_count}</Badge>
+                              </TooltipTrigger>
+                              <TooltipContent>{t('playground.itemCount')}</TooltipContent>
+                            </Tooltip>
                           </span>
                         ) : null}
                       </div>
@@ -619,21 +623,33 @@ export default function MappingsPage() {
                                 added && 'opacity-50',
                               )}
                             >
-                              <span
-                                className="w-40 shrink-0 truncate font-medium text-primary"
-                                title={sf.source_path}
-                              >
-                                {sf.source_path}
-                              </span>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="w-40 shrink-0 truncate font-medium text-primary">
+                                    {sf.source_path}
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent className="max-w-md">
+                                  <p className="break-all">{sf.source_path}</p>
+                                </TooltipContent>
+                              </Tooltip>
                               <Badge variant={valueTypeBadgeVariant(sf.value_type)}>
                                 {sf.value_type}
                               </Badge>
-                              <span
-                                className="min-w-0 flex-1 truncate text-xs text-muted-foreground"
-                                title={sf.sample_value}
-                              >
-                                {sf.sample_value}
-                              </span>
+                              {sf.sample_value ? (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                                      {sf.sample_value}
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent className="max-w-md">
+                                    <p className="break-all">{sf.sample_value}</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              ) : (
+                                <span className="min-w-0 flex-1" />
+                              )}
                               {added ? (
                                 <span className="flex size-8 shrink-0 items-center justify-center">
                                   <Check className="size-4 text-primary" />

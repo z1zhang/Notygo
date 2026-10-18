@@ -430,7 +430,7 @@
       "mapping": "映射",
       "rule": "规则",
       "template": "模板",
-      "destination": "投递目标",
+      "destination": "渠道",
       "event": "事件",
       "delivery": "投递"
     }

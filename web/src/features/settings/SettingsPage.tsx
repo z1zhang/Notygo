@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { useTheme } from 'next-themes'
+import { useTheme } from '@/app/theme'
 import { CalendarClock, Cpu, Monitor, Moon, Server, Sun } from 'lucide-react'
 import { useI18n } from '@/i18n'
 import { getHealthz, getRootInfo } from '@/lib/api'

@@ -35,6 +35,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Pagination } from '@/components/data-display/Pagination'
 import { EmptyState } from '@/components/feedback/EmptyState'
 import { ErrorState } from '@/components/feedback/ErrorState'
@@ -465,20 +466,25 @@ export default function RulesPage() {
                     )}
                   />
                   {(['and', 'or'] as const).map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      title={t(m === 'and' ? 'rules.andMode' : 'rules.orMode')}
-                      className={cn(
-                        'relative z-10 min-w-0 flex-1 truncate rounded-sm px-3 py-1 text-center text-sm transition-colors',
-                        mode === m
-                          ? 'text-primary-foreground'
-                          : 'text-muted-foreground hover:text-foreground',
-                      )}
-                      onClick={() => form.setValue('mode', m)}
-                    >
+                    <Tooltip key={m}>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className={cn(
+                            'relative z-10 min-w-0 flex-1 truncate rounded-sm px-3 py-1 text-center text-sm transition-colors',
+                            mode === m
+                              ? 'text-primary-foreground'
+                              : 'text-muted-foreground hover:text-foreground',
+                          )}
+                          onClick={() => form.setValue('mode', m)}
+                        >
                       {t(m === 'and' ? 'rules.andShort' : 'rules.orShort')}
-                    </button>
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {t(m === 'and' ? 'rules.andMode' : 'rules.orMode')}
+                      </TooltipContent>
+                    </Tooltip>
                   ))}
                 </div>
                 <Button

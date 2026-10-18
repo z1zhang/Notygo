@@ -1,5 +1,5 @@
 import { Monitor, Moon, Sun } from 'lucide-react'
-import { useTheme } from 'next-themes'
+import { useTheme } from '@/app/theme'
 import { useI18n } from '@/i18n'
 import { Button } from '@/components/ui/button'
 import {

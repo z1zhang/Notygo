@@ -4,21 +4,24 @@ import {
   Bell,
   ChevronsLeft,
   FileText,
+  Filter,
   Gauge,
-  List,
   LogOut,
   Menu,
   Notebook,
   Plug,
+  ScrollText,
+  Send,
+  SendHorizontal,
   Settings,
   Shuffle,
-  Truck,
   Wand2,
 } from 'lucide-react'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 import { clearSession } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import { LocaleSwitch } from './LocaleSwitch'
 import { ThemeToggle } from './ThemeToggle'
@@ -33,15 +36,15 @@ const mainNav: NavItem[] = [
   { to: '/dashboard', titleKey: 'nav.dashboard', icon: <Gauge className="size-4.5" /> },
   { to: '/sources', titleKey: 'nav.sources', icon: <Plug className="size-4.5" /> },
   { to: '/mappings', titleKey: 'nav.mappings', icon: <Shuffle className="size-4.5" /> },
-  { to: '/rules', titleKey: 'nav.rules', icon: <List className="size-4.5" /> },
+  { to: '/rules', titleKey: 'nav.rules', icon: <Filter className="size-4.5" /> },
   { to: '/templates', titleKey: 'nav.templates', icon: <FileText className="size-4.5" /> },
-  { to: '/destinations', titleKey: 'nav.destinations', icon: <Truck className="size-4.5" /> },
+  { to: '/destinations', titleKey: 'nav.destinations', icon: <Send className="size-4.5" /> },
 ]
 
 const logsNav: NavItem[] = [
   { to: '/events', titleKey: 'nav.eventLogs', icon: <Bell className="size-4.5" /> },
-  { to: '/deliveries', titleKey: 'nav.deliveryLogs', icon: <Truck className="size-4.5" /> },
-  { to: '/audit', titleKey: 'nav.auditLogs', icon: <List className="size-4.5" /> },
+  { to: '/deliveries', titleKey: 'nav.deliveryLogs', icon: <SendHorizontal className="size-4.5" /> },
+  { to: '/audit', titleKey: 'nav.auditLogs', icon: <ScrollText className="size-4.5" /> },
 ]
 
 const bottomNav: NavItem[] = [
@@ -53,12 +56,11 @@ function NavLinks({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: 
   const { t } = useI18n()
 
   function renderLink(item: NavItem) {
-    return (
+    const link = (
       <NavLink
         key={item.to}
         to={item.to}
         onClick={onNavigate}
-        title={collapsed ? t(item.titleKey) : undefined}
         className={({ isActive }) =>
           cn(
             'flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm text-muted-foreground transition-colors',
@@ -70,6 +72,14 @@ function NavLinks({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: 
         {item.icon}
         {!collapsed && <span>{t(item.titleKey)}</span>}
       </NavLink>
+    )
+    // Collapsed sidebar shows icon only — hover reveals the page name
+    if (!collapsed) return link
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>{link}</TooltipTrigger>
+        <TooltipContent side="right">{t(item.titleKey)}</TooltipContent>
+      </Tooltip>
     )
   }
 
@@ -187,7 +197,9 @@ export function AppShell() {
           </div>
         </header>
 
-        <main className="min-h-0 flex-1 overflow-y-auto bg-background">
+        {/* [scrollbar-gutter:stable]：main 是页面滚动容器，滚动条出现/消失会改变内容区宽度，
+            造成整页内容"被放大"的抖动（如沙盒分析时结构区卸载/挂载） */}
+        <main className="min-h-0 flex-1 overflow-y-auto bg-background [scrollbar-gutter:stable]">
           <div className="mx-auto max-w-7xl space-y-5 p-4 md:p-6">
             <Outlet />
           </div>

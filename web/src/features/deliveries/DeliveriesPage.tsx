@@ -105,16 +105,24 @@ export default function DeliveriesPage() {
               onClick={() => void listQuery.refetch()}
               loading={listQuery.isFetching}
             />
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setBulkConfirmOpen(true)}
-              disabled={bulkRetryMutation.isPending || !BULK_RETRYABLE}
-              title={!BULK_RETRYABLE ? t("deliveries.bulkRetryUnavailable") : undefined}
-            >
-              <RotateCcw />
-              {t("deliveries.bulkRetry")}
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setBulkConfirmOpen(true)}
+                    disabled={bulkRetryMutation.isPending || !BULK_RETRYABLE}
+                  >
+                    <RotateCcw />
+                    {t("deliveries.bulkRetry")}
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              {!BULK_RETRYABLE ? (
+                <TooltipContent>{t("deliveries.bulkRetryUnavailable")}</TooltipContent>
+              ) : null}
+            </Tooltip>
           </>
         }
       />
@@ -210,7 +218,7 @@ export default function DeliveriesPage() {
                     <TableCell>
                       <StatusBadge kind="delivery" status={row.status} />
                     </TableCell>
-                    <TableCell className="tabular-nums">{row.attempt_count}</TableCell>
+                    <TableCell className="text-muted-foreground tabular-nums">{row.attempt_count}</TableCell>
                     <TableCell className="text-muted-foreground">
                       {formatTime(row.next_attempt_at)}
                     </TableCell>
