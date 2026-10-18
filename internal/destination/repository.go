@@ -70,7 +70,7 @@ func (r *Repository) Create(ctx context.Context, req CreateDestinationRequest) (
 
 	_, err = r.db.ExecContext(ctx,
 		`INSERT INTO destinations (id, name, type, enabled, config, secret_ref, timeout_ms, revision, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
 		id, name, string(destType), boolToInt(enabled),
 		string(configJSON), req.SecretRef, timeoutMs,
 		nowStr, nowStr,

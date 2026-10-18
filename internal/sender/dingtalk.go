@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -54,6 +55,14 @@ func (s *DingTalkSender) Send(ctx context.Context, destConfig DestinationConfig,
 		msgType = "markdown"
 	}
 
+	// DingTalk requires a non-empty title for markdown/actionCard messages
+	// (errcode 400402 otherwise). Fall back to the first line of the body
+	// when the rendered title is empty.
+	title := strings.TrimSpace(msg.Title)
+	if title == "" {
+		title = fallbackTitle(msg.Body)
+	}
+
 	// Build the request body
 	var payload any
 	switch msgType {
@@ -61,7 +70,7 @@ func (s *DingTalkSender) Send(ctx context.Context, destConfig DestinationConfig,
 		payload = map[string]any{
 			"msgtype": "actionCard",
 			"actionCard": map[string]string{
-				"title": msg.Title,
+				"title": title,
 				"text":  msg.Body,
 			},
 		}
@@ -69,7 +78,7 @@ func (s *DingTalkSender) Send(ctx context.Context, destConfig DestinationConfig,
 		payload = map[string]any{
 			"msgtype": "markdown",
 			"markdown": map[string]string{
-				"title": msg.Title,
+				"title": title,
 				"text":  msg.Body,
 			},
 		}
@@ -136,4 +145,21 @@ func computeDingTalkSign(timestamp, secret string) (string, error) {
 	mac.Write([]byte(stringToSign))
 	signData := mac.Sum(nil)
 	return base64.StdEncoding.EncodeToString(signData), nil
+}
+
+// fallbackTitle derives a DingTalk message title from the body: the first
+// non-empty line, truncated to 32 runes. "通知" when the body is empty too.
+func fallbackTitle(body string) string {
+	for _, line := range strings.Split(body, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		r := []rune(line)
+		if len(r) > 32 {
+			return string(r[:32]) + "..."
+		}
+		return line
+	}
+	return "通知"
 }

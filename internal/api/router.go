@@ -4,7 +4,9 @@ import (
 	"database/sql"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
@@ -141,6 +143,9 @@ func NewRouter(
 			// Audit logs
 			r.Get("/audit", ListAuditLogs(db))
 
+			// Dashboard
+			r.Get("/dashboard/stats", DashboardStats(db))
+
 			// Preview / debug
 			r.Post("/preview/parse", PreviewParse())
 			r.Post("/preview/mapping", PreviewMapping())
@@ -158,7 +163,7 @@ func NewRouter(
 	return r
 }
 
-// serveFrontend registers routes to serve the Vue SPA static files.
+// serveFrontend registers routes to serve the React SPA static files.
 // In development, the frontend is served by Vite dev server on port 3000.
 // In production, the built files are served by the Go server.
 func serveFrontend(r chi.Router) {
@@ -171,16 +176,29 @@ func serveFrontend(r chi.Router) {
 	fileServer := http.FileServer(http.Dir(distDir))
 	r.Handle("/assets/*", http.StripPrefix("/", fileServer))
 
-	// SPA fallback: any non-API, non-health route serves index.html
+	indexPath := filepath.Join(distDir, "index.html")
+
+	// SPA fallback: any non-API route serves a real file from the dist root
+	// when one exists (favicon.svg etc.), otherwise index.html.
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
-		// Only serve index.html for non-API routes
-		if len(r.URL.Path) >= 5 && r.URL.Path[:5] == "/api/" {
+		if strings.HasPrefix(r.URL.Path, "/api/") {
 			WriteError(w, http.StatusNotFound, "CONFIG_001", "endpoint not found")
 			return
 		}
-		indexPath := filepath.Join(distDir, "index.html")
+		// path.Clean anchored at "/" collapses "..", so rel never escapes distDir
+		rel := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
+		if rel != "" && isRegularFile(filepath.Join(distDir, filepath.FromSlash(rel))) {
+			http.ServeFile(w, r, filepath.Join(distDir, filepath.FromSlash(rel)))
+			return
+		}
 		http.ServeFile(w, r, indexPath)
 	})
+}
+
+// isRegularFile reports whether p exists and is a regular file (not a directory).
+func isRegularFile(p string) bool {
+	info, err := os.Stat(p)
+	return err == nil && !info.IsDir()
 }
 
 // placeholderHandler returns a temporary handler that returns 501 Not Implemented.

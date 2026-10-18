@@ -1,0 +1,24 @@
+{
+  "common": {
+    "all": "全部"
+  },
+  "events": {
+    "emptyTitle": "暂无事件",
+    "emptyDescription": "Webhook 请求接收后将出现在这里",
+    "field": "字段"
+  },
+  "deliveries": {
+    "emptyTitle": "暂无投递",
+    "emptyDescription": "事件处理完成后将在这里生成投递记录",
+    "destination": "投递目标",
+    "attemptNo": "序号",
+    "bulkRetry": "重试失败投递",
+    "bulkRetryUnavailable": "仅失败或等待重试状态的投递可以批量重试",
+    "bulkRetryConfirmTitle": "确认批量重试",
+    "bulkRetryConfirmMsg": "将重置当前筛选下可重试的投递并重新投递，确定继续吗？",
+    "bulkRetryDone": "已重置 {count} 条投递",
+    "bulkRetryFailed": "批量重试失败",
+    "retryConfirmTitle": "确认重试",
+    "retryConfirmMsg": "将重置该投递并重新发送，确定继续吗？"
+  }
+}

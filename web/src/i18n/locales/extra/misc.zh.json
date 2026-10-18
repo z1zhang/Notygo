@@ -1,0 +1,27 @@
+{
+  "common": {
+    "all": "全部"
+  },
+  "dashboard": {
+    "noErrors": "暂无错误记录",
+    "sourceOrTarget": "来源 / 目标"
+  },
+  "audit": {
+    "bulkRetry": "批量重试",
+    "emptyTitle": "暂无审计日志",
+    "emptyDescription": "系统操作产生审计记录后将显示在这里",
+    "clearFilters": "清除筛选"
+  },
+  "settings": {
+    "serviceName": "服务名称",
+    "recheck": "重新检测"
+  },
+  "playground": {
+    "invalidPayloadJson": "Payload 不是有效的 JSON",
+    "payloadRequired": "请先输入 Payload",
+    "noFields": "请先添加映射字段",
+    "analyzed": "JSON 解析完成",
+    "mappingName": "映射名称",
+    "templateName": "模板名称"
+  }
+}

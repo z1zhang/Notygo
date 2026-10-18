@@ -175,11 +175,16 @@ func drainDeliveryChannel(ch <-chan struct{}) {
 // buildRequestSummary creates a JSON summary of the request that will be sent,
 // suitable for storing in delivery_attempts.request_summary.
 // Sensitive headers (auth, token, key, secret) are redacted.
+// Empty method/url are omitted (chat senders like dingtalk have neither).
 func buildRequestSummary(cfg sender.DestinationConfig, msg sender.RenderedMessage) string {
 	summary := map[string]any{
-		"type":   cfg.Type,
-		"method": cfg.Method,
-		"url":    cfg.URL,
+		"type": cfg.Type,
+	}
+	if cfg.Method != "" {
+		summary["method"] = cfg.Method
+	}
+	if cfg.URL != "" {
+		summary["url"] = cfg.URL
 	}
 	if len(cfg.Headers) > 0 {
 		redacted := make(map[string]string)
@@ -194,13 +199,20 @@ func buildRequestSummary(cfg sender.DestinationConfig, msg sender.RenderedMessag
 		}
 		summary["headers"] = redacted
 	}
+	titleSnippet := msg.Title
+	if len(titleSnippet) > 128 {
+		titleSnippet = titleSnippet[:128] + "...(truncated)"
+	}
+	if titleSnippet != "" {
+		summary["title_snippet"] = titleSnippet
+	}
+	// Always record the body snippet (even when empty) so empty-content
+	// deliveries are visible in the logs.
 	bodySnippet := msg.Body
 	if len(bodySnippet) > 512 {
 		bodySnippet = bodySnippet[:512] + "...(truncated)"
 	}
-	if bodySnippet != "" {
-		summary["body_snippet"] = bodySnippet
-	}
+	summary["body_snippet"] = bodySnippet
 	b, _ := json.Marshal(summary)
 	return string(b)
 }

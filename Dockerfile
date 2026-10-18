@@ -3,16 +3,16 @@ ARG HTTP_PROXY
 ARG HTTPS_PROXY
 
 # Frontend build stage
-FROM node:22-alpine AS frontend-builder
+FROM node:22-alpine AS web-builder
 
 ARG HTTP_PROXY
 ARG HTTPS_PROXY
 ENV HTTP_PROXY=${HTTP_PROXY} HTTPS_PROXY=${HTTPS_PROXY}
 
-WORKDIR /frontend
-COPY frontend/package.json frontend/package-lock.json ./
+WORKDIR /web
+COPY web/package.json web/package-lock.json ./
 RUN npm ci
-COPY frontend/ .
+COPY web/ .
 RUN npm run build
 
 # Backend build stage
@@ -28,7 +28,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 # Copy frontend dist from builder (Go server serves web/dist as SPA root)
-COPY --from=frontend-builder /frontend/dist /app/web/dist
+COPY --from=web-builder /web/dist /app/web/dist
 # Build the server binary
 RUN CGO_ENABLED=0 GOOS=linux go build -o /zpush ./cmd/server/
 
@@ -46,7 +46,7 @@ WORKDIR /app
 COPY --from=backend-builder /zpush /app/zpush
 
 # Copy frontend static files
-COPY --from=frontend-builder /frontend/dist /app/web/dist
+COPY --from=web-builder /web/dist /app/web/dist
 
 USER zpush
 

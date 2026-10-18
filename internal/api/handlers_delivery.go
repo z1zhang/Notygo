@@ -138,6 +138,14 @@ func BulkRetry(db *sql.DB, notifier *notify.Notifier, auditRepo *audit.Repositor
 			destIDFilter = *req.DestinationID
 		}
 
+		// Only failed or retry_wait deliveries may be retried (dead_letter never)
+		if statusFilter != "" &&
+			statusFilter != string(delivery.DeliveryStatusFailed) &&
+			statusFilter != string(delivery.DeliveryStatusRetryWait) {
+			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "only failed or retry_wait deliveries can be retried")
+			return
+		}
+
 		count, err := repo.BulkResetPending(r.Context(), statusFilter, destIDFilter)
 		if err != nil {
 			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to bulk retry deliveries")

@@ -314,7 +314,8 @@ func (r *Repository) ListDeliveryAttempts(ctx context.Context, deliveryID string
 // BulkResetPending resets multiple deliveries back to pending status based on filters.
 func (r *Repository) BulkResetPending(ctx context.Context, statusFilter, destIDFilter string) (int64, error) {
 	nowExpr := storage.NowExpr()
-	query := "UPDATE deliveries SET status = 'pending', last_error_code = NULL, last_error_summary = NULL, next_attempt_at = " + nowExpr + ", updated_at = " + nowExpr + " WHERE 1=1"
+	// Retry is limited to failed/retry_wait — delivered/pending/dead_letter are never reset
+	query := "UPDATE deliveries SET status = 'pending', last_error_code = NULL, last_error_summary = NULL, next_attempt_at = " + nowExpr + ", updated_at = " + nowExpr + " WHERE status IN ('failed', 'retry_wait')"
 	var args []any
 
 	if statusFilter != "" {

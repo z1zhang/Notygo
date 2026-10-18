@@ -1,0 +1,14 @@
+{
+  "mappings": {
+    "description": "Parse raw webhook payloads into structured fields for rule matching and template rendering",
+    "fieldDesc": "Description",
+    "emptyTitle": "No mappings yet",
+    "emptyDescription": "Create a mapping to extract fields from webhook payloads"
+  },
+  "templates": {
+    "description": "Define notification title and body templates in plain text, Markdown, or HTML",
+    "emptyTitle": "No templates yet",
+    "emptyDescription": "Create a template to render notification titles and bodies for rules",
+    "contentRequired": "Fill in the title or body template before rendering"
+  }
+}

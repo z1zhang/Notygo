@@ -20,6 +20,7 @@ func ListDestinations(db *sql.DB, secretSvc *secret.Service) http.HandlerFunc {
 		page, size := ParsePagination(r)
 		result, total, err := repo.List(r.Context(), page, size)
 		if err != nil {
+			slog.Error("list destinations failed", "error", err)
 			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to list destinations")
 			return
 		}
@@ -70,6 +71,7 @@ func CreateDestination(db *sql.DB, secretSvc *secret.Service, auditRepo *audit.R
 
 		created, err := repo.Create(r.Context(), req)
 		if err != nil {
+			slog.Error("create destination failed", "error", err)
 			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to create destination")
 			return
 		}

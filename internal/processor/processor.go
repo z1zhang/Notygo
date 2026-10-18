@@ -302,6 +302,7 @@ func (p *EventProcessor) processEvent(ctx context.Context, evt *event.Event) {
 	continueOnMatch := mapObj != nil && mapObj.ContinueOnMatch
 	var matchedRuleIDs []string
 	deliveryCreated := false
+	var renderFailure error
 	for _, rule := range enabledRules {
 		matched, err := evaluateRule(rule, evalFields)
 		if err != nil {
@@ -313,7 +314,16 @@ func (p *EventProcessor) processEvent(ctx context.Context, evt *event.Event) {
 			matchedRuleIDs = append(matchedRuleIDs, rule.ID)
 
 			// 6. For each matched rule: render template, create deliveries
-			if p.processMatchedRule(ctx, evt, src, createdRun, rule, evalFields) {
+			created, renderErr := p.processMatchedRule(ctx, evt, src, createdRun, rule, evalFields)
+			if renderErr != nil {
+				// Template render failure — do NOT create empty-content deliveries;
+				// fail the event so the error is visible and fixable
+				slog.Error("template render failed, skipping deliveries for rule",
+					"event_id", evt.ID, "rule_id", rule.ID, "rule_name", rule.Name, "error", renderErr)
+				if renderFailure == nil {
+					renderFailure = renderErr
+				}
+			} else if created {
 				deliveryCreated = true
 			}
 
@@ -324,7 +334,13 @@ func (p *EventProcessor) processEvent(ctx context.Context, evt *event.Event) {
 		}
 	}
 
-	// 7. Mark EventRun completed
+	// 7. Mark EventRun completed (or failed when a template could not render)
+	if renderFailure != nil {
+		_ = p.eventRepo.FailEventRun(ctx, createdRun.ID, "PROCESSOR_005", renderFailure.Error())
+		_ = p.eventRepo.MarkFailed(ctx, evt.ID, "PROCESSOR_005", renderFailure.Error())
+		slog.Error("event failed: template render error", "event_id", evt.ID, "error", renderFailure)
+		return
+	}
 	_ = p.eventRepo.CompleteEventRun(ctx, createdRun.ID, matchedRuleIDs)
 
 	// 8. Mark Event status: deduped if all matched rules were skipped, completed otherwise
@@ -348,8 +364,9 @@ func (p *EventProcessor) processEvent(ctx context.Context, evt *event.Event) {
 
 // processMatchedRule renders the template and creates deliveries for a matched rule.
 // If the rule has dedupe enabled, it checks for duplicates before creating deliveries.
-// Returns true if deliveries were actually created, false if dedupe-skipped.
-func (p *EventProcessor) processMatchedRule(ctx context.Context, evt *event.Event, src *source.Source, run *event.EventRun, rule rules.Rule, fields map[string]any) bool {
+// Returns (true, nil) if deliveries were actually created, (false, nil) if dedupe-skipped,
+// and (_, err) when the template could not be rendered (no deliveries are created then).
+func (p *EventProcessor) processMatchedRule(ctx context.Context, evt *event.Event, src *source.Source, run *event.EventRun, rule rules.Rule, fields map[string]any) (bool, error) {
 	// === Deduplication check ===
 	if rule.DedupeConfig != nil && rule.DedupeConfig.WindowSeconds > 0 {
 		// Dedupe key: rule_id + payload_hash â same content within window = skip
@@ -362,47 +379,46 @@ func (p *EventProcessor) processMatchedRule(ctx context.Context, evt *event.Even
 			slog.Error("dedupe check failed, proceeding without dedupe", "event_id", evt.ID, "rule_id", rule.ID, "error", err)
 		} else if result.IsDuplicate {
 			slog.Info("dedupe: skipping duplicate event", "event_id", evt.ID, "rule_id", rule.ID, "payload_hash", evt.PayloadHash)
-		return false
+			return false, nil
 		} else {
 			slog.Info("dedupe: first occurrence in window", "event_id", evt.ID, "rule_id", rule.ID, "payload_hash", evt.PayloadHash)
 		}
 	}
 
 	// Render template and create deliveries
-	p.renderAndCreateDeliveries(ctx, evt, src, run, rule, fields)
-	return true
+	return true, p.renderAndCreateDeliveries(ctx, evt, src, run, rule, fields)
 }
 
 // renderAndCreateDeliveries renders the template and creates deliveries.
-func (p *EventProcessor) renderAndCreateDeliveries(ctx context.Context, evt *event.Event, src *source.Source, run *event.EventRun, rule rules.Rule, fields map[string]any) {
-	var renderedTitle, renderedBody, renderedFormat string
-
-	// Render template if rule has one
-	if rule.TemplateID != nil && *rule.TemplateID != "" {
-		tmpl, err := p.templateRepo.GetByID(ctx, *rule.TemplateID)
-		if err != nil {
-			slog.Error("failed to fetch template", "template_id", *rule.TemplateID, "error", err)
-		} else {
-			// Build template data: mapped fields at top level + Event metadata
-			templateData := make(map[string]any, len(fields)+1)
-			for k, v := range fields {
-				templateData[k] = v
-			}
-			templateData["Event"] = map[string]any{
-				"ID":         evt.ID,
-				"ReceivedAt": evt.ReceivedAt.Format(time.RFC3339),
-				"SourceName": src.Name,
-			}
-			msg, renderErr := templates.Render(tmpl, templateData)
-			if renderErr != nil {
-				slog.Error("failed to render template", "template_id", *rule.TemplateID, "error", renderErr)
-			} else {
-				renderedTitle = msg.Title
-				renderedBody = msg.Body
-				renderedFormat = msg.Format
-			}
-		}
+// Rendering failures return an error — deliveries with empty content are never created.
+func (p *EventProcessor) renderAndCreateDeliveries(ctx context.Context, evt *event.Event, src *source.Source, run *event.EventRun, rule rules.Rule, fields map[string]any) error {
+	if rule.TemplateID == nil || *rule.TemplateID == "" {
+		return fmt.Errorf("rule %q has no template configured", rule.Name)
 	}
+
+	tmpl, err := p.templateRepo.GetByID(ctx, *rule.TemplateID)
+	if err != nil {
+		return fmt.Errorf("template %s not found: %w", *rule.TemplateID, err)
+	}
+
+	// Build template data: mapped fields at top level + Event metadata
+	templateData := make(map[string]any, len(fields)+1)
+	for k, v := range fields {
+		templateData[k] = v
+	}
+	templateData["Event"] = map[string]any{
+		"ID":         evt.ID,
+		"ReceivedAt": evt.ReceivedAt.Format(time.RFC3339),
+		"SourceName": src.Name,
+	}
+	msg, renderErr := templates.Render(tmpl, templateData)
+	if renderErr != nil {
+		return fmt.Errorf("template %s render failed: %w", *rule.TemplateID, renderErr)
+	}
+
+	renderedTitle := msg.Title
+	renderedBody := msg.Body
+	renderedFormat := msg.Format
 
 	nextAttemptAt := time.Now().UTC()
 
@@ -434,6 +450,8 @@ func (p *EventProcessor) renderAndCreateDeliveries(ctx context.Context, evt *eve
 	if p.notifier != nil {
 		p.notifier.NotifyDelivery()
 	}
+
+	return nil
 }
 
 // evaluateRule evaluates a rule against parsed fields.
