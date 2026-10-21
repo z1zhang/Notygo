@@ -57,8 +57,4 @@ CLAUDE.md
 
 docs
 
-# Frontend (React rewrite)
-web/node_modules/
-web/dist/
-
 .tmp-cdp/

@@ -55,7 +55,7 @@ Webhook POST → Ingest(验证/限流/去重) → events 表
    ```
 2. **DATETIME 列不接受 `T`/`Z` 和纳秒**，用 `storage.FormatTime()` 而非 `time.RFC3339Nano`
 3. **严禁在 Go 反引号字符串内放函数调用**（Go 会当字面文本），必须用 `"` + 字符串拼接
-4. MySQL 002 迁移是 no-op（001 建表已包含 rendered_format 列）
+4. 迁移链已于 2026-10-22 压平为单一 `001_init.sql` 基线（数据库重建为空库后合并 002–011 增量）；只适用全新数据库，老库（goose 版本 ≥ 002）不可直接切到此版本
 
 ## 目录结构
 

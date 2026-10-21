@@ -41,6 +41,7 @@ zPush 是自托管 Webhook 事件路由与通知推送系统（Go 1.26 + chi + M
     - 新增渠道前端侧 = 一个模块文件 + index.ts 两行（DEST_TYPES + CHANNELS）；README「新增一种投递渠道」步骤 3 与 CLAUDE.md 目录结构已同步
 13. **渠道类型 `http_webhook` 重命名为 `http`**：sender 注册键/Go 文件（`http.go`）与标识符（HTTPConfig/HTTPSender）/前端 DEST_TYPES/i18n 键全栈统一；新增迁移 010 把存量 `destinations.type='http_webhook'` 平滑改为 `'http'`（含 Down，embed FS 启动自动执行）。外部脚本用 API 创建渠道需改传 `"http"`。同时移除从未使用的 `EVENT_RETENTION_DAYS`（配置加载存在、清理逻辑始终未实现，属死配置）
 14. **渠道级投递重试次数（max_attempts）**：destinations 新增 `max_attempts` 列（迁移 011，默认 5），模型/仓库/创建与更新请求全部带指针字段（部分更新语义与 timeout_ms 一致）；handler 校验 1–100；processor 创建投递时逐渠道 `destRepo.GetByID` 取值，≤0 或渠道缺失回退常量 5（原 `DEFAULT_MAX_ATTEMPTS` env 已按用户要求移除——前端已有渠道级配置，回退仅覆盖渠道被删的边缘场景）。前端表单公共区在超时旁加数字输入（zod 1–100），i18n 键 `destinations.maxAttempts`。注意：修改渠道的 max_attempts 只影响之后新建的投递，存量投递行创建时已固化的次数不变
+15. **迁移链压平为单一基线**：用户重建了空数据库，002–011 共 9 个增量迁移（含 no-op 的 002、动态 SQL 的 004）全部折进 `001_init.sql` 最终形态：mappings 带 rule_ids/continue_on_match，rules 去掉 condition_mode/continue_on_match，events 带 run_type、无 expire_at，destinations 带 max_attempts、无 rate_limit/circuit_breaker，sources 无 expected_response，dedupe_keys 表并入。timeout_ms 列默认从 5000 对齐为 10000（应用层默认值，列默认实际不会被用到）。**只适用全新数据库**——老库 goose 版本已到 11，切到压平版会因版本表不匹配而重复建表报错
 
 验证：`go build/vet/test` 全过，`tsc -b --noEmit` 过、`npm run build` 过。**Docker/运行时冒烟未做（本机无 docker/MySQL）**；用户现有 webhook 调用方需要把 URL 改成 `/ingest/{slug}`（曾短暂定为 `/push/{slug}`，最终用户改回 ingest）。
 

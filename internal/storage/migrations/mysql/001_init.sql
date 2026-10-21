@@ -1,4 +1,6 @@
 -- zPush V1 Schema (MySQL)
+-- Consolidated baseline: the final schema after squashing the incremental
+-- migrations 002-011. Fresh databases run this single file.
 -- +goose Up
 
 CREATE TABLE sources (
@@ -12,7 +14,6 @@ CREATE TABLE sources (
     max_body_bytes  INT NOT NULL DEFAULT 1048576,
     rate_limit      TEXT,
     mapping_id      VARCHAR(36),
-    expected_response TEXT,
     created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -21,6 +22,8 @@ CREATE TABLE mappings (
     id              VARCHAR(36) PRIMARY KEY,
     name            VARCHAR(255) NOT NULL,
     revision        INT NOT NULL DEFAULT 1,
+    rule_ids        JSON NULL,
+    continue_on_match TINYINT(1) NOT NULL DEFAULT 0,
     fields          JSON NOT NULL,
     created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -32,8 +35,6 @@ CREATE TABLE rules (
     enabled         TINYINT(1) NOT NULL DEFAULT 1,
     priority        INT NOT NULL DEFAULT 0,
     conditions      JSON NOT NULL,
-    condition_mode  VARCHAR(20) NOT NULL DEFAULT 'and',
-    continue_on_match TINYINT(1) NOT NULL DEFAULT 1,
     template_id     VARCHAR(36),
     destination_ids JSON NOT NULL,
     dedupe_config   JSON,
@@ -60,9 +61,8 @@ CREATE TABLE destinations (
     enabled         TINYINT(1) NOT NULL DEFAULT 1,
     config          JSON NOT NULL,
     secret_ref      TEXT,
-    timeout_ms      INT NOT NULL DEFAULT 5000,
-    rate_limit      TEXT,
-    circuit_breaker JSON,
+    timeout_ms      INT NOT NULL DEFAULT 10000,
+    max_attempts    INT NOT NULL DEFAULT 5,
     revision        INT NOT NULL DEFAULT 1,
     created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -78,9 +78,9 @@ CREATE TABLE events (
     payload_raw     LONGTEXT NOT NULL,
     payload_hash    VARCHAR(64) NOT NULL,
     status          VARCHAR(20) NOT NULL DEFAULT 'received',
+    run_type        VARCHAR(20) NOT NULL DEFAULT 'initial',
     error_code      VARCHAR(20),
     error_summary   TEXT,
-    expire_at       DATETIME,
     lease_until     DATETIME,
     lease_owner     VARCHAR(64)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -138,6 +138,16 @@ CREATE TABLE delivery_attempts (
     duration_ms     INT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE dedupe_keys (
+    id          VARCHAR(36) PRIMARY KEY,
+    rule_id     VARCHAR(36) NOT NULL,
+    dedupe_hash VARCHAR(64) NOT NULL,
+    expires_at  DATETIME NOT NULL,
+    created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_dedupe_lookup (rule_id, dedupe_hash, expires_at),
+    INDEX idx_dedupe_expires (expires_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE audit_logs (
     id              VARCHAR(36) PRIMARY KEY,
     operator        VARCHAR(255) NOT NULL,
@@ -186,6 +196,7 @@ CREATE INDEX idx_audit_logs_created ON audit_logs(created_at);
 
 DROP TABLE IF EXISTS sessions;
 DROP TABLE IF EXISTS audit_logs;
+DROP TABLE IF EXISTS dedupe_keys;
 DROP TABLE IF EXISTS delivery_attempts;
 DROP TABLE IF EXISTS deliveries;
 DROP TABLE IF EXISTS event_runs;
