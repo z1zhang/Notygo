@@ -166,7 +166,7 @@ export default function DestinationsPage() {
     const config = (row.config ?? {}) as Record<string, unknown>
     const rowType = (DEST_TYPES.includes(row.type as (typeof DEST_TYPES)[number])
       ? row.type
-      : 'http_webhook') as DestinationForm['type']
+      : 'http') as DestinationForm['type']
     const module = channelModule(rowType)
     form.reset({
       name: row.name,

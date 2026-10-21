@@ -2,7 +2,7 @@
 
 ## 项目简介
 
-zPush 是自托管的 Webhook 事件路由与通知推送系统。接收外部 Webhook（如 Diun），通过映射→规则匹配→模板渲染→投递到钉钉/飞书/企微/Email/HTTP Webhook。
+zPush 是自托管的 Webhook 事件路由与通知推送系统。接收外部 Webhook（如 Diun），通过映射→规则匹配→模板渲染→投递到钉钉/飞书/企微/Email/HTTP。
 
 ## 技术栈
 
@@ -31,10 +31,10 @@ Webhook POST → Ingest(验证/限流/去重) → events 表
 - 失败按 IP 和用户名双计数（`internal/api/login_guard.go`，内存滑动窗口），达阈值返回 429 `AUTH_001`；锁定期间的探测不再单独写审计（防审计表被刷爆）
 - 用户名不存在时跑假 bcrypt 抹平时序（防用户名枚举）；ingest bearer 比较用 `subtle.ConstantTimeCompare`
 
-## HTTP Webhook 渠道自定义请求体
+## HTTP 渠道自定义请求体
 
 - 优先级：`body_fields`（结构化树）> 默认 `{title, body, format}`；原始请求体（`body_template`）已按用户要求移除
-- `body_fields` 是递归树 `BodyField{Key, Source, Value, Type, Children}`（`internal/sender/http_webhook.go`）：叶子行值来源 `title`/`body`/`format`/`literal`（自定义），多个 key 可映射同一来源；分组行 `object`/`array` 嵌套，数组内子键名忽略（按位置）
+- `body_fields` 是递归树 `BodyField{Key, Source, Value, Type, Children}`（`internal/sender/http.go`）：叶子行值来源 `title`/`body`/`format`/`literal`（自定义），多个 key 可映射同一来源；分组行 `object`/`array` 嵌套，数组内子键名忽略（按位置）
 - 组装走 `json.Marshal`（转义天然正确）；后端校验缺来源/非法来源/对象内空键重复键
 - 前端 `DestinationsPage.tsx` 递归表单组件（分组行 + 叶子行缩进树）；zod v4 递归 `z.lazy` 推导会降级，resolver 需 `as Resolver<DestinationForm>` 收口
 
@@ -71,7 +71,7 @@ internal/
   mapping/           — 字段映射
   processor/         — 事件处理器（映射→规则→模板→投递）
   rules/             — 规则模型/仓库
-  sender/            — 发送器：dingtalk, feishu, wecom, email, http_webhook
+  sender/            — 发送器：dingtalk, feishu, wecom, email, http
   source/            — Webhook 来源
   storage/           — 数据库打开/迁移/时间格式化
     migrations/mysql/   — MySQL 迁移

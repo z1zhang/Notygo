@@ -50,7 +50,7 @@ func (r *Repository) Create(ctx context.Context, req CreateDestinationRequest) (
 	if req.Name != nil {
 		name = *req.Name
 	}
-	destType := DestinationType("http_webhook")
+	destType := DestinationType("http")
 	if req.Type != nil {
 		destType = *req.Type
 	}

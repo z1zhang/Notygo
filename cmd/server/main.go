@@ -105,7 +105,7 @@ func main() {
 	senderRegistry.Register("feishu", sender.NewFeishuSender())
 	senderRegistry.Register("wecom", sender.NewWeComSender())
 	senderRegistry.Register("email", sender.NewEmailSender())
-	senderRegistry.Register("http_webhook", sender.NewHTTPWebhookSender())
+	senderRegistry.Register("http", sender.NewHTTPSender())
 
 	// Create delivery worker
 	deliveryWorker := delivery.NewDeliveryWorker(cfg.Worker, destRepo, deliveryRepo, senderRegistry, secretSvc, notifier)

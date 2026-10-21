@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/select'
 import { asString, type AnyForm, type BodyFieldNode, type ChannelModule } from './types'
 
-export interface HttpWebhookFormFields {
+export interface HttpFormFields {
   url: string
   method: 'POST' | 'GET' | 'PUT' | 'PATCH'
   headers: { key: string; value: string }[]
@@ -360,8 +360,8 @@ function HttpWebhookFields({ form }: { form: AnyForm }) {
   )
 }
 
-export const httpWebhookModule: ChannelModule = {
-  types: ['http_webhook'],
+export const httpModule: ChannelModule = {
+  types: ['http'],
   formSchema: {
     url: z.string(),
     method: z.enum(HTTP_METHODS),
@@ -394,7 +394,7 @@ export const httpWebhookModule: ChannelModule = {
     body_fields: asBodyFieldRows(config.body_fields),
   }),
   validate: (data, ctx) => {
-    if (data.type === 'http_webhook' && !(data.url ?? '').trim()) {
+    if (data.type === 'http' && !(data.url ?? '').trim()) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['url'], message: 'urlRequired' })
     }
   },

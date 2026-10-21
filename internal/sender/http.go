@@ -12,8 +12,8 @@ import (
 	"time"
 )
 
-// HTTPWebhookConfig holds the configuration for a generic HTTP webhook sender.
-type HTTPWebhookConfig struct {
+// HTTPConfig holds the configuration for a generic HTTP webhook sender.
+type HTTPConfig struct {
 	URL        string            `json:"url"`
 	Method     string            `json:"method"`  // GET, POST, PUT, etc.
 	Headers    map[string]string `json:"headers"` // Custom headers
@@ -36,17 +36,17 @@ func (f BodyField) isGroup() bool {
 	return f.Type == "object" || f.Type == "array"
 }
 
-// HTTPWebhookSender sends messages via generic HTTP webhooks with SSRF protection.
-type HTTPWebhookSender struct{}
+// HTTPSender sends messages via generic HTTP webhooks with SSRF protection.
+type HTTPSender struct{}
 
-// NewHTTPWebhookSender creates a new HTTPWebhookSender.
-func NewHTTPWebhookSender() *HTTPWebhookSender {
-	return &HTTPWebhookSender{}
+// NewHTTPSender creates a new HTTPSender.
+func NewHTTPSender() *HTTPSender {
+	return &HTTPSender{}
 }
 
 // Send delivers a message via HTTP webhook with SSRF protection.
-func (s *HTTPWebhookSender) Send(ctx context.Context, destConfig DestinationConfig, msg RenderedMessage) (*SendResult, error) {
-	var cfg HTTPWebhookConfig
+func (s *HTTPSender) Send(ctx context.Context, destConfig DestinationConfig, msg RenderedMessage) (*SendResult, error) {
+	var cfg HTTPConfig
 	if err := json.Unmarshal(destConfig.Config, &cfg); err != nil {
 		return nil, fmt.Errorf("invalid webhook config: %w", err)
 	}

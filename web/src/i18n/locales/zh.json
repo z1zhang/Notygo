@@ -256,7 +256,7 @@
     "feishu": "飞书 (Lark)",
     "wecom": "企业微信",
     "email": "邮件",
-    "httpWebhook": "HTTP",
+    
     "webhookUrl": "Webhook 地址",
     "msgType": "消息类型",
     "smtpHost": "SMTP 服务器",
@@ -415,7 +415,7 @@
       "feishu": "飞书",
       "wecom": "企业微信",
       "email": "邮件",
-      "http_webhook": "HTTP"
+      "http": "HTTP"
     },
     "authType": {
       "none": "无",

@@ -2,12 +2,12 @@
 
 自托管的 Webhook 事件路由与通知推送系统
 
-接收外部 Webhook，经过**字段映射 → 规则匹配 → 模板渲染**的事件处理管线，最终投递到钉钉 / 飞书 / 企业微信 / Email / 自定义 HTTP Webhook等
+接收外部 Webhook，经过**字段映射 → 规则匹配 → 模板渲染**的事件处理管线，最终投递到钉钉 / 飞书 / 企业微信 / Email / 自定义 HTTP 等渠道
 
 ## ✨ 特性
 
 - 🔄 **完整事件管线** — Webhook 接入（验证 / 限流 / 去重）→ 字段映射 → 规则匹配 → 模板渲染 → 多目标投递，全链路可视、可回放、可重试
-- 📨 **五种投递渠道** — 内置钉钉、飞书、企业微信、Email（SMTP）、自定义 HTTP Webhook 发送器
+- 📨 **五种投递渠道** — 内置钉钉、飞书、企业微信、Email（SMTP）、自定义 HTTP（Webhook）发送器
 - 🗺️ **灵活的字段映射** — JSON Path 提取任意嵌套字段，支持类型转换、默认值回退、结果转换（transform）与多结果模式
 - ⚖️ **规则引擎** — 11 种操作符（`eq` / `neq` / `contains` / `not_contains` / `regex` / `gt` / `lt` / `gte` / `lte` / `exists` / `not_exists`），AND / OR 任意组合
 - 📄 **模板渲染** — `{{.field}}` 占位符语法，纯文本 / Markdown / HTML 三种渲染格式，前端一律 DOMPurify 消毒后展示
@@ -136,17 +136,17 @@ DB_HOST="127.0.0.1" DB_USER="zpush" DB_PASSWORD="..." ENCRYPTION_MASTER_KEY="v1:
 3. **映射（Mapping）**：定义 JSON Path 提取规则，把原始 Payload 转成统一字段
 4. **规则（Rule）**：基于映射字段做条件匹配，决定哪些事件触发投递
 5. **模板（Template）**：用 `{{.field}}` 占位符编写通知内容
-6. **渠道（Destination）**：配置钉钉/飞书/企微/Email/HTTP Webhook，密钥加密存储
+6. **渠道（Destination）**：配置钉钉/飞书/企微/Email/HTTP，密钥加密存储
 7. 把数据源的 `/ingest/{slug}` URL 配到外部系统（如 Diun 的 webhook 通知地址），事件开始流转
 8. 在**事件/投递**页面查看全链路状态，失败可单条或批量重试，也可整事件重放
 
 **沙盒（Playground）** 支持解析、映射、模板、投递四个环节的实时预览调试，无需真实触发 Webhook。
 
-## 📮 接入任意通知服务（HTTP Webhook 渠道）
+## 📮 接入任意通知服务（HTTP 渠道）
 
-除了内置的钉钉 / 飞书 / 企微 / Email，任何提供 HTTP 接口的服务都能通过 **HTTP Webhook 渠道**接入，例如 Telegram Bot、Bark、Discord、ntfy、企业内部网关等，无需写代码
+除了内置的钉钉 / 飞书 / 企微 / Email，任何提供 HTTP 接口的服务都能通过 **HTTP 渠道**接入，例如 Telegram Bot、Bark、Discord、ntfy、企业内部网关等，无需写代码
 
-在管理界面创建渠道时选择类型 `HTTP Webhook`：
+在管理界面创建渠道时选择类型 `HTTP`：
 
 | 配置项 | 说明 |
 |---|---|
@@ -229,7 +229,7 @@ func (s *XXXSender) Send(ctx context.Context, destConfig DestinationConfig, msg 
 }
 ```
 
-`SendResult` 语义：`err == nil` 且 HTTP 2xx 且 `BusinessCode` 为空或 `"0"` 视为成功（`BusinessCode` 用于钉钉这类 HTTP 200 但业务码报错的 API）；`IsRetryable` 标记是否可重试。参考实现：`internal/sender/http_webhook.go`。
+`SendResult` 语义：`err == nil` 且 HTTP 2xx 且 `BusinessCode` 为空或 `"0"` 视为成功（`BusinessCode` 用于钉钉这类 HTTP 200 但业务码报错的 API）；`IsRetryable` 标记是否可重试。参考实现：`internal/sender/http.go`。
 
 **2. 注册** — `cmd/server/main.go`：
 
@@ -247,7 +247,7 @@ senderRegistry.Register("xxx", sender.NewXXXSender())
 - `channels/index.ts` 的 `DEST_TYPES` 加入 `'xxx'`，`CHANNELS` 注册表加一行映射
 - 文案放 `web/src/i18n/locales/`（zh / en 两份都要，键缺失会在编译期报错）
 
-**4. 测试** — 参照 `internal/sender/http_webhook_test.go` 为配置解析与报文组装写单测。
+**4. 测试** — 参照 `internal/sender/http_test.go` 为配置解析与报文组装写单测。
 
 > 渠道密钥的加解密、`Send` 超时控制、投递重试与状态流转都不需要新渠道关心——`destination.BuildSenderConfig` 负责组装配置与解密，`delivery.Worker` 负责调度。
 
@@ -338,7 +338,7 @@ internal/
   mapping/            — 字段映射
   processor/          — 事件处理器（映射 → 规则 → 模板 → 投递）
   rules/              — 规则模型 / 引擎 / 仓库
-  sender/             — 发送器：dingtalk, feishu, wecom, email, http_webhook
+  sender/             — 发送器：dingtalk, feishu, wecom, email, http
   source/             — Webhook 数据源
   storage/            — 数据库打开 / 迁移 / 时间格式化
     migrations/mysql/ — MySQL 迁移脚本

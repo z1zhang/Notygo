@@ -2,30 +2,30 @@ import { z } from 'zod'
 import type { Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { emailModule, type EmailFormFields } from './email'
-import { httpWebhookModule, type HttpWebhookFormFields } from './httpWebhook'
+import { httpModule, type HttpFormFields } from './http'
 import { webhookModule, type WebhookFormFields } from './webhook'
 import type { ChannelModule } from './types'
 
 export type { BodyFieldNode } from './types'
 
-export const DEST_TYPES = ['dingtalk', 'feishu', 'wecom', 'email', 'http_webhook'] as const
+export const DEST_TYPES = ['dingtalk', 'feishu', 'wecom', 'email', 'http'] as const
 export type DestType = (typeof DEST_TYPES)[number]
 
 // ── Registry: one entry per destination type (mirrors the backend sender
 // registry in cmd/server/main.go). New channel = one module file + one line.
-const MODULES: ChannelModule[] = [webhookModule, emailModule, httpWebhookModule]
+const MODULES: ChannelModule[] = [webhookModule, emailModule, httpModule]
 
 const CHANNELS: Record<DestType, ChannelModule> = {
   dingtalk: webhookModule,
   feishu: webhookModule,
   wecom: webhookModule,
   email: emailModule,
-  http_webhook: httpWebhookModule,
+  http: httpModule,
 }
 
-/** Module for a destination type; unknown types fall back to http_webhook. */
+/** Module for a destination type; unknown types fall back to http. */
 export function channelModule(type: string): ChannelModule {
-  return CHANNELS[type as DestType] ?? httpWebhookModule
+  return CHANNELS[type as DestType] ?? httpModule
 }
 
 /** Unique modules (webhookModule serves three types). */
@@ -55,11 +55,11 @@ export type DestinationForm = {
   enabled: boolean
 } & WebhookFormFields &
   EmailFormFields &
-  HttpWebhookFormFields
+  HttpFormFields
 
 export const defaultForm: DestinationForm = {
   name: '',
-  type: 'http_webhook',
+  type: 'http',
   secret: '',
   timeout_ms: 10000,
   enabled: true,

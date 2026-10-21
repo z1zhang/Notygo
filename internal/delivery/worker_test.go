@@ -38,7 +38,7 @@ func TestBuildRequestSummary(t *testing.T) {
 			longBody[i] = 'x'
 		}
 		summary := buildRequestSummary(
-			sender.DestinationConfig{Type: "http_webhook", Method: "POST", URL: "https://example.com/hook"},
+			sender.DestinationConfig{Type: "http", Method: "POST", URL: "https://example.com/hook"},
 			sender.RenderedMessage{Title: "标题", Body: string(longBody)},
 		)
 		var m map[string]any
@@ -58,7 +58,7 @@ func TestBuildRequestSummary(t *testing.T) {
 }
 
 func TestAttachRequestPayload(t *testing.T) {
-	base := `{"type":"http_webhook","method":"POST","url":"https://example.com/hook","body_snippet":"hi"}`
+	base := `{"type":"http","method":"POST","url":"https://example.com/hook","body_snippet":"hi"}`
 
 	t.Run("merges payload into summary", func(t *testing.T) {
 		out := attachRequestPayload(base, `{"text":"通知内容"}`)
