@@ -15,7 +15,6 @@ import { Input } from '@/components/ui/input'
 import { UnitInput } from '@/components/form/UnitInput'
 import { PasswordInput } from '@/components/ui/password-input'
 import { Label } from '@/components/ui/label'
-import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import {
   Dialog,
@@ -353,7 +352,7 @@ export default function DestinationsPage() {
             className="space-y-4"
             onSubmit={form.handleSubmit((values) => saveMutation.mutate(values))}
           >
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_1fr_auto]">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-[minmax(0,1fr)_176px_60px]">
               <div className="space-y-2">
                 <Label htmlFor="destination-name">{t('common.name')}</Label>
                 <Input
@@ -398,7 +397,6 @@ export default function DestinationsPage() {
             {ActiveFields ? <ActiveFields form={form as never} /> : null}
 
             {/* Common config */}
-            <Separator />
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="destination-secret">{t('destinations.secret')}</Label>

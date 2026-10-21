@@ -37,7 +37,7 @@ function WebhookFields({ form }: { form: AnyForm }) {
   const errors = form.formState.errors
 
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-[minmax(0,1fr)_176px]">
       <div className="space-y-2">
         <Label htmlFor="destination-webhook-url">{t('destinations.webhookUrl')}</Label>
         <Input
@@ -96,7 +96,7 @@ export const webhookModule: ChannelModule = {
   },
   validate: (data, ctx) => {
     if (WEBHOOK_TYPES.includes(data.type) && !(data.webhook_url ?? '').trim()) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['webhook_url'], message: 'webhookUrlRequired' })
+      ctx.addIssue({ code: 'custom', path: ['webhook_url'], message: 'webhookUrlRequired' })
     }
   },
 }

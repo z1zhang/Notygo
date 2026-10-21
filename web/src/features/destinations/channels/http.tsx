@@ -395,7 +395,7 @@ export const httpModule: ChannelModule = {
   }),
   validate: (data, ctx) => {
     if (data.type === 'http' && !(data.url ?? '').trim()) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['url'], message: 'urlRequired' })
+      ctx.addIssue({ code: 'custom', path: ['url'], message: 'urlRequired' })
     }
   },
 }
