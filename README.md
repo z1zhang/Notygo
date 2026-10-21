@@ -58,7 +58,6 @@ docker run -d \
   -e ENCRYPTION_MASTER_KEY="$ENCRYPTION_MASTER_KEY" \
   -e ADMIN_INITIAL_USER="admin" \
   -e ADMIN_INITIAL_PASSWORD="your-admin-password" \
-  -e TZ=Asia/Shanghai \
   zhangz1o/zpush:latest
 ```
 
@@ -89,7 +88,6 @@ services:
       # 仅首次启动生效：创建管理员用户的用户名与初始密码
       ADMIN_INITIAL_USER: "admin"
       ADMIN_INITIAL_PASSWORD: "change-me-please"
-      TZ: "Asia/Shanghai"
       # 以下均可选，默认值见下方配置表
       LOG_LEVEL: "info"
       # INGEST_GLOBAL_RATE_LIMIT: "100/200"
