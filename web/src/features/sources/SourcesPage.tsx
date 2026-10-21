@@ -5,7 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { toast } from 'sonner'
 import { Loader2, Pencil, Plus, Trash2, Webhook } from 'lucide-react'
-import { useI18n } from '@/i18n'
+import { useTranslation } from 'react-i18next'
 import { createSource, deleteSource, listSources, updateSource } from '@/lib/api'
 import { getErrorMessage } from '@/lib/api-client'
 import { copyToClipboard } from '@/lib/formatters'
@@ -88,7 +88,7 @@ function generateSecret(): string {
 }
 
 export default function SourcesPage() {
-  const { t } = useI18n()
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const { page, size, setPage, setSize } = usePagination()
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -196,7 +196,7 @@ export default function SourcesPage() {
   const total = listQuery.data?.total ?? 0
 
   const webhookUrl = useMemo(
-    () => (slug: string) => `${window.location.origin}/api/v1/ingest/${slug}`,
+    () => (slug: string) => `${window.location.origin}/ingest/${slug}`,
     [],
   )
 
@@ -285,7 +285,7 @@ export default function SourcesPage() {
                   </TableCell>
                   <TableCell>
                     <span className="text-muted-foreground">
-                      {t(`enums.authType.${row.auth_type}`, row.auth_type)}
+                      {t(`enums.authType.${row.auth_type}`, { defaultValue: row.auth_type })}
                     </span>
                   </TableCell>
                   <TableCell className="text-muted-foreground">

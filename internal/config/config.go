@@ -2,10 +2,13 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/go-sql-driver/mysql"
 )
 
 // Config holds all application configuration.
@@ -24,7 +27,12 @@ type ServerConfig struct {
 }
 
 type DatabaseConfig struct {
-	DSN string // MySQL data source name
+	DSN      string // resolved MySQL DSN, assembled from the parts below
+	Host     string
+	Port     int
+	User     string
+	Password string
+	Name     string
 }
 
 type SecretConfig struct {
@@ -50,7 +58,10 @@ type IngestConfig struct {
 }
 
 type AdminConfig struct {
-	InitialPassword string
+	InitialUsername     string
+	InitialPassword     string
+	LoginMaxFailures    int
+	LoginLockoutSeconds int
 }
 
 type LogConfig struct {
@@ -64,7 +75,11 @@ func Load() (*Config, error) {
 			ListenAddr: getEnv("LISTEN_ADDR", ":9003"),
 		},
 		Database: DatabaseConfig{
-			DSN: os.Getenv("DATABASE_DSN"),
+			Host:     getEnv("DB_HOST", "127.0.0.1"),
+			Port:     getEnvInt("DB_PORT", 3306),
+			User:     os.Getenv("DB_USER"),
+			Password: os.Getenv("DB_PASSWORD"),
+			Name:     getEnv("DB_NAME", "zpush"),
 		},
 		Secret: SecretConfig{
 			MasterKeyEnv: os.Getenv("ENCRYPTION_MASTER_KEY"),
@@ -86,16 +101,21 @@ func Load() (*Config, error) {
 			EventRetentionDays: getEnvInt("EVENT_RETENTION_DAYS", 30),
 		},
 		Admin: AdminConfig{
-			InitialPassword: os.Getenv("ADMIN_INITIAL_PASSWORD"),
+			InitialUsername:     getEnv("ADMIN_INITIAL_USER", "admin"),
+			InitialPassword:     os.Getenv("ADMIN_INITIAL_PASSWORD"),
+			LoginMaxFailures:    getEnvInt("LOGIN_MAX_FAILURES", 5),
+			LoginLockoutSeconds: getEnvInt("LOGIN_LOCKOUT_SECONDS", 900),
 		},
 		Log: LogConfig{
 			Level: getEnv("LOG_LEVEL", "info"),
 		},
 	}
 
-	if cfg.Database.DSN == "" {
-		return nil, fmt.Errorf("DATABASE_DSN is required but not set")
+	// The MySQL connection is assembled from the DB_* parts.
+	if cfg.Database.User == "" || cfg.Database.Password == "" {
+		return nil, fmt.Errorf("DB_USER and DB_PASSWORD are required but not set")
 	}
+	cfg.Database.DSN = buildMySQLDSN(cfg.Database)
 
 	if cfg.Secret.MasterKeyEnv == "" {
 		return nil, fmt.Errorf("ENCRYPTION_MASTER_KEY is required but not set")
@@ -131,6 +151,21 @@ func getEnvDuration(key string, fallback time.Duration) time.Duration {
 		}
 	}
 	return fallback
+}
+
+// buildMySQLDSN assembles a go-sql-driver DSN from discrete parts.
+// mysql.Config.FormatDSN escapes special characters (e.g. passwords
+// containing ':' or '@') that would break a hand-written DSN string.
+func buildMySQLDSN(cfg DatabaseConfig) string {
+	mc := mysql.Config{
+		Net:       "tcp",
+		Addr:      net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port)),
+		User:      cfg.User,
+		Passwd:    cfg.Password,
+		DBName:    cfg.Name,
+		ParseTime: true,
+	}
+	return mc.FormatDSN()
 }
 
 // ParseGlobalRateLimit parses "rate/burst" format (e.g. "100/200").

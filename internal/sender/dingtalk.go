@@ -115,8 +115,9 @@ func (s *DingTalkSender) Send(ctx context.Context, destConfig DestinationConfig,
 	}
 
 	result := &SendResult{
-		StatusCode: resp.StatusCode,
-		Body:       string(respBody),
+		StatusCode:     resp.StatusCode,
+		Body:           string(respBody),
+		RequestPayload: string(bodyBytes),
 	}
 
 	// Parse DingTalk response for errcode

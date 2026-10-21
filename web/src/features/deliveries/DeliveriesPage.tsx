@@ -2,7 +2,7 @@ import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { RotateCcw, Send } from "lucide-react"
-import { useI18n } from "@/i18n"
+import { useTranslation } from "react-i18next"
 import { bulkRetry, listDeliveries } from "@/lib/api"
 import { getErrorMessage } from "@/lib/api-client"
 import { formatTime } from "@/lib/formatters"
@@ -52,7 +52,7 @@ function errorCell(
 }
 
 export default function DeliveriesPage() {
-  const { t } = useI18n()
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const { page, size, setPage, setSize } = usePagination()
   const [statusFilter, setStatusFilter] = useState<string>(ALL)

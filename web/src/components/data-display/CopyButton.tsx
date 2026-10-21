@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Check, Copy } from 'lucide-react'
-import { useI18n } from '@/i18n'
+import { useTranslation } from 'react-i18next'
 import { copyToClipboard } from '@/lib/formatters'
 import { cn } from '@/lib/utils'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -15,7 +15,7 @@ interface CopyButtonProps {
 }
 
 export function CopyButton({ text, className, iconOnly = true, revealOnHover = true }: CopyButtonProps) {
-  const { t } = useI18n()
+  const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
 
   async function handleCopy(e: React.MouseEvent) {

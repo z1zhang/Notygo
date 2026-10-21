@@ -5,7 +5,8 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { toast } from 'sonner'
 import { ListFilter, Loader2, Pencil, Plus, Trash2 } from 'lucide-react'
-import { useI18n } from '@/i18n'
+import { useTranslation } from 'react-i18next'
+import { type TranslationKey } from '@/i18n'
 import { createRule, deleteRule, listRules, updateRule } from '@/lib/api'
 import { getErrorMessage } from '@/lib/api-client'
 import type { Condition, ConditionGroup, RuleResponse } from '@/lib/types'
@@ -46,7 +47,7 @@ import { cn } from '@/lib/utils'
 import { MultiSelect } from '@/components/form/MultiSelect'
 import { UnitInput } from '@/components/form/UnitInput'
 
-const OPERATOR_GROUPS: { labelKey: string; items: { value: string; labelKey: string }[] }[] = [
+const OPERATOR_GROUPS: { labelKey: TranslationKey; items: { value: string; labelKey: TranslationKey }[] }[] = [
   {
     labelKey: 'rules.equality',
     items: [
@@ -131,7 +132,7 @@ function parseConditions(
 }
 
 export default function RulesPage() {
-  const { t } = useI18n()
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const { page, size, setPage, setSize } = usePagination()
   const [dialogOpen, setDialogOpen] = useState(false)

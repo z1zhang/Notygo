@@ -2,6 +2,7 @@ package delivery
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"zpush/internal/sender"
@@ -52,6 +53,43 @@ func TestBuildRequestSummary(t *testing.T) {
 		}
 		if v, _ := m["body_snippet"].(string); len(v) != 512+len("...(truncated)") {
 			t.Errorf("body_snippet length = %d, want %d", len(v), 512+len("...(truncated)"))
+		}
+	})
+}
+
+func TestAttachRequestPayload(t *testing.T) {
+	base := `{"type":"http_webhook","method":"POST","url":"https://example.com/hook","body_snippet":"hi"}`
+
+	t.Run("merges payload into summary", func(t *testing.T) {
+		out := attachRequestPayload(base, `{"text":"通知内容"}`)
+		var m map[string]any
+		if err := json.Unmarshal([]byte(out), &m); err != nil {
+			t.Fatalf("invalid json: %v", err)
+		}
+		if m["payload"] != `{"text":"通知内容"}` {
+			t.Errorf("payload = %v", m["payload"])
+		}
+		if m["method"] != "POST" || m["url"] != "https://example.com/hook" {
+			t.Errorf("existing fields lost: %v", m)
+		}
+	})
+
+	t.Run("truncates over 2048 bytes", func(t *testing.T) {
+		long := `{"text":"` + strings.Repeat("x", 3000) + `"}`
+		out := attachRequestPayload(base, long)
+		var m map[string]any
+		if err := json.Unmarshal([]byte(out), &m); err != nil {
+			t.Fatalf("invalid json: %v", err)
+		}
+		v, _ := m["payload"].(string)
+		if len(v) != 2048+len("...(truncated)") {
+			t.Errorf("payload length = %d", len(v))
+		}
+	})
+
+	t.Run("invalid summary json returns unchanged", func(t *testing.T) {
+		if out := attachRequestPayload("not-json", "x"); out != "not-json" {
+			t.Errorf("out = %q", out)
 		}
 	})
 }

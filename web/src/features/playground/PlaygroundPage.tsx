@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Check, CirclePlus, Loader2, Plus, Search, Trash2, Wand2, Eye, Waypoints } from 'lucide-react'
-import { useI18n } from '@/i18n'
+import { useTranslation } from 'react-i18next'
 import {
   createMapping,
   createTemplate,
@@ -88,7 +88,7 @@ function valueTypeBadgeVariant(valueType: string): 'secondary' | 'outline' | 'de
 }
 
 export default function PlaygroundPage() {
-  const { t } = useI18n()
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
 
   // ── Section 1: raw payload ─────────────────────────────
@@ -514,7 +514,7 @@ export default function PlaygroundPage() {
                           <SelectContent>
                             {VALUE_TYPES.map((vt) => (
                               <SelectItem key={vt} value={vt}>
-                                {t(`mappings.${valueTypeKey(vt)}`, vt)}
+                                {t(`mappings.${valueTypeKey(vt)}`, { defaultValue: vt })}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -535,7 +535,7 @@ export default function PlaygroundPage() {
                             <SelectItem value="none">-</SelectItem>
                             {MULTI_MODES.map((m) => (
                               <SelectItem key={m} value={m}>
-                                {t(`mappings.${multiModeKey(m)}`, m)}
+                                {t(`mappings.${multiModeKey(m)}`, { defaultValue: m })}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -865,7 +865,7 @@ function ValidationErrors({
 }: {
   errors: { field: string; code: string; detail: string }[]
 }) {
-  const { t } = useI18n()
+  const { t } = useTranslation()
   return (
     <div className="space-y-2">
       {errors.map((err, i) => (

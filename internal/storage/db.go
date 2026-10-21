@@ -13,7 +13,7 @@ import (
 // Automatically appends multiStatements=true for goose migration support.
 func Open(dsn string) (*sql.DB, error) {
 	if dsn == "" {
-		return nil, fmt.Errorf("DATABASE_DSN is required")
+		return nil, fmt.Errorf("database DSN is empty (check DB_USER / DB_PASSWORD)")
 	}
 
 	// Ensure multiStatements is enabled so goose can run multi-statement migrations

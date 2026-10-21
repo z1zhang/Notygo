@@ -14,6 +14,10 @@ type SendResult struct {
 	ResponseBody string `json:"response_body"` // alias for Body, used by delivery worker
 	IsRetryable  bool   `json:"is_retryable"`
 	BusinessCode string `json:"business_code,omitempty"`
+	// RequestPayload is the exact request body sent on the wire (JSON text,
+	// MIME message, …). Senders fill it so delivery attempts can record the
+	// actual payload alongside the pre-send summary.
+	RequestPayload string `json:"request_payload,omitempty"`
 }
 
 // Sender is the interface that destination senders must implement.

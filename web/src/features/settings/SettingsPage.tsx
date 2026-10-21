@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTheme } from '@/app/theme'
 import { CalendarClock, Cpu, Monitor, Moon, Server, Sun } from 'lucide-react'
-import { useI18n } from '@/i18n'
+import { useTranslation } from 'react-i18next'
 import { getHealthz, getRootInfo } from '@/lib/api'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Badge } from '@/components/ui/badge'
@@ -26,7 +26,7 @@ const workerSettings = [
 ] as const
 
 export default function SettingsPage() {
-  const { t } = useI18n()
+  const { t } = useTranslation()
   const { theme, setTheme } = useTheme()
 
   const rootInfoQuery = useQuery({

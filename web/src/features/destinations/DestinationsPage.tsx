@@ -1,12 +1,10 @@
 import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useFieldArray, useForm } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { z } from 'zod'
+import { useForm } from 'react-hook-form'
 import { toast } from 'sonner'
-import { Loader2, Pencil, Plus, Send, Trash2, X } from 'lucide-react'
-import { useI18n } from '@/i18n'
-import { createDestination, deleteDestination, listDestinations, updateDestination } from '@/lib/api'
+import { Loader2, Pencil, Plus, Send, Trash2, Zap } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import { createDestination, deleteDestination, listDestinations, testDestination, updateDestination } from '@/lib/api'
 import { getErrorMessage } from '@/lib/api-client'
 import type { DestinationResponse } from '@/lib/types'
 import { usePagination } from '@/hooks/use-pagination'
@@ -19,7 +17,6 @@ import { PasswordInput } from '@/components/ui/password-input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
-import { Textarea } from '@/components/ui/textarea'
 import {
   Dialog,
   DialogContent,
@@ -42,151 +39,17 @@ import { ErrorState } from '@/components/feedback/ErrorState'
 import { TableSkeleton } from '@/components/data-display/TableSkeleton'
 import { ConfirmDialog } from '@/components/feedback/ConfirmDialog'
 import { RefreshButton } from '@/components/feedback/RefreshButton'
-
-const DEST_TYPES = ['dingtalk', 'feishu', 'wecom', 'email', 'http_webhook'] as const
-type DestType = (typeof DEST_TYPES)[number]
-
-const WEBHOOK_TYPES: DestType[] = ['dingtalk', 'feishu', 'wecom']
-
-const MSG_TYPE_OPTIONS: Record<string, string[]> = {
-  dingtalk: ['markdown', 'actionCard'],
-  feishu: ['interactive', 'text', 'post'],
-  wecom: ['markdown', 'text', 'image', 'news'],
-}
-
-const DEFAULT_MSG_TYPE: Record<string, string> = {
-  dingtalk: 'markdown',
-  feishu: 'interactive',
-  wecom: 'markdown',
-}
-
-const HTTP_METHODS = ['POST', 'GET', 'PUT', 'PATCH'] as const
-
-const destinationSchema = z
-  .object({
-    name: z.string().min(1),
-    type: z.enum(DEST_TYPES),
-    webhook_url: z.string(),
-    msg_type: z.string(),
-    smtp_host: z.string(),
-    smtp_port: z.number().min(1).max(65535),
-    use_tls: z.boolean(),
-    from: z.string(),
-    to: z.string(),
-    cc: z.string(),
-    url: z.string(),
-    method: z.enum(HTTP_METHODS),
-    headers: z.array(z.object({ key: z.string(), value: z.string() })),
-    body_template: z.string(),
-    secret: z.string(),
-    timeout_ms: z.number().min(1000),
-    enabled: z.boolean(),
-  })
-  // The delivery target URL is required for the corresponding types
-  .superRefine((data, ctx) => {
-    if (data.type === 'http_webhook' && !data.url.trim()) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['url'], message: 'urlRequired' })
-    }
-    if (WEBHOOK_TYPES.includes(data.type) && !data.webhook_url.trim()) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['webhook_url'], message: 'webhookUrlRequired' })
-    }
-  })
-
-type DestinationForm = z.infer<typeof destinationSchema>
-
-const defaultForm: DestinationForm = {
-  name: '',
-  type: 'http_webhook',
-  webhook_url: '',
-  msg_type: '',
-  smtp_host: '',
-  smtp_port: 465,
-  use_tls: true,
-  from: '',
-  to: '',
-  cc: '',
-  url: '',
-  method: 'POST',
-  headers: [],
-  body_template: '',
-  secret: '',
-  timeout_ms: 10000,
-  enabled: true,
-}
-
-// ── Config parsing helpers (server config is a loosely-typed object) ──────
-
-function asString(value: unknown): string {
-  return typeof value === 'string' ? value : ''
-}
-
-function asNumber(value: unknown, fallback: number): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : fallback
-}
-
-/** to/cc may be an array of emails or a string — normalize to a textarea string. */
-function asAddressList(value: unknown): string {
-  if (Array.isArray(value)) {
-    return value.filter((v): v is string => typeof v === 'string').join('\n')
-  }
-  return asString(value)
-}
-
-/** headers may be an object → convert to a key/value row list. */
-function asHeaderRows(value: unknown): { key: string; value: string }[] {
-  if (value && typeof value === 'object' && !Array.isArray(value)) {
-    return Object.entries(value as Record<string, unknown>).map(([key, v]) => ({
-      key,
-      value: typeof v === 'string' ? v : String(v ?? ''),
-    }))
-  }
-  return []
-}
-
-function splitAddressList(value: string): string[] {
-  return value
-    .split(/[\n,]/)
-    .map((v) => v.trim())
-    .filter((v) => v !== '')
-}
-
-function buildConfig(data: DestinationForm): Record<string, unknown> {
-  switch (data.type) {
-    case 'dingtalk':
-    case 'feishu':
-    case 'wecom': {
-      const config: Record<string, unknown> = { webhook_url: data.webhook_url }
-      if (data.msg_type !== '') config.msg_type = data.msg_type
-      return config
-    }
-    case 'email': {
-      const config: Record<string, unknown> = {
-        smtp_host: data.smtp_host,
-        smtp_port: data.smtp_port,
-        use_tls: data.use_tls,
-        from: data.from,
-        to: splitAddressList(data.to),
-      }
-      const cc = splitAddressList(data.cc)
-      if (cc.length > 0) config.cc = cc
-      return config
-    }
-    case 'http_webhook': {
-      const config: Record<string, unknown> = { url: data.url, method: data.method }
-      const headers = Object.fromEntries(
-        data.headers
-          .filter((h) => h.key !== '')
-          .map((h) => [h.key, h.value]),
-      )
-      if (Object.keys(headers).length > 0) config.headers = headers
-      if (data.body_template !== '') config.body_template = data.body_template
-      return config
-    }
-  }
-}
+import {
+  DEST_TYPES,
+  channelModule,
+  defaultForm,
+  destinationResolver,
+  uniqueModules,
+  type DestinationForm,
+} from './channels'
 
 export default function DestinationsPage() {
-  const { t } = useI18n()
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const { page, size, setPage, setSize } = usePagination()
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -229,7 +92,7 @@ export default function DestinationsPage() {
       const payload: Record<string, unknown> = {
         name: data.name,
         type: data.type,
-        config: buildConfig(data),
+        config: channelModule(data.type).toConfig(data),
         timeout_ms: data.timeout_ms,
         enabled: data.enabled,
       }
@@ -265,15 +128,30 @@ export default function DestinationsPage() {
     },
   })
 
+  // Test-send goes through the same sender path as real deliveries
+  const [testingId, setTestingId] = useState<string | null>(null)
+  const testMutation = useMutation({
+    mutationFn: (id: string) => {
+      setTestingId(id)
+      return testDestination(id)
+    },
+    onSuccess: () => {
+      toast.success(t('destinations.testSuccess'))
+    },
+    onError: (e) => {
+      toast.error(getErrorMessage(e, t('destinations.testFailed')))
+    },
+    onSettled: () => {
+      setTestingId(null)
+    },
+  })
+
   const form = useForm<DestinationForm>({
-    resolver: zodResolver(destinationSchema),
+    resolver: destinationResolver,
     defaultValues: defaultForm,
   })
-  const { fields: headerFields, append: appendHeader, remove: removeHeader } = useFieldArray({
-    control: form.control,
-    name: 'headers',
-  })
   const type = form.watch('type')
+  const ActiveFields = channelModule(type).Fields
 
   function openCreate() {
     setEditing(null)
@@ -286,57 +164,49 @@ export default function DestinationsPage() {
     setEditing(row)
     originalSecretRef.current = row.secret_ref ?? ''
     const config = (row.config ?? {}) as Record<string, unknown>
-    const rowType = (DEST_TYPES.includes(row.type as DestType)
+    const rowType = (DEST_TYPES.includes(row.type as (typeof DEST_TYPES)[number])
       ? row.type
-      : 'http_webhook') as DestType
-    const msgOptions = MSG_TYPE_OPTIONS[rowType] ?? []
+      : 'http_webhook') as DestinationForm['type']
+    const module = channelModule(rowType)
     form.reset({
       name: row.name,
       type: rowType,
-      webhook_url: asString(config.webhook_url),
-      msg_type: msgOptions.includes(asString(config.msg_type))
-        ? asString(config.msg_type)
-        : (DEFAULT_MSG_TYPE[rowType] ?? ''),
-      smtp_host: asString(config.smtp_host),
-      smtp_port: asNumber(config.smtp_port, 465),
-      use_tls: typeof config.use_tls === 'boolean' ? config.use_tls : true,
-      from: asString(config.from),
-      to: asAddressList(config.to),
-      cc: asAddressList(config.cc),
-      url: asString(config.url),
-      method: (HTTP_METHODS.includes(asString(config.method) as (typeof HTTP_METHODS)[number])
-        ? asString(config.method)
-        : 'POST') as DestinationForm['method'],
-      headers: asHeaderRows(config.headers),
-      body_template: asString(config.body_template),
       secret: row.secret_ref ?? '',
-      timeout_ms: asNumber(row.timeout_ms, 10000),
+      timeout_ms: typeof row.timeout_ms === 'number' && Number.isFinite(row.timeout_ms)
+        ? row.timeout_ms
+        : 10000,
       enabled: row.enabled,
+      ...allChannelDefaults(),
+      ...module.fromConfig(config, rowType),
     })
     setDialogOpen(true)
   }
 
-  // Switching type resets the type-specific config fields.
+  // Defaults of every module — the base for a clean form state; only the
+  // active channel's fromConfig values are layered on top.
+  function allChannelDefaults(): Record<string, unknown> {
+    return Object.assign({}, ...uniqueModules().map((m) => m.defaults))
+  }
+
+  // Switching type resets the type-specific config fields. Module defaults are
+  // keyed dynamically, so the setter is loosened like the body-field editor.
+  const setAnyValue = (path: string, value: unknown) =>
+    (form.setValue as (p: string, v: unknown) => void)(path, value)
+
   function handleTypeChange(next: string) {
     const nextType = next as DestinationForm['type']
     form.setValue('type', nextType)
-    form.setValue('msg_type', DEFAULT_MSG_TYPE[nextType] ?? '')
-    form.setValue('webhook_url', '')
-    form.setValue('smtp_host', '')
-    form.setValue('smtp_port', 465)
-    form.setValue('use_tls', true)
-    form.setValue('from', '')
-    form.setValue('to', '')
-    form.setValue('cc', '')
-    form.setValue('url', '')
-    form.setValue('method', 'POST')
-    form.setValue('headers', [])
-    form.setValue('body_template', '')
+    for (const [key, value] of Object.entries(allChannelDefaults())) {
+      setAnyValue(key, value)
+    }
+    const module = channelModule(nextType)
+    if (module.defaultMsgType) {
+      setAnyValue('msg_type', module.defaultMsgType[nextType] ?? '')
+    }
   }
 
   const rows = listQuery.data?.data ?? []
   const total = listQuery.data?.total ?? 0
-  const msgTypeOptions = MSG_TYPE_OPTIONS[type] ?? []
 
   return (
     <div className="space-y-4">
@@ -395,7 +265,7 @@ export default function DestinationsPage() {
                   <TableCell className="text-muted-foreground">{row.name}</TableCell>
                   <TableCell>
                     <Badge variant="secondary">
-                      {t(`enums.destType.${row.type}`, row.type)}
+                      {t(`enums.destType.${row.type}`, { defaultValue: row.type })}
                     </Badge>
                   </TableCell>
                   <TableCell>
@@ -409,6 +279,19 @@ export default function DestinationsPage() {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        disabled={testMutation.isPending}
+                        onClick={() => testMutation.mutate(row.id)}
+                        aria-label={t('destinations.test')}
+                      >
+                        {testingId === row.id ? (
+                          <Loader2 className="animate-spin" />
+                        ) : (
+                          <Zap />
+                        )}
+                      </Button>
                       <Button
                         variant="ghost"
                         size="icon-sm"
@@ -507,191 +390,8 @@ export default function DestinationsPage() {
               </div>
             </div>
 
-            {/* Type-specific config */}
-            {WEBHOOK_TYPES.includes(type) ? (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="destination-webhook-url">{t('destinations.webhookUrl')}</Label>
-                  <Input
-                    id="destination-webhook-url"
-                    placeholder="https://..."
-                    {...form.register('webhook_url')}
-                  />
-                  {form.formState.errors.webhook_url ? (
-                    <p className="text-xs text-destructive">{t('destinations.webhookUrlRequired')}</p>
-                  ) : null}
-                </div>
-                <div className="space-y-2">
-                  <Label>{t('destinations.msgType')}</Label>
-                  <Select
-                    value={form.watch('msg_type')}
-                    onValueChange={(v) => form.setValue('msg_type', v)}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder={t('destinations.msgType')} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {msgTypeOptions.map((option) => (
-                        <SelectItem key={option} value={option}>
-                          {t(`enums.msgType.${option}`, option)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            ) : null}
-
-            {type === 'email' ? (
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_130px_130px]">
-                  <div className="space-y-2">
-                    <Label htmlFor="destination-smtp-host">{t('destinations.smtpHost')}</Label>
-                    <Input
-                      id="destination-smtp-host"
-                      placeholder="smtp.example.com"
-                      {...form.register('smtp_host')}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="destination-smtp-port">{t('destinations.smtpPort')}</Label>
-                    <Input
-                      id="destination-smtp-port"
-                      type="number"
-                      min={1}
-                      max={65535}
-                      {...form.register('smtp_port', { valueAsNumber: true })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="destination-use-tls">{t('destinations.useTls')}</Label>
-                    <div className="flex h-9 items-center">
-                      <Switch
-                        id="destination-use-tls"
-                        checked={form.watch('use_tls')}
-                        onCheckedChange={(checked) => form.setValue('use_tls', checked)}
-                      />
-                    </div>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="destination-from">{t('destinations.fromAddress')}</Label>
-                  <Input
-                    id="destination-from"
-                    placeholder="noreply@example.com"
-                    {...form.register('from')}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="destination-to">{t('destinations.toAddress')}</Label>
-                  <Textarea
-                    id="destination-to"
-                    rows={3}
-                    placeholder={t('destinations.toPlaceholder')}
-                    {...form.register('to')}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="destination-cc">{t('destinations.ccAddress')}</Label>
-                  <Textarea
-                    id="destination-cc"
-                    rows={2}
-                    placeholder={t('destinations.ccPlaceholder')}
-                    {...form.register('cc')}
-                  />
-                </div>
-              </div>
-            ) : null}
-
-            {type === 'http_webhook' ? (
-              <div className="space-y-4">
-                <div className="grid grid-cols-[1fr_140px] gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="destination-url">{t('destinations.targetUrl')}</Label>
-                    <Input
-                      id="destination-url"
-                      placeholder="https://..."
-                      {...form.register('url')}
-                    />
-                    {form.formState.errors.url ? (
-                      <p className="text-xs text-destructive">{t('destinations.urlRequired')}</p>
-                    ) : null}
-                  </div>
-                  <div className="space-y-2">
-                    <Label>{t('destinations.httpMethod')}</Label>
-                    <Select
-                      value={form.watch('method')}
-                      onValueChange={(v) => form.setValue('method', v as DestinationForm['method'])}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {HTTP_METHODS.map((method) => (
-                          <SelectItem key={method} value={method}>
-                            {method}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label>{t('destinations.headers')}</Label>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => appendHeader({ key: '', value: '' })}
-                    >
-                      <Plus />
-                      {t('destinations.addHeader')}
-                    </Button>
-                  </div>
-                  {headerFields.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">
-                      {t('destinations.noHeaders')}
-                    </p>
-                  ) : null}
-                  <div className="space-y-2">
-                    {headerFields.map((field, index) => (
-                      <div key={field.id} className="flex items-center gap-2">
-                        <Input
-                          placeholder={t('destinations.headerKey')}
-                          {...form.register(`headers.${index}.key`)}
-                        />
-                        <Input
-                          placeholder={t('destinations.headerValue')}
-                          {...form.register(`headers.${index}.value`)}
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon-sm"
-                          onClick={() => removeHeader(index)}
-                          aria-label={t('common.remove')}
-                        >
-                          <X className="size-4" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="destination-body-template">
-                    {t('destinations.bodyTemplate')}
-                  </Label>
-                  <Textarea
-                    id="destination-body-template"
-                    rows={4}
-                    {...form.register('body_template')}
-                  />
-                </div>
-              </div>
-            ) : null}
+            {/* Type-specific config: rendered by the channel module */}
+            {ActiveFields ? <ActiveFields form={form as never} /> : null}
 
             {/* Common config */}
             <Separator />

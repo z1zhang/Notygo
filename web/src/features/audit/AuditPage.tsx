@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { ScrollText, X } from 'lucide-react'
-import { useI18n } from '@/i18n'
+import { useTranslation } from 'react-i18next'
 import { listAuditLogs } from '@/lib/api'
 import { formatTime } from '@/lib/formatters'
 import { usePagination } from '@/hooks/use-pagination'
@@ -45,7 +45,7 @@ const TARGET_TYPE_FILTERS = [
 ] as const
 
 export default function AuditPage() {
-  const { t } = useI18n()
+  const { t } = useTranslation()
   const { page, size, setPage, setSize } = usePagination()
   const [action, setAction] = useState('')
   const [targetType, setTargetType] = useState('')
@@ -99,7 +99,7 @@ export default function AuditPage() {
             <SelectItem value="all">{t('common.all')}</SelectItem>
             {ACTION_FILTERS.map((a) => (
               <SelectItem key={a} value={a}>
-                {t(`audit.${a}`, a)}
+                {t(`audit.${a}`, { defaultValue: a })}
               </SelectItem>
             ))}
           </SelectContent>
@@ -119,7 +119,7 @@ export default function AuditPage() {
             <SelectItem value="all">{t('common.all')}</SelectItem>
             {TARGET_TYPE_FILTERS.map((tt) => (
               <SelectItem key={tt} value={tt}>
-                {t(`enums.auditTargetType.${tt}`, tt)}
+                {t(`enums.auditTargetType.${tt}`, { defaultValue: tt })}
               </SelectItem>
             ))}
           </SelectContent>
@@ -193,7 +193,7 @@ export default function AuditPage() {
                     <StatusBadge kind="audit" status={row.action} />
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {t(`enums.auditTargetType.${row.target_type}`, row.target_type)}
+                    {t(`enums.auditTargetType.${row.target_type}`, { defaultValue: row.target_type })}
                   </TableCell>
                   <TableCell>
                     <TruncatedId id={row.target_id} />

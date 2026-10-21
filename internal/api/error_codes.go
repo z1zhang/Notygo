@@ -30,6 +30,12 @@ const (
 	ErrIngestDuplicate     = "INGEST_007"
 )
 
+// --- Auth errors ---
+
+const (
+	ErrAuthLocked = "AUTH_001" // too many failed login attempts
+)
+
 // --- Parse errors ---
 
 const (

@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { useNavigate } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, Bell, CircleX, LoaderCircle, Send } from 'lucide-react'
-import { useI18n } from '@/i18n'
+import { useTranslation } from 'react-i18next'
 import { getDashboardStats } from '@/lib/api'
 import { formatTime } from '@/lib/formatters'
 import { lookupName, useDestinationOptions, useSourceOptions } from '@/hooks/use-lookup'
@@ -46,7 +46,7 @@ const statMeta = [
 ] as const
 
 export default function DashboardPage() {
-  const { t } = useI18n()
+  const { t } = useTranslation()
   const navigate = useNavigate()
 
   // Single atomic stats request: counts + recent failures in one round trip
@@ -179,7 +179,7 @@ export default function DashboardPage() {
                           : 'bg-red-500/10 text-red-700 dark:text-red-400',
                       )}
                     >
-                      {t(`enums.errorType.${row.type}`, row.type)}
+                      {t(`enums.errorType.${row.type}`, { defaultValue: row.type })}
                     </span>
                   </TableCell>
                   <TableCell>

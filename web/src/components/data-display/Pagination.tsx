@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react'
-import { useI18n } from '@/i18n'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import {
   Select,
@@ -29,7 +29,7 @@ export function Pagination({
   sizeOptions = [10, 20, 50],
   className,
 }: PaginationProps) {
-  const { t } = useI18n()
+  const { t } = useTranslation()
   const totalPages = Math.max(1, Math.ceil(total / size))
   const page2 = Math.min(page, totalPages)
   const start = total === 0 ? 0 : (page2 - 1) * size + 1
@@ -38,7 +38,7 @@ export function Pagination({
   return (
     <div className={cn('flex flex-wrap items-center justify-between gap-3 py-2', className)}>
       <div className="text-sm text-muted-foreground">
-        {t('pagination.range', { start, end, total })}
+        {t('pagination.range', { start, end, total, count: total })}
       </div>
       <div className="flex items-center gap-3">
         <Select

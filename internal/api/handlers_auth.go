@@ -1,20 +1,38 @@
 package api
 
 import (
+	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
 
+	"zpush/internal/audit"
 	"zpush/internal/storage"
 )
 
+// dummyHash evens out response timing: when the username does not exist we
+// still run a bcrypt comparison so attackers cannot enumerate valid
+// usernames by measuring response latency.
+var dummyHash = func() string {
+	b, err := bcrypt.GenerateFromPassword([]byte("zpush-dummy-password"), bcrypt.DefaultCost)
+	if err != nil {
+		// bcrypt with a valid cost never fails; keep a constant anyway
+		return "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"
+	}
+	return string(b)
+}()
+
 // LoginHandler handles admin login with username/password.
-func LoginHandler(db *sql.DB) http.HandlerFunc {
+// Every attempt (success or failure) is written to the audit log with the
+// client IP; repeated failures trigger a temporary lockout per IP and per
+// username.
+func LoginHandler(db *sql.DB, auditRepo *audit.Repository, guard *loginGuard) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Username string `json:"username"`
@@ -30,18 +48,42 @@ func LoginHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		ip := clientIP(r)
+		ipKey := "ip:" + ip
+		userKey := "user:" + req.Username
+
+		// Locked-out attempts are rejected before any credential work;
+		// they are intentionally not audited individually so a flood of
+		// blocked probes cannot bloat the audit table (the failures that
+		// caused the lockout are already recorded with the same IP).
+		if guard.isLocked(ipKey) || guard.isLocked(userKey) {
+			WriteError(w, http.StatusTooManyRequests, ErrAuthLocked,
+				"too many failed login attempts, try again later")
+			return
+		}
+
 		// Query admin user
 		var id, passwordHash string
 		err := db.QueryRowContext(r.Context(),
 			`SELECT id, password_hash FROM admin_users WHERE username = ?`, req.Username,
 		).Scan(&id, &passwordHash)
 		if err != nil {
+			// Equalize timing with the existing-user path
+			_ = bcrypt.CompareHashAndPassword([]byte(dummyHash), []byte(req.Password))
+			guard.recordFailure(ipKey)
+			guard.recordFailure(userKey)
+			writeLoginAudit(r.Context(), auditRepo, "auth.login_failed", req.Username, "-",
+				"ip="+ip+" username="+req.Username+" reason=invalid_credentials")
 			WriteError(w, http.StatusUnauthorized, ErrIngestAuthFailed, "invalid credentials")
 			return
 		}
 
 		// Compare bcrypt hash
 		if err := bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(req.Password)); err != nil {
+			guard.recordFailure(ipKey)
+			guard.recordFailure(userKey)
+			writeLoginAudit(r.Context(), auditRepo, "auth.login_failed", req.Username, id,
+				"ip="+ip+" username="+req.Username+" reason=invalid_credentials")
 			WriteError(w, http.StatusUnauthorized, ErrIngestAuthFailed, "invalid credentials")
 			return
 		}
@@ -67,10 +109,31 @@ func LoginHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		guard.reset(ipKey)
+		guard.reset(userKey)
+		writeLoginAudit(r.Context(), auditRepo, "auth.login_success", req.Username, id,
+			"ip="+ip+" username="+req.Username)
+
 		WriteJSON(w, http.StatusOK, map[string]any{
 			"token":      token,
 			"expires_at": expiresAt.Format(time.RFC3339),
 		})
+	}
+}
+
+// writeLoginAudit records a login attempt in the audit trail; a write
+// failure is logged but never blocks the login response.
+func writeLoginAudit(ctx context.Context, auditRepo *audit.Repository, action, operator, targetID, summary string) {
+	summaryCopy := summary
+	err := auditRepo.Insert(ctx, &audit.AuditLog{
+		Operator:   operator,
+		Action:     action,
+		TargetType: "admin_user",
+		TargetID:   targetID,
+		Summary:    &summaryCopy,
+	})
+	if err != nil {
+		slog.Error("write login audit log", "action", action, "error", err)
 	}
 }
 

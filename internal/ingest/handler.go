@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -195,7 +196,8 @@ func (h *Ingester) validateBearerAuth(ctx context.Context, src *source.Source, r
 	}
 	token := strings.TrimPrefix(authHeader, "Bearer ")
 
-	if token != decrypted {
+	// Constant-time comparison prevents leaking the secret via timing
+	if subtle.ConstantTimeCompare([]byte(token), []byte(decrypted)) != 1 {
 		return fmt.Errorf("invalid bearer token")
 	}
 

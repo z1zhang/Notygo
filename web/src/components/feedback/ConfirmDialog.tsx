@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { useI18n } from '@/i18n'
+import { useTranslation } from 'react-i18next'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -36,7 +36,7 @@ export function ConfirmDialog({
   onConfirm,
   pending = false,
 }: ConfirmDialogProps) {
-  const { t } = useI18n()
+  const { t } = useTranslation()
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>

@@ -1,5 +1,5 @@
 import { AlertTriangle, RefreshCw } from 'lucide-react'
-import { useI18n } from '@/i18n'
+import { useTranslation } from 'react-i18next'
 import { getErrorMessage } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 
@@ -11,7 +11,7 @@ interface ErrorStateProps {
 }
 
 export function ErrorState({ error, onRetry, entity, className }: ErrorStateProps) {
-  const { t } = useI18n()
+  const { t } = useTranslation()
   const fallback = entity
     ? t('common.failedToLoad', { entity })
     : t('common.failedToLoad', { entity: '' })

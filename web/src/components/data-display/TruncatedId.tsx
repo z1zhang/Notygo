@@ -1,5 +1,5 @@
 import { toast } from 'sonner'
-import { useI18n } from '@/i18n'
+import { useTranslation } from 'react-i18next'
 import { copyToClipboard } from '@/lib/formatters'
 import { cn } from '@/lib/utils'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -9,7 +9,7 @@ import { CopyButton } from './CopyButton'
  * Full ID with CSS truncation, tooltip, and click-to-copy.
  */
 export function TruncatedId({ id, className }: { id: string; className?: string }) {
-  const { t } = useI18n()
+  const { t } = useTranslation()
 
   async function handleCopy(e: React.MouseEvent) {
     e.stopPropagation()

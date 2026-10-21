@@ -1,112 +1,109 @@
 # zPush 会话交接文档
 
-> 写给完全没有上下文的新会话。最后更新：2026-10-18。
+> 写给完全没有上下文的新会话。最后更新：2026-10-21（会话结束前）。
 
 ## 一、我们在做什么
 
-zPush 是自托管 Webhook 事件路由与通知推送系统（Go + MySQL 后端，详见根目录 `CLAUDE.md`）。
+zPush 是自托管 Webhook 事件路由与通知推送系统（Go 1.26 + chi + MySQL 后端，React 19 前端，项目全景见 `docs/CLAUDE.md`）。
 
-当前大任务：**把前端从 Vue 重写为 React 19 + TypeScript + Vite 8 + Tailwind CSS 4 + shadcn/ui（new-york 风格）+ TanStack Query 5 + React Hook Form/Zod + sonner**，新代码在 `web/`，旧 `web/`（Vue）已删除。分支：`react-rewrite`（主分支是 `master`）。
+前端 React 重写**已完成并合入**，当前分支 `dev`（主分支 `master`），本地与 `origin/dev` 完全同步（最新提交 `70cabd8`）。
 
-工作模式：**用户逐页走查 UI，一次提一个视觉/交互问题**，我即时修复 → CDP 实测验证 → 类型检查 → 如实汇报。用户的强诉求是**跨页面视觉完全统一**（所有弹窗里的开关、下拉框、添加按钮、label 摆法必须长一个样）。
+当前大任务：**用户逐页走查 UI/UX，一次提一个视觉/交互问题，即时修复**。用户强诉求是**跨页面完全一致**（同类控件必须长一个样，改一处想到同类处）。工作循环：改代码 → `tsc --noEmit` → 必要时 CDP 实测 → 如实汇报（实测数据附上）。
 
-## 二、已完成
+本轮走查进行到的页面：沙盒（Playground）刚完成深度对齐映射页智能导入，之后是全局悬浮提示统一、弹窗聚焦问题。**用户会继续走查，预计还有新反馈。**
 
-### 本次（最新）已提交
-用户已手动提交两个 commit（本会话因权限分类器故障无法执行 git 写命令，最终用户用 `!` 前缀自己提交的）：
-- `bcbf180` — chore: 移除旧 Vue 前端 web/ 及遗留 zpush.sql（-10294 行）
-- `dccb4b9` — feat: 新增 web/（React 19 重写）+ Dockerfile 路径调整（web/ → web/，产物仍复制到镜像内 web/dist）+ .gitattributes（统一 LF）+ .gitignore（web/node_modules、web/dist）+ `internal/api/handlers_preview.go` 双模式改造
+### 2026-10-21 安全加固线（未提交，先于 UI 走查）
 
-注意：这两个 commit 的 message 是重复的（用户提交时把两个 message 拼在了每个 commit 里），内容拆分是正确的，只是 message 不精确。**不要去改历史**。
+用户决策：**不做双端口**，改用路径命名空间分离管理 API 与通知 API；外加登录防爆破。已完成：
 
-### 本会话窗口完成的 UI 统一改造（均已包含在上述提交中）
-1. **启用开关统一模式**（sources/rules/destinations 全部一致）：label 在上、Switch 在下，包在 `flex h-9 items-center` 里，**无描边盒子**；启用列永远放行尾
-2. **PasswordInput 组件**（`web/src/components/ui/password-input.tsx`）：Input + 眼睛按钮（icon-sm ghost，`absolute top-1/2 right-1 -translate-y-1/2`），sources 密钥、destinations 密钥都用它
-3. **共享 MultiSelect**（`web/src/components/form/MultiSelect.tsx`）：badge-in-trigger 风格、`w-(--radix-popover-trigger-width)`、未知 id 兜底。旧的 `features/mappings/MultiRuleSelect.tsx` 和 `features/rules/MultiSelect.tsx` 已删除，统一用这个
-4. **区块标题行模式**（映射"字段"、规则"条件"、投递"自定义请求头"完全一致）：`flex items-center justify-between`，左 `<Label>`，右 `<Button variant="outline" size="sm"><Plus/>文案</Button>`
-5. **规则弹窗条件模式 AND/OR**：改为滑块分段控件（sliding pill），移入"条件"标题行：`[条件] [全部匹配|任一匹配] ··· [+ 添加条件]`。pill 用 `absolute inset-y-0.5 left-0.5 w-[calc(50%-2px)] bg-primary transition-transform` + `translate-x-full`；按钮 `text-sm`（与 sm 按钮字号一致，14px，实测对齐）。i18n 键 `rules.andShort`/`rules.orShort`（全部匹配/任一匹配），长文案 `andMode`/`orMode` 留作 title tooltip
-6. **映射值类型对齐后端**：`VALUE_TYPES = ['string','number','boolean','object','array']`（mappings 页 + playground 页），`normalizeValueType()` 兼容旧数据（'bool'→'boolean'，'json'→'object'）；智能导入点 + 时默认选中正确类型
-7. **模板"渲染"改为纯预览**：后端 `/api/v1/preview/template` 支持 template_id 或 inline 内容（title_template/body_template/format）双模式，前端 `previewTemplate()` 传 inline spec，渲染不再隐式创建模板
-8. **Tailwind v4 space-y + Radix Select 隐藏元素 bug 的全局修复**（`web/src/styles/globals.css`）：`:where([class*="space-y"] > *:has(+ select[aria-hidden="true"]:is([tabindex="-1"])))` 置零多余 margin
+1. **通知 API 迁移**：`POST /api/v1/ingest/{slug}` → **`POST /ingest/{slug}`**（改挂顶层，旧路径 `/api/v1/ingest/` 已彻底移除，用户拍板不兼容）。`router.go` 顶层挂载，SPA fallback 对 `/ingest/` 前缀返回 JSON 404。前端 `SourcesPage.tsx` 复制的 webhook URL 已同步
+2. **登录审计**：成功/失败都写 `audit_logs`（action `auth.login_success`/`auth.login_failed`，summary 含 `ip=... username=...`）；锁定期间被拒的探测不写审计（防刷爆审计表）
+3. **登录锁定**：`internal/api/login_guard.go` 内存滑动窗口，按 IP + 用户名双计数，429 + 新错误码 `AUTH_001`；env `LOGIN_MAX_FAILURES`（默认 5）/`LOGIN_LOCKOUT_SECONDS`（默认 900）。有单测 `login_guard_test.go`
+4. **时序侧信道**：登录未知用户名跑假 bcrypt（防用户名枚举）；ingest bearer 改 `subtle.ConstantTimeCompare`
+5. 前端：`LoginPage` 对 `AUTH_001` 显示专门文案 `login.locked`（zh/en 已加）
+6. **数据库配置拆分**：`DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME` 独立变量拼装 DSN（`config.buildMySQLDSN`，FormatDSN 转义特殊字符密码）；**`DATABASE_DSN` 变量已删除**（用户拍板，不留整串覆盖）。有 `config_test.go` 单测。README/compose/文档全部同步
+7. **渠道测试发送已实现**（`POST /api/v1/destinations/{id}/test`）：把 delivery worker 的 `buildDestinationConfig` 抽到 `destination.BuildSenderConfig` 共用；成功判定 = err==nil 且 2xx 且 BusinessCode 为空或 0（覆盖钉钉 errcode）；审计 action `test`；前端渠道页每行新增 Zap 图标按钮，i18n `destinations.test*`
+8. **HTTP 渠道自定义请求体**（`body_fields` 树）：经历三轮迭代——占位符方案 → 平铺 title/body 映射（`body_shape`，已删除）→ **最终版递归树**。契约存树形结构 `BodyField{Key, Source, Value, Type, Children}`：叶子行的值来源可选「模板标题/模板内容/格式/自定义」（title/body/format/literal，多个 key 可映射同一来源）；分组行（type `object`/`array`）嵌套子节点，数组内子键名被忽略（按位置）。后端 `buildBodyFields`/`buildGroupValue`/`resolveBodySource`（`http_webhook.go`）用 `json.Marshal` 组装（转义天然正确），错误校验：缺来源/非法来源/对象内空键或重复键。优先级 body_fields > 默认 {title,body,format}（**原始请求体 body_template 后来按用户要求整体移除**，树是唯一自定义方式）。前端 `DestinationsPage.tsx` 递归组件 `BodyFieldRows`/`BodyFieldRow`（RHF 递归 `useFieldArray`/`useWatch`，路径用 `as never` 边界转换；zod v4 递归 `z.lazy` 会把推导降级成 `unknown[]`，resolver 需 `as Resolver<DestinationForm>` 收口）；提交前 `cleanBodyFields` 剔除未填完的行。UI 上用户嫌「添加字段/添加分组」两按钮臃肿，已合并为单个「添加字段」——每行带类型选择（字段/对象/数组），切类型就地转换（叶子→分组清来源，分组→叶子清子行并恢复默认来源）。`http_webhook_test.go` 5 个单测。用户明确**不要 TG/Bark 预设**，只要自定义模式
+9. **i18n 全量交给 react-i18next**（两步走，最终形态为完全库接管）：
+   - 第一步迁移 i18next + react-i18next（保留 `useI18n` 适配层）；第二步按用户要求「完全接管」：**23 个调用文件全部改为标准 `useTranslation()` 直接调用**，自研 hook/持久化/回退全删。语言探测/持久化交 `i18next-browser-languagedetector`（order localStorage→navigator，键仍 `zpush-locale`，**首访行为变化：跟随浏览器语言**，fallback en）；`<html lang>` 同步留在 `I18nProvider`（内部就是 I18nextProvider + 10 行 effect）；`LocaleSwitch` 改用 `useLocale()`
+   - 键类型校验用 i18next 自带的 `CustomTypeOptions` 模块增强（zh 树为真源）：字面量键拼错直接 tsc 报错（报错还带「Did you mean」提示），**string 类型的动态键天然放行**（枚举拼接不用 cast）；`t(key, 'fb')` 字符串回退改成标准的 `{ defaultValue: fb }`；en 缺键仍由 `_enKeyParity` 编译期断言拦截
+   - **复数已接入**：JSON 键带 `_one`/`_other` 后缀（zh 只需 `_other`），调用传 `count`；实证用例 `pagination.range`（en "of 1 record" / "of 5 records"）。**格式化已接入**：i18next v26 内置 Formatter（`{v, number}`、`{v, datetime(dateStyle: medium)}`、`{v, currency}`、`{v, list}`），`{ts, relative}` 是经 `services.formatter.add` 注册的自定义 formatter（时间戳→「3 分钟前」）。运行时已用 node 脚本实测：复数两语言、defaultValue 回退、number/datetime 输出全对
+   - 注意：i18next v26 已**移除** `interpolation.format` 回调（老教程写法），必须用内置 Formatter 或 `services.formatter.add` 扩展点
+10. **初始管理员用户名可配置**：新增 env `ADMIN_INITIAL_USER`（默认 `admin`），与 `ADMIN_INITIAL_PASSWORD` 一样仅在尚无管理员时生效；`config.AdminConfig.InitialUsername` + `main.go ensureAdminUser` 使用参数化插入。README/CLAUDE.md 环境变量表同步
+11. **投递请求摘要捕获线上报文原文**：用户问「请求摘要是实际请求吗」→ 之前只是发送前投影（method/url/脱敏头/标题正文片段），不含实际组装报文。现在 `SendResult` 新增 `RequestPayload` 字段，**五个 sender 全部回传线上原文**（http_webhook 的 body_fields 组装 JSON、钉钉/飞书/企微的 marshal 结果、email 的完整 RFC 2822 MIME 文本；GET/HEAD 为空）；worker 在 Send 后用 `attachRequestPayload` 把它合并进 request_summary 的 `payload` 字段（超 2048 字节截断），失败尝试也记录（payload 在发送前就已组装）。前端 `JsonViewer` 自动展示，零前端改动。`worker_test.go` 新增 3 个 attachRequestPayload 测试
+12. **前端渠道表单抽离为插件模块**：DestinationsPage 从 1037 行瘦身到 ~460 行，渠道专属代码全部迁入 `web/src/features/destinations/channels/`：
+    - `types.ts`：`ChannelModule` 契约（types/formSchema/defaults/defaultMsgType/Fields/toConfig/fromConfig/validate）+ `asString`/`asNumber` + `BodyFieldNode`
+    - `webhook.tsx`（钉钉/飞书/企微共用，MSG_TYPE_OPTIONS + fromConfig 的 msg_type 归一化）、`email.tsx`、`httpWebhook.tsx`（含递归 BodyFieldRows/BodyFieldRow 树编辑器、cleanBodyFields）
+    - `index.ts`：`DEST_TYPES`/`CHANNELS` 注册表、`channelModule()`（未知类型回退 http_webhook）、`destinationSchema`（展开各模块 formSchema + superRefine 委托模块 validate）、`DestinationForm` 交叉类型、`defaultForm`、`destinationResolver`
+    - 页面只保留：表格/弹窗框架、公共字段（name/type/enabled/secret/timeout）、`ActiveFields = channelModule(type).Fields` 渲染、saveMutation 委托 `toConfig`、openEdit 委托 `fromConfig`、handleTypeChange 重置所有模块 defaults
+    - 边界类型放宽：`AnyForm`（Record<string, any>）+ 少量 `as never`/`as unknown as` 文档化断言（zod v4 递归 z.lazy 推断退化为 unknown[]，与此前单体页面同样的问题）
+    - 修过的坑：httpWebhook.tsx 曾误从 react-hook-form 导入 useTranslation；index.ts 的 `uniqueModules` 需导出（页面 handleTypeChange 用）
+    - 新增渠道前端侧 = 一个模块文件 + index.ts 两行（DEST_TYPES + CHANNELS）；README「新增一种投递渠道」步骤 3 与 CLAUDE.md 目录结构已同步
+
+验证：`go build/vet/test` 全过，`tsc -b --noEmit` 过、`npm run build` 过。**Docker/运行时冒烟未做（本机无 docker/MySQL）**；用户现有 webhook 调用方需要把 URL 改成 `/ingest/{slug}`（曾短暂定为 `/push/{slug}`，最终用户改回 ingest）。
+
+## 二、最近一次提交内容（`70cabd8`，已推送）
+
+1. **移除 next-themes**，自研 `web/src/app/theme.tsx`：`ThemeProvider` + `applyTheme` + `disableTransitionsTemporarily()`（切换主题瞬间生效，注入一帧 `transition:none!important`）。`index.html` 里有 parse-time 内联脚本防 FOUC，读 localStorage `zpush-theme`。`providers.tsx` / `sonner.tsx` / `ThemeToggle.tsx` / `SettingsPage.tsx` 的 `useTheme` 都改从 `@/app/theme` 导入
+2. **沙盒对齐映射智能导入**（用户点名"细节必须一样"）：+号点击无抖动（✓ 占位用 `size-8`，与 `icon-sm` 按钮同宽）、路径 `w-40 shrink-0 truncate`、样本值 `truncate`、类型徽章按值着色（string=secondary/number=outline/boolean=default/array=destructive）、容器 `max-h-60`、payload 文本域 `field-sizing-fixed`（固定高度+滚动条）
+3. **布局对齐**：「添加字段」按钮上移到区块标题行右侧；左右列统一 `space-y-3`
+4. **`main` 加 `[scrollbar-gutter:stable]`**（AppShell.tsx）：修"分析 JSON 时整页像被放大"的抖动。**注意滚动容器是 `main` 不是 `html`**（第一次改错位置，无效）
+5. **全站原生 `title` 悬浮 → shadcn Tooltip**：沙盒、映射智能导入、`TruncatedId`（日志表格 ID）、投递批量重试禁用原因（外面套 span——禁用按钮不触发鼠标事件）、规则 AND/OR 切换、侧栏收起导航（`side="right"`）。代码里剩余 `title=` 全是组件 prop（PageHeader/EmptyState/ConfirmDialog/DetailSection/SectionHeader），**不是**原生悬浮，别再改
+6. **`DialogContent` 默认阻止自动聚焦**（`onOpenAutoFocus` → `preventDefault`，可被调用方覆盖）；沙盒弹窗的 `autoFocus` 已移除
+7. 侧栏图标（渠道=Send、投递日志=SendHorizontal、规则=Filter、审计=ScrollText）、destination 译名「渠道」（auditTargetType 等）、尝试次数灰字、映射规则 tag 灰底（secondary）
 
 ## 三、当前卡在哪 / 待办
 
-1. **⚠️ 本地 Go 服务跑的是旧二进制** — `/preview/template` 的 inline 模式支持需要重启才生效。用户尚未重启（之前报过 "template_id is required (CONFIG_001)"）。让用户执行 `! go run ./cmd/server`（需要 MySQL 和环境变量就绪）。验证方式：`curl -X POST localhost:9003/api/v1/preview/template -H 'Content-Type: application/json' -d '{"title_template":"{{.x}}","format":"text","sample_data":{"x":"hi"}}'`
-2. `destinations/{id}/test` 仍是 501 占位
-3. EVENT_RETENTION_DAYS 无清理逻辑；Dashboard 4 次 API 拼凑；Settings 无配置 API（见 CLAUDE.md 已知问题清单）
-4. Docker 构建未在本机验证（本机无 docker 命令）
-5. 用户会继续逐页走查 UI，**预计还有新的反馈**
+**没有卡住的东西。** 待办清单：
+
+1. **Sheet（右侧详情抽屉）和 AlertDialog（确认框）仍会自动聚焦**——用户只要了弹窗（Dialog）不聚焦，Sheet/AlertDialog 没动。用户若再提，照 `dialog.tsx` 的 `onOpenAutoFocus` 模式改 `sheet.tsx` / `alert-dialog.tsx`
+2. 后端遗留（见 `docs/CLAUDE.md` 已知问题）：规则引用不到未映射字段、EVENT_RETENTION_DAYS 无清理、Settings 无配置 API、Docker 构建未验证（`destinations/{id}/test` 已于 2026-10-21 实现）
+3. **`docs/CLAUDE.md` 有几行已过时**：还写着 "next-themes"、"Dashboard 统计用 4 次 API"、favicon 问题——这三项本会话/上会话已修，新会话顺手更新掉
+4. 上会话的 Go 后端修复（PROCESSOR_005 渲染失败拦截、`/dashboard/stats` 端点、批量重试校验、favicon 静态服务）在提交 `68455ac` 里，**需要重启 Go 服务才生效**，用户未确认重启过
 
 ## 四、CDP 验证工作流（重要资产，照此操作）
 
-用户开着 debug Chrome（CDP 端口 9222，取第一个 tab），dev server 在 `localhost:3000`（Vite HMR，改文件即时生效）。
-
-**必须**把脚本写成 `.tmp-cdp/*.mjs` 文件再 `node` 运行（用 Node 内置 WebSocket，不用 `ws` 包）。模板：
+用户开着 debug Chrome（CDP 端口 9222），Vite dev server 在 `localhost:3000`（HMR，改文件即时生效）。**必须**把脚本写成 `.tmp-cdp/*.mjs` 文件再 `node` 运行（Node 内置 WebSocket，不用 `ws` 包）：
 
 ```js
-const ws = new WebSocket('ws://127.0.0.1:9222/devtools/page/' + (await (await fetch('http://127.0.0.1:9222/json')).json())[0].id);
-let id = 0; const pending = new Map();
-function send(method, params = {}) {
-  return new Promise((resolve, reject) => {
-    const mid = ++id; pending.set(mid, { resolve, reject });
-    ws.send(JSON.stringify({ id: mid, method, params }));
-  });
-}
-ws.onmessage = (ev) => {
-  const msg = JSON.parse(ev.data);
-  if (msg.id && pending.has(msg.id)) {
-    const { resolve, reject } = pending.get(msg.id); pending.delete(msg.id);
-    msg.error ? reject(new Error(msg.error.message)) : resolve(msg.result);
-  }
-};
-await new Promise((r) => (ws.onopen = r));
-async function evalJs(expr) {
-  const res = await send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true });
-  if (res.exceptionDetails) throw new Error('JS exception: ' + JSON.stringify(res.exceptionDetails.exception?.description ?? res.exceptionDetails.text));
-  return res.result.value;
-}
-await send('Page.enable');
-await evalJs(`location.href = 'http://localhost:3000/rules'`);
-await new Promise((r) => setTimeout(r, 1500));
-// ...点按钮开弹窗、量 DOM、截图
-const shot = await send('Page.captureScreenshot', { format: 'png' });
-const { writeFileSync } = await import('node:fs');
-writeFileSync('.tmp-cdp/shot.png', Buffer.from(shot.data, 'base64'));
+const tabs = (await (await fetch('http://127.0.0.1:9222/json')).json())
+  .filter((t) => t.type === 'page' && t.url.includes('localhost:3000')); // 用户常开很多别的 tab，必须按 URL 过滤！
+const ws = new WebSocket('ws://127.0.0.1:9222/devtools/page/' + tabs[0].id);
+// send/evalJs 样板见旧脚本 .tmp-cdp/*.mjs（check-playground.mjs、check-jitter.mjs 等）
 ```
 
-截图后用 Read 工具看图，验证完 `rm -rf .tmp-cdp`（有时 Windows 句柄占用删不掉目录，清空内容即可，无害）。
+- React 受控 textarea 填值要用原生 setter + `dispatchEvent(new Event('input', {bubbles:true}))`
+- 截图存 `.tmp-cdp/` 内（Read 工具读不了工作目录外路径），看完清理
+- **量 DOM 必须在同一次 `Runtime.evaluate` 里量所有元素**（分开两次会因用户滚动/页面变化出现假差异，本会话踩过：两次测量差 14px 误判不齐平）
 
 ## 五、踩过的坑 —— 绝对不要再踩
 
-### 工具/流程类
-- **`node -e` 里写多行 JS 会语法报错**（"Expected ',', got 'const'"）——一律写脚本文件
-- **截图必须存在仓库目录内**（`.tmp-cdp/`），Read 工具被 `permissions.blockReadsOutsideWorkingDirectories` 限制，读不了仓库外路径
-- **权限分类器可能长时间超时**（本会话末尾发生过，git commit 全被挡）。遇到时：不要疯狂重试，告知用户可以用 `! <命令>` 前缀自己执行；读操作不受影响
-- **CDP 测 DOM 前先 `location.href` 重新导航**：弹窗状态、Radix portal 都是瞬态的，旧会话残留状态会污染测量结果
+### 本会话新增
+- **页面滚动容器是 AppShell 的 `<main class="overflow-y-auto">`，不是 `html/body`**——`scrollbar-gutter`、防滚动条抖动之类的修复必须打在 `main` 上
+- **Radix DropdownMenu 无法用合成点击打开**（`.click()` 和 `Input.dispatchMouseEvent` 都失败），自动化验证主题下拉曾放弃改人工。Radix 普通按钮（如智能导入的 + 号）`.click()` 是有效的
+- **`node -e` 里嵌套模板字符串 + bash 双引号转义地狱**（`\\/` 等）——一律写 `.mjs` 文件，别内联
+- **Edit 工具替换后行首缩进可能错位**，后续匹配会 "String not found"；改完立刻 Read 回看该区域，别硬猜缩进
+- **claim 类陈述（"领先 3 个提交"）出自压缩前的旧摘要，可能过时**——汇报前先 `git log origin/dev` 核实，本会话因此报过一次错误的推送内容
+- **悬浮提示的判定**：`title={t(...)}` 出现在 `PageHeader`/`EmptyState`/`DetailSection`/`SectionHeader`/`ConfirmDialog` 上是**组件 prop**，不是浏览器原生悬浮，不要替换
 
-### 前端技术类
-- **Tailwind v4 的 `space-y-*` 用 margin-bottom 打在非末尾子元素上**（`:where(& > :not(:last-child))`，零特异性、layered）。Radix Select 会在末尾塞一个隐藏原生 `<select>`（absolute 1px aria-hidden），导致前面的控件凭空多出 margin —— 这就是"启用开关下移 8px"的根因，已用 globals.css 的 `:has()` 规则全局修复，**不要再从组件层面修**
-- **Radix Select 的 trigger 是 `button[role="combobox"]`**，不是 `aria-haspopup`；popover 内容渲染在 body 级的 `[data-radix-popper-content-wrapper]` portal 里，**在 `[role=dialog]` 里查不到选项**，必须全 document 查
-- **Tailwind v4 的 translate 用独立的 `translate` 属性**，computed `transform` 恒为 "none"，测位移要读 `getComputedStyle(el).translate`
-- **CDP 里 `button.click()` 是有效的**，React 合成事件能收到；但测量要留足时间（≥600ms，等 transition 和 React commit），否则读到过渡中间态会误判 bug（本会话就误判过一次"滑块不动"，实际是好的）
-- **Button 组件的 cva 里有用户手加的 `active:scale-[0.9]`**，不要当垃圾清掉
-- 按钮尺寸约定：default=h-9/14px 字、sm=h-8/14px 字、xs=h-6/12px 字。**sm 是"紧凑档"，字号仍是 14px** —— 自定义控件要与 sm 并排时字号必须 14px
+### 沿用旧坑（仍然有效）
+- Tailwind v4 `space-y-*` + Radix Select 隐藏 `<select>` 的 margin bug 已在 `globals.css` 用 `:has()` 全局修复，**不要再从组件层面修**
+- CDP 测 DOM 前先 `location.href` 重新导航（瞬态 portal 会污染测量）；点击后留 ≥600ms 再量
+- Radix Select trigger 是 `button[role="combobox"]`，选项在 body 级 `[data-radix-popper-content-wrapper]` 里
+- Tailwind v4 位移用独立 `translate` 属性，`computed transform` 恒 "none"
+- Button cva 里用户手加的 `active:scale-[0.9]` 不是垃圾，别清
+- MySQL 陷阱见 `docs/CLAUDE.md`（UPDATE 同表子查询双层嵌套、DATETIME 用 `storage.FormatTime()`、Go 反引号字符串内不能放函数调用）
 
-### 后端类
-- MySQL 陷阱见 CLAUDE.md（UPDATE 同表子查询双层嵌套、DATETIME 用 `storage.FormatTime()`、Go 反引号字符串里不能放函数调用）
-- `handlers_preview.go` 里曾因 `tmpl, err :=` 在 if 块内 shadowing 出过编译问题，改用局部 `t, err :=` 再赋值
+## 六、文案/排版约定（用户已确认，写进了持久记忆，但这里再列一遍）
 
-## 六、常用命令
-
-```bash
-go build ./... && go test ./...                                  # 后端
-cd web && npx tsc -p tsconfig.app.json --noEmit            # 前端类型检查（每次改完必跑）
-cd web && npm run build                                     # 前端生产构建
-cd web && node .tmp-cdp/xxx.mjs                             # CDP 验证脚本
-```
+- zh 文案结尾**不加**「。」/「.」；中文引用用全角引号
+- 术语：destination=**渠道**、delivery=**投递**、source=**数据源**（「接收」被用户否决过，别再提）
+- 排版：灰色=元数据、黑色=数据值、非标题黑字不加粗、**mono 仅限代码块**（正文/悬浮内容一律 font-sans）
+- 类型徽章（智能导入/沙盒推荐列表）显示**原始英文** `string`/`boolean`（用户明确撤掉过汉化）；但表单里的值类型下拉是汉化的，两处不一致是**故意的**
 
 ## 七、给新会话的开工建议
 
-1. 先读根目录 `CLAUDE.md`（项目全景）和本文件
-2. 问用户当前在走查哪一页、有什么新反馈；或从"待办"第 1 项开始（提醒重启 Go 服务并验证 inline 预览）
-3. 改任何 UI 前先 Grep 找同类页面的既有模式（本文件第二节列的 4 个统一模式是基准），**先对齐再创新**
+1. 先读 `docs/CLAUDE.md`（项目全景）和本文件
+2. 问用户当前在走查哪一页、有什么新反馈
+3. 改任何 UI 前先 Grep 找同类页面的既有模式，**先对齐再创新**；改完必跑 `cd web && npx tsc -p tsconfig.app.json --noEmit`
+4. 涉及布局尺寸的结论要用 CDP 实测背书（同一 evaluate 内测量），别肉眼判断

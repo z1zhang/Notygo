@@ -217,6 +217,24 @@ func buildRequestSummary(cfg sender.DestinationConfig, msg sender.RenderedMessag
 	return string(b)
 }
 
+// attachRequestPayload merges the exact request body the sender put on the
+// wire into the pre-built request summary JSON (truncated).
+func attachRequestPayload(summary, payload string) string {
+	var m map[string]any
+	if err := json.Unmarshal([]byte(summary), &m); err != nil {
+		return summary
+	}
+	if len(payload) > 2048 {
+		payload = payload[:2048] + "...(truncated)"
+	}
+	m["payload"] = payload
+	b, err := json.Marshal(m)
+	if err != nil {
+		return summary
+	}
+	return string(b)
+}
+
 // sendDelivery handles a single delivery attempt.
 func (w *DeliveryWorker) sendDelivery(ctx context.Context, d *Delivery) {
 	slog.Info("sending delivery", "delivery_id", d.ID, "event_id", d.EventID, "destination_id", d.DestinationID, "attempt", d.AttemptCount)
@@ -231,7 +249,7 @@ func (w *DeliveryWorker) sendDelivery(ctx context.Context, d *Delivery) {
 	}
 
 	// 2. Get destination config
-	destConfig := buildDestinationConfig(dest, w.secretSvc)
+	destConfig := destination.BuildSenderConfig(dest, w.secretSvc)
 
 	// 3. Build rendered message
 	msg := sender.RenderedMessage{
@@ -256,6 +274,12 @@ func (w *DeliveryWorker) sendDelivery(ctx context.Context, d *Delivery) {
 	startTime := time.Now()
 	result, err := s.Send(ctx, destConfig, msg)
 	duration := time.Since(startTime)
+
+	// 6b. Record the exact request body the sender put on the wire
+	// (SendResult.RequestPayload), merged into the pre-send summary.
+	if result != nil && result.RequestPayload != "" {
+		requestSummary = attachRequestPayload(requestSummary, result.RequestPayload)
+	}
 
 	// 7. Record delivery attempt
 	attempt := &DeliveryAttempt{
@@ -373,47 +397,6 @@ func classifyHTTPError(statusCode int) string {
 	default:
 		return "DELIVER_004"
 	}
-}
-
-// buildDestinationConfig builds a sender.DestinationConfig from a destination model.
-func buildDestinationConfig(dest *destination.Destination, secretSvc *secret.Service) sender.DestinationConfig {
-	cfg := sender.DestinationConfig{
-		Type:      string(dest.Type),
-		Timeout:   time.Duration(dest.TimeoutMs) * time.Millisecond,
-		RawConfig: dest.Config,
-	}
-
-	// Marshal the config map to json.RawMessage for sender consumption
-	if configBytes, err := json.Marshal(dest.Config); err == nil {
-		cfg.Config = configBytes
-	}
-
-	// Extract URL and headers from config
-	if url, ok := dest.Config["url"].(string); ok {
-		cfg.URL = url
-	}
-	if method, ok := dest.Config["method"].(string); ok {
-		cfg.Method = method
-	}
-	if headers, ok := dest.Config["headers"].(map[string]any); ok {
-		cfg.Headers = make(map[string]string)
-		for k, v := range headers {
-			if s, ok := v.(string); ok {
-				cfg.Headers[k] = s
-			}
-		}
-	}
-
-	// Decrypt secret if available
-	if dest.SecretRef != nil && *dest.SecretRef != "" && secretSvc != nil {
-		decrypted, err := secretSvc.Decrypt(*dest.SecretRef)
-		if err == nil {
-			cfg.Secret = decrypted
-			cfg.SecretRef = decrypted
-		}
-	}
-
-	return cfg
 }
 
 func generateDeliveryWorkerID() string {

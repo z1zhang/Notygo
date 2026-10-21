@@ -59,6 +59,7 @@
     "passwordRequired": "请输入密码",
     "success": "登录成功",
     "failed": "登录失败，请检查用户名和密码",
+    "locked": "失败次数过多，请稍后再试",
     "sessionExpired": "会话已过期，请重新登录"
   },
   "dashboard": {
@@ -255,7 +256,7 @@
     "feishu": "飞书 (Lark)",
     "wecom": "企业微信",
     "email": "邮件",
-    "httpWebhook": "HTTP Webhook",
+    "httpWebhook": "HTTP",
     "webhookUrl": "Webhook 地址",
     "msgType": "消息类型",
     "smtpHost": "SMTP 服务器",
@@ -271,8 +272,19 @@
     "headers": "自定义请求头",
     "headerKey": "名称",
     "headerValue": "值",
-    "addHeader": "添加请求头",
-    "bodyTemplate": "请求体模板",
+    "addHeader": "添加字段",
+    "bodyFields": "自定义请求体",
+    "addField": "添加字段",
+    "typeField": "字段",
+    "fieldKey": "字段名",
+    "fieldValue": "字段值",
+    "sourceTitle": "模板标题",
+    "sourceBody": "模板内容",
+    "sourceFormat": "格式",
+    "sourceLiteral": "自定义",
+    "groupObject": "对象",
+    "groupArray": "数组",
+    "arrayItem": "项",
     "secret": "密钥",
     "secretEditPlaceholder": "留空则保持不变",
     "secretPlaceholder": "API 密钥或 Token",
@@ -289,7 +301,10 @@
     "destinationDisabled": "投递已禁用",
     "failedToLoadDestinations": "加载投递失败",
     "failedToSaveDestination": "保存投递失败",
-    "failedToToggleDestination": "切换投递状态失败"
+    "failedToToggleDestination": "切换投递状态失败",
+    "test": "测试",
+    "testSuccess": "测试发送成功",
+    "testFailed": "测试发送失败"
   },
   "events": {
     "eventDetail": "事件详情",
@@ -400,7 +415,7 @@
       "feishu": "飞书",
       "wecom": "企业微信",
       "email": "邮件",
-      "http_webhook": "HTTP Webhook"
+      "http_webhook": "HTTP"
     },
     "authType": {
       "none": "无",
@@ -493,6 +508,7 @@
   },
   "pagination": {
     "range": "显示 {start}-{end}，共 {total} 条",
+    "range_other": "显示 {start}-{end}，共 {total} 条",
     "pageUnit": "页",
     "prev": "上一页",
     "next": "下一页",

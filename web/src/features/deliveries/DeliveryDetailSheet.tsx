@@ -2,7 +2,7 @@ import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { ChevronDown, ChevronRight, RotateCcw } from "lucide-react"
-import { useI18n } from "@/i18n"
+import { useTranslation } from "react-i18next"
 import { getDelivery, retryDelivery } from "@/lib/api"
 import { getErrorMessage } from "@/lib/api-client"
 import { formatTime } from "@/lib/formatters"
@@ -36,7 +36,7 @@ function joinError(code?: string | null, summary?: string | null): string | null
 const RETRYABLE_STATUSES = ["failed", "retry_wait"]
 
 function AttemptResultBadge({ attempt }: { attempt: DeliveryAttemptResponse }) {
-  const { t } = useI18n()
+  const { t } = useTranslation()
   if (attempt.error_code) {
     return (
       <span className="inline-flex items-center rounded-md bg-red-500/10 px-2 py-0.5 text-xs font-medium whitespace-nowrap text-red-700 dark:text-red-400">
@@ -60,7 +60,7 @@ function AttemptRow({
   expanded: boolean
   onToggle: () => void
 }) {
-  const { t } = useI18n()
+  const { t } = useTranslation()
   const error = joinError(attempt.error_code, attempt.error_summary)
 
   return (
@@ -109,7 +109,7 @@ function AttemptRow({
 }
 
 export function DeliveryDetailSheet({ deliveryId, onClose }: DeliveryDetailSheetProps) {
-  const { t } = useI18n()
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const destinationOptions = useDestinationOptions()
   const [confirmRetry, setConfirmRetry] = useState(false)

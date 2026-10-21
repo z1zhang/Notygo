@@ -127,8 +127,17 @@ func main() {
 	go processor.LeaseRecoveryLoop(workerCtx, db, cfg.Worker.LeaseRecoveryInterval, notifier)
 	go delivery.LeaseRecoveryLoop(workerCtx, db, cfg.Worker.LeaseRecoveryInterval, notifier)
 
+	// Create login guard (brute-force lockout, in-memory)
+	loginGuard := api.NewLoginGuard(
+		cfg.Admin.LoginMaxFailures,
+		time.Duration(cfg.Admin.LoginLockoutSeconds)*time.Second,
+	)
+	slog.Info("login guard initialized",
+		"max_failures", cfg.Admin.LoginMaxFailures,
+		"lockout_seconds", cfg.Admin.LoginLockoutSeconds)
+
 	// Create router
-	router := api.NewRouter(db, secretSvc, sourceRepo, mappingRepo, ruleRepo, templateRepo, destRepo, eventRepo, deliveryRepo, ingester, notifier, auditRepo)
+	router := api.NewRouter(db, secretSvc, sourceRepo, mappingRepo, ruleRepo, templateRepo, destRepo, eventRepo, deliveryRepo, ingester, notifier, auditRepo, loginGuard, senderRegistry)
 
 	// Start HTTP server
 	srv := &http.Server{
@@ -168,11 +177,17 @@ func main() {
 	slog.Info("zPush stopped")
 }
 
-// ensureAdminUser creates the default admin user on first boot if ADMIN_INITIAL_PASSWORD is set.
+// ensureAdminUser creates the initial admin user on first boot if ADMIN_INITIAL_PASSWORD is set.
+// The username is configurable via ADMIN_INITIAL_USER (default "admin"); both
+// only take effect when no admin user exists yet.
 func ensureAdminUser(db *sql.DB, cfg *config.Config) error {
 	if cfg.Admin.InitialPassword == "" {
 		slog.Warn("ADMIN_INITIAL_PASSWORD not set; skipping admin user creation")
 		return nil
+	}
+	username := cfg.Admin.InitialUsername
+	if username == "" {
+		username = "admin"
 	}
 
 	// Check if any admin user exists
@@ -193,13 +208,13 @@ func ensureAdminUser(db *sql.DB, cfg *config.Config) error {
 	}
 
 	_, err = db.Exec(
-		`INSERT INTO admin_users (id, username, password_hash) VALUES (?, 'admin', ?)`,
-		generateID(), string(hash),
+		`INSERT INTO admin_users (id, username, password_hash) VALUES (?, ?, ?)`,
+		generateID(), username, string(hash),
 	)
 	if err != nil {
 		return fmt.Errorf("create admin user: %w", err)
 	}
-	slog.Info("admin user created", "username", "admin")
+	slog.Info("admin user created", "username", username)
 	return nil
 }
 

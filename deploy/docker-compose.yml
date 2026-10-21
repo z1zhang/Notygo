@@ -6,7 +6,10 @@ services:
     ports:
       - "9003:9003"
     environment:
-      - DATABASE_DSN=zpush:zpush@tcp(mysql:3306)/zpush?parseTime=true
+      - DB_HOST=mysql
+      - DB_USER=zpush
+      - DB_PASSWORD=zpush
+      - DB_NAME=zpush
       - ENCRYPTION_MASTER_KEY=${ENCRYPTION_MASTER_KEY:-v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}
       - LOG_LEVEL=info
       - ADMIN_INITIAL_PASSWORD=${ADMIN_INITIAL_PASSWORD:-admin}

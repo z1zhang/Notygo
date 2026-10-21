@@ -7,7 +7,7 @@ import { toast } from 'sonner'
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
 import { FileText, Loader2, Pencil, Plus, Trash2 } from 'lucide-react'
-import { useI18n } from '@/i18n'
+import { useTranslation } from 'react-i18next'
 import {
   createTemplate,
   deleteTemplate,
@@ -100,7 +100,7 @@ function RenderedBody({ body, format }: { body: string; format: string }) {
 }
 
 export default function TemplatesPage() {
-  const { t } = useI18n()
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const { page, size, setPage, setSize } = usePagination()
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -294,7 +294,7 @@ export default function TemplatesPage() {
                   <TableCell className="text-muted-foreground">{row.name}</TableCell>
                   <TableCell>
                     <Badge variant="secondary">
-                      {t(`enums.templateFormat.${row.format}`, row.format)}
+                      {t(`enums.templateFormat.${row.format}`, { defaultValue: row.format })}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-muted-foreground">{row.revision}</TableCell>
@@ -382,7 +382,7 @@ export default function TemplatesPage() {
                   <SelectContent>
                     {FORMATS.map((f) => (
                       <SelectItem key={f} value={f}>
-                        {t('enums.templateFormat.' + f)}
+                        {t(`enums.templateFormat.${f}`)}
                       </SelectItem>
                     ))}
                   </SelectContent>

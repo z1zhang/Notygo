@@ -1,4 +1,8 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
+import { I18nextProvider, initReactI18next } from 'react-i18next'
+import i18next from 'i18next'
+import LanguageDetector from 'i18next-browser-languagedetector'
 import mainEn from './locales/en.json'
 import mainZh from './locales/zh.json'
 import eventsDeliveriesEn from './locales/extra/events-deliveries.en.json'
@@ -10,7 +14,7 @@ import rulesDestinationsZh from './locales/extra/rules-destinations.zh.json'
 import miscEn from './locales/extra/misc.en.json'
 import miscZh from './locales/extra/misc.zh.json'
 
-export type Locale = 'en' | 'zh'
+export type Locale = 'zh' | 'en'
 
 type Messages = Record<string, unknown>
 
@@ -28,97 +32,114 @@ function deepMerge(base: Messages, override: Messages): Messages {
   return result
 }
 
-const messages: Record<Locale, Messages> = {
-  en: [eventsDeliveriesEn, mappingsTemplatesEn, rulesDestinationsEn, miscEn].reduce(
-    (acc, cur) => deepMerge(acc, cur as Messages),
-    mainEn as Messages,
-  ),
-  zh: [eventsDeliveriesZh, mappingsTemplatesZh, rulesDestinationsZh, miscZh].reduce(
-    (acc, cur) => deepMerge(acc, cur as Messages),
-    mainZh as Messages,
-  ),
+const zhMessages = [eventsDeliveriesZh, mappingsTemplatesZh, rulesDestinationsZh, miscZh].reduce(
+  (acc, cur) => deepMerge(acc, cur as Messages),
+  mainZh as Messages,
+)
+const enMessages = [eventsDeliveriesEn, mappingsTemplatesEn, rulesDestinationsEn, miscEn].reduce(
+  (acc, cur) => deepMerge(acc, cur as Messages),
+  mainEn as Messages,
+)
+
+/** `{ts, relative}` → "3 分钟前" / "3 minutes ago". */
+function formatRelative(value: number, locale: string): string {
+  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' })
+  const seconds = (value - Date.now()) / 1000
+  const abs = Math.abs(seconds)
+  if (abs < 60) return rtf.format(Math.round(seconds), 'second')
+  if (abs < 3600) return rtf.format(Math.round(seconds / 60), 'minute')
+  if (abs < 86400) return rtf.format(Math.round(seconds / 3600), 'hour')
+  return rtf.format(Math.round(seconds / 86400), 'day')
 }
 
-const STORAGE_KEY = 'zpush-locale'
-
-function resolveKey(obj: unknown, key: string): unknown {
-  return key.split('.').reduce<unknown>((acc, part) => {
-    if (acc && typeof acc === 'object' && part in (acc as Messages)) {
-      return (acc as Messages)[part]
-    }
-    return undefined
-  }, obj)
-}
-
-function interpolate(template: string, params?: Record<string, unknown>): string {
-  if (!params) return template
-  return template.replace(/\{(\w+)\}/g, (m, name) => {
-    const v = params[name]
-    return v === undefined || v === null ? m : String(v)
-  })
-}
-
-function translate(locale: Locale, key: string, params?: Record<string, unknown>): string {
-  const value = resolveKey(messages[locale], key)
-  if (typeof value === 'string') return interpolate(value, params)
-  // fallback locale
-  const fallback = resolveKey(messages.en, key)
-  if (typeof fallback === 'string') return interpolate(fallback, params)
-  return key
-}
-
-interface I18nContextValue {
-  locale: Locale
-  setLocale: (locale: Locale) => void
-  t: (key: string, paramsOrFallback?: Record<string, unknown> | string) => string
-}
-
-const I18nContext = createContext<I18nContextValue | null>(null)
-
-function getInitialLocale(): Locale {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY)
-    if (saved === 'zh' || saved === 'en') return saved
-  } catch {
-    // ignore
-  }
-  return 'zh'
-}
-
-export function I18nProvider({ children }: { children: ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>(getInitialLocale)
-
-  useEffect(() => {
-    document.documentElement.setAttribute('lang', locale === 'zh' ? 'zh-CN' : 'en')
-  }, [locale])
-
-  const setLocale = useCallback((next: Locale) => {
-    setLocaleState(next)
-    try {
-      localStorage.setItem(STORAGE_KEY, next)
-    } catch {
-      // ignore
-    }
-  }, [])
-
-  const t = useCallback(
-    (key: string, paramsOrFallback?: Record<string, unknown> | string) => {
-      if (typeof paramsOrFallback === 'string') {
-        const result = translate(locale, key)
-        // vue-i18n behavior: t(key, fallback) returns fallback when key missing
-        if (result === key) return paramsOrFallback
-        return result
-      }
-      return translate(locale, key, paramsOrFallback)
+void i18next
+  .use(LanguageDetector)
+  .use(initReactI18next)
+  .init({
+    supportedLngs: ['zh', 'en'],
+    fallbackLng: 'en',
+    detection: {
+      // Previously: localStorage only, default zh. Now: browser language on
+      // first visit, persisted under the same zpush-locale key.
+      order: ['localStorage', 'navigator'],
+      lookupLocalStorage: 'zpush-locale',
+      caches: ['localStorage'],
     },
-    [locale],
-  )
+    resources: {
+      zh: { translation: zhMessages },
+      en: { translation: enMessages },
+    },
+    // Locales were written for single-brace {name} interpolation; React does
+    // its own escaping, so i18next's HTML escaping must stay off.
+    interpolation: {
+      prefix: '{',
+      suffix: '}',
+      escapeValue: false,
+    },
+    react: { useSuspense: false },
+  })
 
-  return <I18nContext.Provider value={{ locale, setLocale, t }}>{children}</I18nContext.Provider>
+// Built-in i18next v26 formatters cover {v, number}, {v, datetime(dateStyle: medium)},
+// {v, currency}, {v, list}… "X ago from a timestamp" needs the offset computed,
+// so register one custom formatter via the library's extension point.
+void (i18next.services?.formatter as { add: (name: string, fc: (lng: string) => (v: number) => string) => void } | undefined)
+  ?.add('relative', (lng) => (value) => formatRelative(Number(value), lng === 'en' ? 'en' : 'zh-CN'))
+
+// ── i18next TypeScript augmentation (the library's own key typing) ─────────
+// zh.json is the source of truth for the key set.
+
+/** zh is the source of truth for the key set. */
+type ZhMessages = typeof mainZh &
+  typeof eventsDeliveriesZh &
+  typeof mappingsTemplatesZh &
+  typeof rulesDestinationsZh &
+  typeof miscZh
+type EnMessages = typeof mainEn &
+  typeof eventsDeliveriesEn &
+  typeof mappingsTemplatesEn &
+  typeof rulesDestinationsEn &
+  typeof miscEn
+
+declare module 'i18next' {
+  interface CustomTypeOptions {
+    defaultNS: 'translation'
+    resources: { translation: ZhMessages }
+  }
 }
 
-export function useI18n(): I18nContextValue {
-  const ctx = useContext(I18nContext)
-  if (!ctx) throw new Error('useI18n must be used within I18nProvider')
-  return ctx
+type Primitive = string | number | boolean
+/** All dotted key paths of a nested locale tree. */
+type FlattenKeys<T, Prefix extends string = ''> = T extends Primitive
+  ? Prefix
+  : { [K in keyof T & string]: FlattenKeys<T[K], Prefix extends '' ? K : `${Prefix}.${K}`> }[keyof T & string]
+
+/** Cast helper for genuinely dynamic keys (enum values from the API). */
+export type TranslationKey = FlattenKeys<ZhMessages>
+
+type EnMissingKeys = Exclude<TranslationKey, FlattenKeys<EnMessages>>
+// Errors here ⇒ en.json (or an extra/*.en.json) is missing a zh key.
+const _enKeyParity: EnMissingKeys extends never ? true : never = true
+void _enKeyParity
+
+/** Keeps <html lang> in sync; react-i18next itself needs no provider. */
+export function I18nProvider({ children }: { children: ReactNode }) {
+  const { i18n } = useTranslation()
+  useEffect(() => {
+    i18n.on('languageChanged', sync)
+    return () => i18n.off('languageChanged', sync)
+    function sync(lng: string) {
+      document.documentElement.setAttribute('lang', lng === 'en' ? 'en' : 'zh-CN')
+    }
+  }, [i18n])
+  return <I18nextProvider i18n={i18next}>{children}</I18nextProvider>
+}
+
+export function useLocale(): { locale: Locale; setLocale: (locale: Locale) => void } {
+  const { i18n } = useTranslation()
+  return {
+    locale: (i18n.language === 'en' ? 'en' : 'zh') as Locale,
+    setLocale: (next: Locale) => {
+      void i18n.changeLanguage(next) // the detector persists it to localStorage
+    },
+  }
 }

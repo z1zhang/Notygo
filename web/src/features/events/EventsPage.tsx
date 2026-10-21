@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Webhook } from "lucide-react"
-import { useI18n } from "@/i18n"
+import { useTranslation } from "react-i18next"
 import { listEvents } from "@/lib/api"
 import { lookupName, useSourceOptions } from "@/hooks/use-lookup"
 import { usePagination } from "@/hooks/use-pagination"
@@ -41,7 +41,7 @@ function errorCell(
 }
 
 export default function EventsPage() {
-  const { t } = useI18n()
+  const { t } = useTranslation()
   const { page, size, setPage, setSize } = usePagination()
   const [statusFilter, setStatusFilter] = useState<string>(ALL)
   const [sourceFilter, setSourceFilter] = useState<string>(ALL)

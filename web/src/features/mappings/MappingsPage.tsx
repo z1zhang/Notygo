@@ -5,7 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { toast } from 'sonner'
 import { Braces, Check, ChevronDown, Loader2, Pencil, Plus, Search, Sparkles, Trash2 } from 'lucide-react'
-import { useI18n } from '@/i18n'
+import { useTranslation } from 'react-i18next'
 import { createMapping, deleteMapping, listMappings, previewParse, updateMapping } from '@/lib/api'
 import { getErrorMessage } from '@/lib/api-client'
 import type { MappingResponse, SuggestedField, StructureInfo } from '@/lib/types'
@@ -112,7 +112,7 @@ function valueTypeBadgeVariant(valueType: string): 'secondary' | 'outline' | 'de
 }
 
 export default function MappingsPage() {
-  const { t } = useI18n()
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const { page, size, setPage, setSize } = usePagination()
   const [dialogOpen, setDialogOpen] = useState(false)

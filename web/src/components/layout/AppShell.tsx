@@ -17,7 +17,8 @@ import {
   Shuffle,
   Wand2,
 } from 'lucide-react'
-import { useI18n } from '@/i18n'
+import { useTranslation } from 'react-i18next'
+import { type TranslationKey } from '@/i18n'
 import { cn } from '@/lib/utils'
 import { clearSession } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
@@ -28,7 +29,7 @@ import { ThemeToggle } from './ThemeToggle'
 
 interface NavItem {
   to: string
-  titleKey: string
+  titleKey: TranslationKey
   icon: ReactNode
 }
 
@@ -53,7 +54,7 @@ const bottomNav: NavItem[] = [
 ]
 
 function NavLinks({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
-  const { t } = useI18n()
+  const { t } = useTranslation()
 
   function renderLink(item: NavItem) {
     const link = (
@@ -112,7 +113,7 @@ function SidebarBrand({ collapsed }: { collapsed: boolean }) {
 }
 
 export function AppShell() {
-  const { t } = useI18n()
+  const { t } = useTranslation()
   const location = useLocation()
   const navigate = useNavigate()
   const [collapsed, setCollapsed] = useState(false)

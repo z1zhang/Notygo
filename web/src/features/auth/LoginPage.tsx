@@ -5,9 +5,9 @@ import { z } from 'zod'
 import { useNavigate, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
 import { Loader2, Lock, User } from 'lucide-react'
-import { useI18n } from '@/i18n'
+import { useTranslation } from 'react-i18next'
 import { login } from '@/lib/api'
-import { getErrorMessage, setSession } from '@/lib/api-client'
+import { getErrorMessage, setSession, ApiError } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { PasswordInput } from '@/components/ui/password-input'
@@ -21,7 +21,7 @@ const loginSchema = z.object({
 type LoginForm = z.infer<typeof loginSchema>
 
 export function LoginPage() {
-  const { t } = useI18n()
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [loading, setLoading] = useState(false)
@@ -46,7 +46,11 @@ export function LoginPage() {
       const redirect = searchParams.get('redirect')
       navigate(redirect && redirect.startsWith('/') ? redirect : '/dashboard', { replace: true })
     } catch (e) {
-      setError(getErrorMessage(e, t('login.failed')))
+      if (e instanceof ApiError && e.code === 'AUTH_001') {
+        setError(t('login.locked'))
+      } else {
+        setError(getErrorMessage(e, t('login.failed')))
+      }
     } finally {
       setLoading(false)
     }

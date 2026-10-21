@@ -111,8 +111,9 @@ func (s *WeComSender) Send(ctx context.Context, destConfig DestinationConfig, ms
 	}
 
 	result := &SendResult{
-		StatusCode: resp.StatusCode,
-		Body:       string(respBody),
+		StatusCode:     resp.StatusCode,
+		Body:           string(respBody),
+		RequestPayload: string(bodyBytes),
 	}
 
 	// Parse WeCom response for error code

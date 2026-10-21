@@ -7,9 +7,10 @@
     "selectedCount": "{n} selected"
   },
   "destinations": {
-    "description": "Delivery targets: DingTalk / Feishu / WeCom / Email / HTTP Webhook",
+    "description": "Delivery targets: DingTalk / Feishu / WeCom / Email / HTTP",
     "emptyTitle": "No destinations yet",
     "emptyDescription": "Create a destination to start receiving notifications",
-    "noHeaders": "No custom headers"
+    "noHeaders": "No custom headers",
+    "noBodyFields": "No custom request body"
   }
 }

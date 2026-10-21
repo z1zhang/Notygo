@@ -20,6 +20,7 @@ import (
 	"zpush/internal/notify"
 	"zpush/internal/observability"
 	"zpush/internal/rules"
+	"zpush/internal/sender"
 	"zpush/internal/secret"
 	"zpush/internal/source"
 	"zpush/internal/templates"
@@ -39,6 +40,8 @@ func NewRouter(
 	ingester *ingest.Ingester,
 	notifier *notify.Notifier,
 	auditRepo *audit.Repository,
+	loginGuard *loginGuard,
+	senderRegistry *sender.Registry,
 ) chi.Router {
 	r := chi.NewRouter()
 
@@ -61,10 +64,15 @@ func NewRouter(
 	r.Get("/healthz", Healthz)
 	r.Get("/readyz", Readyz(db))
 
+	// Notification API (data plane) — untrusted webhook traffic, isolated
+	// from the admin API namespace so proxies and logs can treat it
+	// separately. Source-level auth is enforced inside the handler.
+	r.Post("/ingest/{source_slug}", ingester.HandleIngest)
+
 	// API v1
 	r.Route("/api/v1", func(r chi.Router) {
 		// Auth endpoints (no auth required)
-		r.Post("/auth/login", LoginHandler(db))
+		r.Post("/auth/login", LoginHandler(db, auditRepo, loginGuard))
 
 		// Protected endpoints (require admin auth)
 		r.Group(func(r chi.Router) {
@@ -118,7 +126,7 @@ func NewRouter(
 					r.Get("/", GetDestination(db, secretSvc))
 					r.Put("/", UpdateDestination(db, secretSvc, auditRepo))
 					r.Delete("/", DeleteDestination(db, auditRepo))
-					r.Post("/test", placeholderHandler("destination.test"))
+					r.Post("/test", TestDestination(db, secretSvc, senderRegistry, auditRepo))
 				})
 			})
 
@@ -152,9 +160,6 @@ func NewRouter(
 			r.Post("/preview/template", PreviewTemplate(db))
 			r.Post("/preview/delivery", PreviewDelivery())
 		})
-
-		// Webhook ingest (source-level auth, not admin auth)
-		r.Post("/ingest/{source_slug}", ingester.HandleIngest)
 	})
 
 	// Serve frontend static files (if web/dist exists)
@@ -181,7 +186,7 @@ func serveFrontend(r chi.Router) {
 	// SPA fallback: any non-API route serves a real file from the dist root
 	// when one exists (favicon.svg etc.), otherwise index.html.
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/api/") {
+		if strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/ingest/") {
 			WriteError(w, http.StatusNotFound, "CONFIG_001", "endpoint not found")
 			return
 		}
@@ -201,9 +206,3 @@ func isRegularFile(p string) bool {
 	return err == nil && !info.IsDir()
 }
 
-// placeholderHandler returns a temporary handler that returns 501 Not Implemented.
-func placeholderHandler(name string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		WriteError(w, http.StatusNotImplemented, "SYSTEM_000", name+": not yet implemented")
-	}
-}

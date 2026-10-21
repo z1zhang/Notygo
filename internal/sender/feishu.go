@@ -117,8 +117,9 @@ func (s *FeishuSender) Send(ctx context.Context, destConfig DestinationConfig, m
 	}
 
 	result := &SendResult{
-		StatusCode: resp.StatusCode,
-		Body:       string(respBody),
+		StatusCode:     resp.StatusCode,
+		Body:           string(respBody),
+		RequestPayload: string(bodyBytes),
 	}
 
 	// Parse Feishu response for error code

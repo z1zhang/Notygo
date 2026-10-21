@@ -59,6 +59,7 @@
     "passwordRequired": "Please enter password",
     "success": "Login successful",
     "failed": "Login failed. Please check your credentials",
+    "locked": "Too many failed attempts, try again later",
     "sessionExpired": "Session expired. Please log in again"
   },
   "dashboard": {
@@ -255,7 +256,7 @@
     "feishu": "Feishu (Lark)",
     "wecom": "WeCom",
     "email": "Email",
-    "httpWebhook": "HTTP Webhook",
+    "httpWebhook": "HTTP",
     "webhookUrl": "Webhook URL",
     "msgType": "Message Type",
     "smtpHost": "SMTP Server",
@@ -271,8 +272,19 @@
     "headers": "Custom Headers",
     "headerKey": "Header Name",
     "headerValue": "Header Value",
-    "addHeader": "Add Header",
-    "bodyTemplate": "Body Template",
+    "addHeader": "Add Field",
+    "bodyFields": "Custom Request Body",
+    "addField": "Add Field",
+    "typeField": "Field",
+    "fieldKey": "Field name",
+    "fieldValue": "Field value",
+    "sourceTitle": "Template title",
+    "sourceBody": "Template body",
+    "sourceFormat": "Format",
+    "sourceLiteral": "Custom",
+    "groupObject": "Object",
+    "groupArray": "Array",
+    "arrayItem": "Item",
     "secret": "Secret",
     "secretEditPlaceholder": "Leave blank to keep current",
     "secretPlaceholder": "API secret or token",
@@ -289,7 +301,10 @@
     "destinationDisabled": "Destination disabled",
     "failedToLoadDestinations": "Failed to load destinations",
     "failedToSaveDestination": "Failed to save destination",
-    "failedToToggleDestination": "Failed to toggle destination"
+    "failedToToggleDestination": "Failed to toggle destination",
+    "test": "Test",
+    "testSuccess": "Test message sent",
+    "testFailed": "Test send failed"
   },
   "events": {
     "eventDetail": "Event Detail",
@@ -400,7 +415,7 @@
       "feishu": "Feishu",
       "wecom": "WeCom",
       "email": "Email",
-      "http_webhook": "HTTP Webhook"
+      "http_webhook": "HTTP"
     },
     "authType": {
       "none": "None",
@@ -493,6 +508,8 @@
   },
   "pagination": {
     "range": "Showing {start}-{end} of {total}",
+    "range_one": "Showing {start}-{end} of {total} record",
+    "range_other": "Showing {start}-{end} of {total} records",
     "pageUnit": "page",
     "prev": "Previous",
     "next": "Next",

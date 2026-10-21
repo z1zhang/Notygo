@@ -85,7 +85,7 @@ func (s *EmailSender) Send(ctx context.Context, destConfig DestinationConfig, ms
 		timeout = 10 * time.Second
 	}
 
-	result := &SendResult{}
+	result := &SendResult{RequestPayload: buf.String()}
 
 	var err error
 	if cfg.UseTLS {

@@ -1,6 +1,6 @@
 import { Monitor, Moon, Sun } from 'lucide-react'
 import { useTheme } from '@/app/theme'
-import { useI18n } from '@/i18n'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -11,7 +11,7 @@ import {
 
 export function ThemeToggle() {
   const { theme, setTheme } = useTheme()
-  const { t } = useI18n()
+  const { t } = useTranslation()
 
   return (
     <DropdownMenu>

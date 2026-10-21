@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"zpush/internal/audit"
 	"zpush/internal/destination"
 	"zpush/internal/secret"
+	"zpush/internal/sender"
 )
 
 // ListDestinations returns a paginated list of destinations.
@@ -183,6 +185,98 @@ func DeleteDestination(db *sql.DB, auditRepo *audit.Repository) http.HandlerFunc
 			slog.Error("audit log insert failed", "action", "delete", "target_type", "destination", "error", auditErr)
 		}
 	}
+}
+
+// TestDestination sends a test message through the destination, exercising
+// the same sender/config code path as real deliveries. The outcome (success
+// or failure) is written to the audit log.
+func TestDestination(db *sql.DB, secretSvc *secret.Service, senderRegistry *sender.Registry, auditRepo *audit.Repository) http.HandlerFunc {
+	repo := destination.NewRepository(db)
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := chi.URLParam(r, "id")
+		dest, err := repo.GetByID(r.Context(), id)
+		if err != nil {
+			WriteError(w, http.StatusNotFound, ErrConfigValidation, "destination not found")
+			return
+		}
+
+		s, err := senderRegistry.Get(string(dest.Type))
+		if err != nil {
+			WriteError(w, http.StatusBadRequest, ErrConfigValidation, err.Error())
+			return
+		}
+
+		// Build the exact config a real delivery would use
+		cfg := destination.BuildSenderConfig(dest, secretSvc)
+		if cfg.Timeout <= 0 {
+			cfg.Timeout = 10 * time.Second
+		}
+
+		msg := sender.RenderedMessage{
+			Title:  "zPush 测试消息",
+			Body:   fmt.Sprintf("渠道「%s」测试发送\n时间 %s", dest.Name, time.Now().Format("2006-01-02 15:04:05")),
+			Format: "text",
+		}
+
+		result, err := s.Send(r.Context(), cfg, msg)
+
+		// Transport-level failure
+		if err != nil {
+			auditDestinationTest(r, auditRepo, dest, "failed", err.Error())
+			WriteError(w, http.StatusBadGateway, "DELIVER_001", err.Error())
+			return
+		}
+
+		// 2xx + no business error code = success
+		businessOK := result.BusinessCode == "" || result.BusinessCode == "0"
+		if result.StatusCode >= 200 && result.StatusCode < 300 && businessOK {
+			auditDestinationTest(r, auditRepo, dest, "success", fmt.Sprintf("status %d", result.StatusCode))
+			WriteJSON(w, http.StatusOK, map[string]any{
+				"success":       true,
+				"status_code":   result.StatusCode,
+				"response_body": truncateResponse(result.Body),
+			})
+			return
+		}
+
+		// HTTP-level or business-level failure (e.g. DingTalk errcode != 0)
+		detail := fmt.Sprintf("status %d", result.StatusCode)
+		if result.BusinessCode != "" && result.BusinessCode != "0" {
+			detail = fmt.Sprintf("status %d, business code %s", result.StatusCode, result.BusinessCode)
+		}
+		if snippet := truncateResponse(result.Body); snippet != "" {
+			detail += ": " + snippet
+		}
+		auditDestinationTest(r, auditRepo, dest, "failed", detail)
+		WriteError(w, http.StatusBadGateway, "DELIVER_004", "test send failed ("+detail+")")
+	}
+}
+
+// auditDestinationTest records a destination test-send outcome; a write
+// failure is logged but never blocks the response.
+func auditDestinationTest(r *http.Request, auditRepo *audit.Repository, dest *destination.Destination, outcome, detail string) {
+	if auditRepo == nil {
+		return
+	}
+	summary := fmt.Sprintf("tested destination %q: %s (%s)", dest.Name, outcome, detail)
+	if err := auditRepo.Insert(r.Context(), &audit.AuditLog{
+		Operator:   GetUsernameFromContext(r.Context()),
+		Action:     "test",
+		TargetType: "destination",
+		TargetID:   dest.ID,
+		Summary:    &summary,
+	}); err != nil {
+		slog.Error("audit log insert failed", "action", "test", "target_type", "destination", "error", err)
+	}
+}
+
+// truncateResponse clamps a sender response body for display.
+func truncateResponse(body string) string {
+	const max = 200
+	if len(body) > max {
+		return body[:max] + "...(truncated)"
+	}
+	return body
 }
 
 // toDestinationResponse converts a Destination to a DestinationResponse, masking the secret.

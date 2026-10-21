@@ -103,6 +103,11 @@ export const updateDestination = (id: string, data: Record<string, unknown>) =>
 
 export const deleteDestination = (id: string) => apiClient.delete<void>(`${BASE}/destinations/${id}`)
 
+export const testDestination = (id: string) =>
+  apiClient.post<{ success: boolean; status_code?: number; response_body?: string }>(
+    `${BASE}/destinations/${id}/test`,
+  )
+
 // ── Events ───────────────────────────────────────────────
 
 export const listEvents = (params: {

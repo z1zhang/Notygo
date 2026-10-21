@@ -1,5 +1,5 @@
 import { Languages } from 'lucide-react'
-import { useI18n, type Locale } from '@/i18n'
+import { useLocale } from '@/i18n'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 
 export function LocaleSwitch() {
-  const { locale, setLocale } = useI18n()
+  const { locale, setLocale } = useLocale()
 
   return (
     <DropdownMenu>
@@ -21,13 +21,13 @@ export function LocaleSwitch() {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         <DropdownMenuItem
-          onClick={() => setLocale('zh' as Locale)}
+          onClick={() => setLocale('zh')}
           data-active={locale === 'zh'}
         >
           中文
         </DropdownMenuItem>
         <DropdownMenuItem
-          onClick={() => setLocale('en' as Locale)}
+          onClick={() => setLocale('en')}
           data-active={locale === 'en'}
         >
           English

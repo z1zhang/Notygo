@@ -14,10 +14,26 @@ import (
 
 // HTTPWebhookConfig holds the configuration for a generic HTTP webhook sender.
 type HTTPWebhookConfig struct {
-	URL          string            `json:"url"`
-	Method       string            `json:"method"`        // GET, POST, PUT, etc.
-	Headers      map[string]string `json:"headers"`       // Custom headers
-	BodyTemplate string            `json:"body_template"` // Optional Go template for body
+	URL        string            `json:"url"`
+	Method     string            `json:"method"`  // GET, POST, PUT, etc.
+	Headers    map[string]string `json:"headers"` // Custom headers
+	BodyFields []BodyField       `json:"body_fields"` // Structured body tree
+}
+
+// BodyField is one node of the request-body tree. A leaf maps a JSON key to
+// a value source ("title"|"body"|"format"|"literal"); a group (type
+// "object"|"array") nests children under a key. Multiple keys may map the
+// same source. Inside an array, child keys are ignored (position decides).
+type BodyField struct {
+	Key      string      `json:"key"`
+	Source   string      `json:"source,omitempty"` // leaf only
+	Value    string      `json:"value,omitempty"`  // literal source only
+	Type     string      `json:"type,omitempty"`   // group only: "object" | "array"
+	Children []BodyField `json:"children,omitempty"`
+}
+
+func (f BodyField) isGroup() bool {
+	return f.Type == "object" || f.Type == "array"
 }
 
 // HTTPWebhookSender sends messages via generic HTTP webhooks with SSRF protection.
@@ -49,13 +65,24 @@ func (s *HTTPWebhookSender) Send(ctx context.Context, destConfig DestinationConf
 		method = http.MethodPost
 	}
 
-	// Build request body
+	// Build request body; the exact bytes are captured for the delivery attempt log.
 	var bodyReader io.Reader
+	var wirePayload string
 	if method != http.MethodGet && method != http.MethodHead {
-		// If a body template is provided, use it; otherwise send the rendered message as JSON
-		if cfg.BodyTemplate != "" {
-			bodyReader = strings.NewReader(cfg.BodyTemplate)
-		} else {
+		// Priority: body_fields (structured tree) > default {title, body, format}
+		switch {
+		case len(cfg.BodyFields) > 0:
+			bodyValue, err := buildBodyFields(cfg.BodyFields, msg)
+			if err != nil {
+				return nil, fmt.Errorf("invalid body_fields: %w", err)
+			}
+			bodyBytes, err := json.Marshal(bodyValue)
+			if err != nil {
+				return nil, fmt.Errorf("marshal webhook payload: %w", err)
+			}
+			wirePayload = string(bodyBytes)
+			bodyReader = bytes.NewReader(bodyBytes)
+		default:
 			payload := map[string]string{
 				"title":  msg.Title,
 				"body":   msg.Body,
@@ -65,6 +92,7 @@ func (s *HTTPWebhookSender) Send(ctx context.Context, destConfig DestinationConf
 			if err != nil {
 				return nil, fmt.Errorf("marshal webhook payload: %w", err)
 			}
+			wirePayload = string(bodyBytes)
 			bodyReader = bytes.NewReader(bodyBytes)
 		}
 	}
@@ -103,8 +131,9 @@ func (s *HTTPWebhookSender) Send(ctx context.Context, destConfig DestinationConf
 	}
 
 	result := &SendResult{
-		StatusCode: resp.StatusCode,
-		Body:       string(respBody),
+		StatusCode:     resp.StatusCode,
+		Body:           string(respBody),
+		RequestPayload: wirePayload,
 	}
 
 	// Determine retryability
@@ -115,6 +144,101 @@ func (s *HTTPWebhookSender) Send(ctx context.Context, destConfig DestinationConf
 	}
 
 	return result, nil
+}
+
+// buildBodyFields assembles the top-level JSON object from the body field tree.
+func buildBodyFields(fields []BodyField, msg RenderedMessage) (any, error) {
+	root := make(map[string]any, len(fields))
+	for _, f := range fields {
+		if f.Key == "" {
+			return nil, fmt.Errorf("top-level field with empty key")
+		}
+		if _, dup := root[f.Key]; dup {
+			return nil, fmt.Errorf("duplicate key %q", f.Key)
+		}
+		if f.isGroup() {
+			v, err := buildGroupValue(f, msg, "at "+f.Key)
+			if err != nil {
+				return nil, err
+			}
+			root[f.Key] = v
+			continue
+		}
+		v, err := resolveBodySource(f, msg)
+		if err != nil {
+			return nil, err
+		}
+		root[f.Key] = v
+	}
+	return root, nil
+}
+
+// buildGroupValue assembles an object or array group node.
+// Keys of children are ignored inside arrays (position decides).
+func buildGroupValue(g BodyField, msg RenderedMessage, where string) (any, error) {
+	if g.Type == "array" {
+		arr := make([]any, 0, len(g.Children))
+		for i, c := range g.Children {
+			if c.isGroup() {
+				v, err := buildGroupValue(c, msg, fmt.Sprintf("%s[%d]", where, i))
+				if err != nil {
+					return nil, err
+				}
+				arr = append(arr, v)
+				continue
+			}
+			v, err := resolveBodySource(c, msg)
+			if err != nil {
+				return nil, fmt.Errorf("%s[%d]: %w", where, i, err)
+			}
+			arr = append(arr, v)
+		}
+		return arr, nil
+	}
+
+	// object
+	m := make(map[string]any, len(g.Children))
+	for _, c := range g.Children {
+		if c.Key == "" {
+			return nil, fmt.Errorf("%s: child field with empty key", where)
+		}
+		if _, dup := m[c.Key]; dup {
+			return nil, fmt.Errorf("%s: duplicate key %q", where, c.Key)
+		}
+		if c.isGroup() {
+			v, err := buildGroupValue(c, msg, where+"."+c.Key)
+			if err != nil {
+				return nil, err
+			}
+			m[c.Key] = v
+			continue
+		}
+		v, err := resolveBodySource(c, msg)
+		if err != nil {
+			return nil, fmt.Errorf("%s.%s: %w", where, c.Key, err)
+		}
+		m[c.Key] = v
+	}
+	return m, nil
+}
+
+// resolveBodySource maps a leaf to its value from the rendered message.
+func resolveBodySource(f BodyField, msg RenderedMessage) (string, error) {
+	switch f.Source {
+	case "title":
+		return msg.Title, nil
+	case "body":
+		return msg.Body, nil
+	case "format":
+		return msg.Format, nil
+	case "literal":
+		return f.Value, nil
+	default:
+		if f.Source == "" {
+			return "", fmt.Errorf("field %q has no value source", f.Key)
+		}
+		return "", fmt.Errorf("field %q has invalid source %q", f.Key, f.Source)
+	}
 }
 
 // checkSSRF resolves the host from the URL and rejects private/internal IP addresses.
