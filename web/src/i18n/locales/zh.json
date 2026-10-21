@@ -60,7 +60,8 @@
     "success": "登录成功",
     "failed": "登录失败，请检查用户名和密码",
     "locked": "失败次数过多，请稍后再试",
-    "sessionExpired": "会话已过期，请重新登录"
+    "sessionExpired": "会话已过期，请重新登录",
+    "demoHint": "演示模式：数据保存在浏览器本地，任意账号密码均可登录"
   },
   "dashboard": {
     "totalEvents": "事件总数",

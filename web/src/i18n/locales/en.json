@@ -60,7 +60,8 @@
     "success": "Login successful",
     "failed": "Login failed. Please check your credentials",
     "locked": "Too many failed attempts, try again later",
-    "sessionExpired": "Session expired. Please log in again"
+    "sessionExpired": "Session expired. Please log in again",
+    "demoHint": "Demo mode: data is stored in your browser, any credentials will work"
   },
   "dashboard": {
     "totalEvents": "Total Events",

@@ -1,6 +1,6 @@
 services:
   zpush:
-    image: zhangz1o/zpush:v0.7.1
+    image: zhangz1o/zpush:v0.7.3
     container_name: ${CONTAINER_NAME}
     restart: always
     networks:

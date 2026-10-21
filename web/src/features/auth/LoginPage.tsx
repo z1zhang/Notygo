@@ -8,6 +8,7 @@ import { Loader2, Lock, User } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { login } from '@/lib/api'
 import { getErrorMessage, setSession, ApiError } from '@/lib/api-client'
+import { isDemoMode } from '@/lib/demo/mode'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { PasswordInput } from '@/components/ui/password-input'
@@ -114,6 +115,10 @@ export function LoginPage() {
             {t('login.submit')}
           </Button>
         </form>
+
+        {isDemoMode ? (
+          <p className="text-center text-xs text-muted-foreground">{t('login.demoHint')}</p>
+        ) : null}
       </div>
     </div>
   )

@@ -105,7 +105,16 @@ deploy/              — docker-compose.yml
 - **Markdown/HTML 渲染**：一律 DOMPurify.sanitize 后再 dangerouslySetInnerHTML
 - **深浅主题**：next-themes，class 策略，storageKey `zpush-theme`；语言存 `zpush-locale`
 
-## 环境变量
+## 在线演示模式（Netlify）
+
+- `VITE_DEMO_MODE=true`（构建期 env）时，`api-client.ts` 的所有请求经动态 import 转给 `web/src/lib/demo/handler.ts`——纯前端 mock 层，正常构建不会加载该 chunk，后端零改动
+- `demo/seed.ts` 种子数据（Diun + CI 场景，时间相对 now 生成）→ `demo/store.ts` 存 localStorage `zpush-demo-db`，清站点数据即重置；登录任意非空账密放行（登录页 `login.demoHint` 提示）
+- `demo/preview.ts` 用 JS 复刻了后端预览管线：gjson 路径子集（`#`/`#.field`/数字下标）、multi_result_mode（first/array/count/join）、to_upper/to_lower/trim、Go 模板安全子集（字段访问 + upper/lower/trim/title/len/default + range + `{{- -}}`，缺失键输出 `<no value>`）。**改后端映射/模板行为时记得同步这里**
+- `demo/handler.ts` 复刻 `router.go` 的路由：五实体 CRUD（merge 部分更新 + revision 递增 + 审计）、事件/投递详情（latest_run / attempts）、test/replay、retry 与 bulk-retry（模拟立即送达，真后端是重置为 pending）、dashboard 实时计算
+- 冒烟测试：`cd web && node --experimental-strip-types --import ./scripts/register-ts-resolve.mjs scripts/demo-smoke.mts`
+- 部署：仓库根 `netlify.toml`（base=web，Netlify 构建时注入 VITE_DEMO_MODE=true）；Docker 镜像构建不注入该 env，始终正常模式
+
+
 
 | 变量 | 默认 | 说明 |
 |---|---|---|

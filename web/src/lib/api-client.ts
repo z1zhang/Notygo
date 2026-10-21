@@ -1,4 +1,5 @@
 import type { ApiErrorEnvelope } from './types'
+import { DemoHttpError, isDemoMode } from './demo/mode'
 
 const TOKEN_KEY = 'token'
 const EXPIRES_KEY = 'expiresAt'
@@ -71,6 +72,20 @@ async function request<T>(
   body?: unknown,
   params?: Record<string, string | number | undefined>,
 ): Promise<T> {
+  // Demo mode: answer from the in-browser mock database instead of the
+  // backend (dynamic import keeps the demo code out of normal builds).
+  if (isDemoMode) {
+    const { demoRequest } = await import('./demo/handler')
+    try {
+      return await demoRequest<T>(method, path, body, params)
+    } catch (e) {
+      if (e instanceof DemoHttpError) {
+        throw new ApiError(e.status, e.code, e.message)
+      }
+      throw e
+    }
+  }
+
   let url = path
   if (params) {
     const search = new URLSearchParams()

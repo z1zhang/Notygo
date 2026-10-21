@@ -1,0 +1,17 @@
+# Netlify 部署配置 — 在线演示站（纯前端 + 浏览器本地模拟数据）
+# VITE_DEMO_MODE=true 时所有 API 请求由前端 mock 层接管，无需后端与数据库
+
+[build]
+  base = "web"
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+  VITE_DEMO_MODE = "true"
+
+# SPA 路由回退
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
