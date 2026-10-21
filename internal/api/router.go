@@ -20,8 +20,8 @@ import (
 	"zpush/internal/notify"
 	"zpush/internal/observability"
 	"zpush/internal/rules"
-	"zpush/internal/sender"
 	"zpush/internal/secret"
+	"zpush/internal/sender"
 	"zpush/internal/source"
 	"zpush/internal/templates"
 )
@@ -60,9 +60,12 @@ func NewRouter(
 		})
 	})
 
-	// Health endpoints (no auth)
+	// Health endpoints (no auth). HEAD is served for busybox wget --spider
+	// (Docker healthchecks), which probes with HEAD instead of GET.
 	r.Get("/healthz", Healthz)
+	r.Head("/healthz", Healthz)
 	r.Get("/readyz", Readyz(db))
+	r.Head("/readyz", Readyz(db))
 
 	// Notification API (data plane) — untrusted webhook traffic, isolated
 	// from the admin API namespace so proxies and logs can treat it
@@ -205,4 +208,3 @@ func isRegularFile(p string) bool {
 	info, err := os.Stat(p)
 	return err == nil && !info.IsDir()
 }
-
