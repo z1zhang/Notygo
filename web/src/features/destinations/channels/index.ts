@@ -40,6 +40,7 @@ export const destinationSchema = z
     type: z.enum(DEST_TYPES),
     secret: z.string(),
     timeout_ms: z.number().min(1000),
+    max_attempts: z.number().int().min(1).max(100),
     enabled: z.boolean(),
     ...Object.assign({}, ...MODULES.map((m) => m.formSchema)),
   })
@@ -52,6 +53,7 @@ export type DestinationForm = {
   type: DestType
   secret: string
   timeout_ms: number
+  max_attempts: number
   enabled: boolean
 } & WebhookFormFields &
   EmailFormFields &
@@ -62,6 +64,7 @@ export const defaultForm: DestinationForm = {
   type: 'http',
   secret: '',
   timeout_ms: 10000,
+  max_attempts: 5,
   enabled: true,
   ...Object.assign({}, ...MODULES.map((m) => m.defaults)),
 } as DestinationForm

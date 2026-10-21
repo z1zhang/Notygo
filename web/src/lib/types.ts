@@ -108,6 +108,7 @@ export interface DestinationResponse {
   /** Decrypted plaintext secret from the server */
   secret_ref?: string | null
   timeout_ms: number
+  max_attempts?: number
   revision: number
   created_at?: string
   updated_at?: string

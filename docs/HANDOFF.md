@@ -39,6 +39,8 @@ zPush 是自托管 Webhook 事件路由与通知推送系统（Go 1.26 + chi + M
     - 边界类型放宽：`AnyForm`（Record<string, any>）+ 少量 `as never`/`as unknown as` 文档化断言（zod v4 递归 z.lazy 推断退化为 unknown[]，与此前单体页面同样的问题）
     - 修过的坑：httpWebhook.tsx 曾误从 react-hook-form 导入 useTranslation；index.ts 的 `uniqueModules` 需导出（页面 handleTypeChange 用）
     - 新增渠道前端侧 = 一个模块文件 + index.ts 两行（DEST_TYPES + CHANNELS）；README「新增一种投递渠道」步骤 3 与 CLAUDE.md 目录结构已同步
+13. **渠道类型 `http_webhook` 重命名为 `http`**：sender 注册键/Go 文件（`http.go`）与标识符（HTTPConfig/HTTPSender）/前端 DEST_TYPES/i18n 键全栈统一；新增迁移 010 把存量 `destinations.type='http_webhook'` 平滑改为 `'http'`（含 Down，embed FS 启动自动执行）。外部脚本用 API 创建渠道需改传 `"http"`。同时移除从未使用的 `EVENT_RETENTION_DAYS`（配置加载存在、清理逻辑始终未实现，属死配置）
+14. **渠道级投递重试次数（max_attempts）**：destinations 新增 `max_attempts` 列（迁移 011，默认 5），模型/仓库/创建与更新请求全部带指针字段（部分更新语义与 timeout_ms 一致）；handler 校验 1–100；processor 创建投递时逐渠道 `destRepo.GetByID` 取值，≤0 或渠道缺失回退常量 5（原 `DEFAULT_MAX_ATTEMPTS` env 已按用户要求移除——前端已有渠道级配置，回退仅覆盖渠道被删的边缘场景）。前端表单公共区在超时旁加数字输入（zod 1–100），i18n 键 `destinations.maxAttempts`。注意：修改渠道的 max_attempts 只影响之后新建的投递，存量投递行创建时已固化的次数不变
 
 验证：`go build/vet/test` 全过，`tsc -b --noEmit` 过、`npm run build` 过。**Docker/运行时冒烟未做（本机无 docker/MySQL）**；用户现有 webhook 调用方需要把 URL 改成 `/ingest/{slug}`（曾短暂定为 `/push/{slug}`，最终用户改回 ingest）。
 
@@ -57,7 +59,7 @@ zPush 是自托管 Webhook 事件路由与通知推送系统（Go 1.26 + chi + M
 **没有卡住的东西。** 待办清单：
 
 1. **Sheet（右侧详情抽屉）和 AlertDialog（确认框）仍会自动聚焦**——用户只要了弹窗（Dialog）不聚焦，Sheet/AlertDialog 没动。用户若再提，照 `dialog.tsx` 的 `onOpenAutoFocus` 模式改 `sheet.tsx` / `alert-dialog.tsx`
-2. 后端遗留（见 `docs/CLAUDE.md` 已知问题）：规则引用不到未映射字段、EVENT_RETENTION_DAYS 无清理、Settings 无配置 API、Docker 构建未验证（`destinations/{id}/test` 已于 2026-10-21 实现）
+2. 后端遗留（见 `docs/CLAUDE.md` 已知问题）：规则引用不到未映射字段、Settings 无配置 API、Docker 构建未验证（`destinations/{id}/test` 已于 2026-10-21 实现）
 3. **`docs/CLAUDE.md` 有几行已过时**：还写着 "next-themes"、"Dashboard 统计用 4 次 API"、favicon 问题——这三项本会话/上会话已修，新会话顺手更新掉
 4. 上会话的 Go 后端修复（PROCESSOR_005 渲染失败拦截、`/dashboard/stats` 端点、批量重试校验、favicon 静态服务）在提交 `68455ac` 里，**需要重启 Go 服务才生效**，用户未确认重启过
 

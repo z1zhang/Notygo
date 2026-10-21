@@ -94,6 +94,7 @@ export default function DestinationsPage() {
         type: data.type,
         config: channelModule(data.type).toConfig(data),
         timeout_ms: data.timeout_ms,
+        max_attempts: data.max_attempts,
         enabled: data.enabled,
       }
       if (data.secret !== '' && data.secret !== originalSecretRef.current) {
@@ -175,6 +176,9 @@ export default function DestinationsPage() {
       timeout_ms: typeof row.timeout_ms === 'number' && Number.isFinite(row.timeout_ms)
         ? row.timeout_ms
         : 10000,
+      max_attempts: typeof row.max_attempts === 'number' && row.max_attempts >= 1
+        ? row.max_attempts
+        : 5,
       enabled: row.enabled,
       ...allChannelDefaults(),
       ...module.fromConfig(config, rowType),
@@ -410,16 +414,28 @@ export default function DestinationsPage() {
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="destination-timeout">{t('destinations.timeoutMs')}</Label>
-                <UnitInput
-                  id="destination-timeout"
-                  type="number"
-                  min={1000}
-                  step={1000}
-                  unit={t('destinations.msUnit')}
-                  {...form.register('timeout_ms', { valueAsNumber: true })}
-                />
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="destination-timeout">{t('destinations.timeoutMs')}</Label>
+                  <UnitInput
+                    id="destination-timeout"
+                    type="number"
+                    min={1000}
+                    step={1000}
+                    unit={t('destinations.msUnit')}
+                    {...form.register('timeout_ms', { valueAsNumber: true })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="destination-max-attempts">{t('destinations.maxAttempts')}</Label>
+                  <Input
+                    id="destination-max-attempts"
+                    type="number"
+                    min={1}
+                    max={100}
+                    {...form.register('max_attempts', { valueAsNumber: true })}
+                  />
+                </div>
               </div>
             </div>
 

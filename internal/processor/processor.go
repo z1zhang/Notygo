@@ -422,9 +422,15 @@ func (p *EventProcessor) renderAndCreateDeliveries(ctx context.Context, evt *eve
 
 	nextAttemptAt := time.Now().UTC()
 
-	// Create deliveries for each destination
+	// Create deliveries for each destination. The retry budget comes from the
+	// destination's max_attempts (fallback: DB default 5 for deleted/legacy rows).
 	for _, destID := range rule.DestinationIDs {
 		idempotencyKey := fmt.Sprintf("%s-%s-%s-%s", evt.ID, run.ID, rule.ID, destID)
+
+		maxAttempts := 5
+		if dest, err := p.destRepo.GetByID(ctx, destID); err == nil && dest.MaxAttempts > 0 {
+			maxAttempts = dest.MaxAttempts
+		}
 
 		d := &delivery.Delivery{
 			EventID:        evt.ID,
@@ -433,7 +439,7 @@ func (p *EventProcessor) renderAndCreateDeliveries(ctx context.Context, evt *eve
 			DestinationID:  destID,
 			IdempotencyKey: idempotencyKey,
 			Status:         delivery.DeliveryStatusPending,
-			MaxAttempts:    p.cfg.DefaultMaxAttempts,
+			MaxAttempts:    maxAttempts,
 			NextAttemptAt:  nextAttemptAt,
 			RenderedTitle:  &renderedTitle,
 			RenderedBody:   &renderedBody,

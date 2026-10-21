@@ -119,7 +119,10 @@ deploy/              — docker-compose.yml
 | LOG_LEVEL | info | |
 | EVENT_PROCESSOR_CONCURRENCY | 4 | |
 | DELIVERY_WORKER_CONCURRENCY | 8 | |
-| EVENT_RETENTION_DAYS | 30 | 保留天数（配置存在，清理逻辑未实现） |
+| CLAIM_POLL_INTERVAL | 2s | Worker 认领轮询间隔 |
+| LEASE_TIMEOUT | 30s | 认领租约超时（超时由回收器接管） |
+| MAX_PAYLOAD_BYTES | 1048576 | Webhook Payload 最大字节数 |
+| INGEST_GLOBAL_RATE_LIMIT | 100/200 | 全局限流（rate/burst） |
 
 ## 后端已修复项
 
@@ -133,7 +136,6 @@ deploy/              — docker-compose.yml
 
 - 规则评估只看映射字段，未映射的字段规则引用不到
 - `destinations/{id}/test` 已实现（2026-10-21）：真实测试发送，复用 `destination.BuildSenderConfig`（从 delivery worker 抽出共享），审计 action `test`
-- `EVENT_RETENTION_DAYS` 配置存在但没有定时清理逻辑
 - Dashboard 统计用 4 次 API 请求拼凑，应改为专用后端端点
 - Settings 页的系统配置项（保留天数、并发数等）无 API 暴露，只显示环境变量说明（诚实降级）
 - `/favicon.svg` 由 SPA fallback 返回 index.html（Go 端只服务 /assets/*；与旧版行为一致）

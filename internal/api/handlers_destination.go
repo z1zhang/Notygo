@@ -60,6 +60,10 @@ func CreateDestination(db *sql.DB, secretSvc *secret.Service, auditRepo *audit.R
 			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "type is required")
 			return
 		}
+		if req.MaxAttempts != nil && (*req.MaxAttempts < 1 || *req.MaxAttempts > 100) {
+			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "max_attempts must be between 1 and 100")
+			return
+		}
 
 		// Encrypt secret if provided
 		if req.SecretRef != nil && *req.SecretRef != "" && secretSvc != nil {
@@ -119,6 +123,10 @@ func UpdateDestination(db *sql.DB, secretSvc *secret.Service, auditRepo *audit.R
 		var req destination.UpdateDestinationRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "invalid request body")
+			return
+		}
+		if req.MaxAttempts != nil && (*req.MaxAttempts < 1 || *req.MaxAttempts > 100) {
+			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "max_attempts must be between 1 and 100")
 			return
 		}
 
@@ -287,10 +295,11 @@ func toDestinationResponse(d *destination.Destination, secretSvc *secret.Service
 		Name:      d.Name,
 		Type:      d.Type,
 		Enabled:   d.Enabled,
-		Config:    d.Config,
-		SecretRef: maskedSecretRef,
-		TimeoutMs: d.TimeoutMs,
-		Revision:  d.Revision,
+		Config:      d.Config,
+		SecretRef:   maskedSecretRef,
+		TimeoutMs:   d.TimeoutMs,
+		MaxAttempts: d.MaxAttempts,
+		Revision:    d.Revision,
 		CreatedAt: formatTimeOrNil(d.CreatedAt),
 		UpdatedAt: formatTimeOrNil(d.UpdatedAt),
 	}

@@ -22,6 +22,7 @@ type Destination struct {
 	Config         map[string]any        `json:"config"`
 	SecretRef      *string               `json:"secret_ref,omitempty"`
 	TimeoutMs      int                   `json:"timeout_ms"`
+	MaxAttempts    int                   `json:"max_attempts"`
 	Revision       int                   `json:"revision"`
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
@@ -35,6 +36,7 @@ type CreateDestinationRequest struct {
 	Config         map[string]any        `json:"config,omitempty"`
 	SecretRef      *string               `json:"secret_ref,omitempty"`
 	TimeoutMs      *int                  `json:"timeout_ms,omitempty"`
+	MaxAttempts    *int                  `json:"max_attempts,omitempty"`
 }
 
 // UpdateDestinationRequest is the DTO for updating an existing destination.
@@ -46,6 +48,7 @@ type UpdateDestinationRequest struct {
 	Config         map[string]any        `json:"config,omitempty"`
 	SecretRef      *string               `json:"secret_ref,omitempty"`
 	TimeoutMs      *int                  `json:"timeout_ms,omitempty"`
+	MaxAttempts    *int                  `json:"max_attempts,omitempty"`
 }
 
 // DestinationResponse is the DTO returned by the API, with masked secret.
@@ -57,6 +60,7 @@ type DestinationResponse struct {
 	Config         map[string]any        `json:"config"`
 	SecretRef      *string               `json:"secret_ref,omitempty"`
 	TimeoutMs      int                   `json:"timeout_ms"`
+	MaxAttempts    int                   `json:"max_attempts"`
 	Revision       int                   `json:"revision"`
 	CreatedAt      string                `json:"created_at,omitempty"`
 	UpdatedAt      string                `json:"updated_at,omitempty"`

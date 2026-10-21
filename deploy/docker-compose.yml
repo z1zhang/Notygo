@@ -17,7 +17,6 @@ services:
       - DELIVERY_WORKER_CONCURRENCY=8
       - MAX_PAYLOAD_BYTES=1048576
       - INGEST_GLOBAL_RATE_LIMIT=100/200
-      - EVENT_RETENTION_DAYS=30
     depends_on:
       mysql:
         condition: service_healthy

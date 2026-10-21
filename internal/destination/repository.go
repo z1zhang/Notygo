@@ -68,11 +68,16 @@ func (r *Repository) Create(ctx context.Context, req CreateDestinationRequest) (
 		timeoutMs = *req.TimeoutMs
 	}
 
+	maxAttempts := 5
+	if req.MaxAttempts != nil {
+		maxAttempts = *req.MaxAttempts
+	}
+
 	_, err = r.db.ExecContext(ctx,
-		`INSERT INTO destinations (id, name, type, enabled, config, secret_ref, timeout_ms, revision, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+		`INSERT INTO destinations (id, name, type, enabled, config, secret_ref, timeout_ms, max_attempts, revision, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
 		id, name, string(destType), boolToInt(enabled),
-		string(configJSON), req.SecretRef, timeoutMs,
+		string(configJSON), req.SecretRef, timeoutMs, maxAttempts,
 		nowStr, nowStr,
 	)
 	if err != nil {
@@ -85,7 +90,7 @@ func (r *Repository) Create(ctx context.Context, req CreateDestinationRequest) (
 // GetByID retrieves a destination by its ID.
 func (r *Repository) GetByID(ctx context.Context, id string) (*Destination, error) {
 	row := r.db.QueryRowContext(ctx,
-		`SELECT id, name, type, enabled, config, secret_ref, timeout_ms, revision, created_at, updated_at
+		`SELECT id, name, type, enabled, config, secret_ref, timeout_ms, max_attempts, revision, created_at, updated_at
 		 FROM destinations WHERE id = ?`, id)
 	return scanDestination(row)
 }
@@ -103,7 +108,7 @@ func (r *Repository) List(ctx context.Context, page, size int) ([]Destination, i
 
 	offset := (page - 1) * size
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT id, name, type, enabled, config, secret_ref, timeout_ms, revision, created_at, updated_at
+		`SELECT id, name, type, enabled, config, secret_ref, timeout_ms, max_attempts, revision, created_at, updated_at
 		 FROM destinations ORDER BY created_at DESC LIMIT ? OFFSET ?`, size, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list destinations: %w", err)
@@ -157,6 +162,10 @@ func (r *Repository) Update(ctx context.Context, id string, req UpdateDestinatio
 	if req.TimeoutMs != nil {
 		timeoutMs = *req.TimeoutMs
 	}
+	maxAttempts := existing.MaxAttempts
+	if req.MaxAttempts != nil {
+		maxAttempts = *req.MaxAttempts
+	}
 
 	configJSON, err := json.Marshal(config)
 	if err != nil {
@@ -166,10 +175,10 @@ func (r *Repository) Update(ctx context.Context, id string, req UpdateDestinatio
 	newRevision := existing.Revision + 1
 	nowStr := storage.FormatNow()
 	_, err = r.db.ExecContext(ctx,
-		`UPDATE destinations SET name=?, type=?, enabled=?, config=?, secret_ref=?, timeout_ms=?, revision=?, updated_at=?
+		`UPDATE destinations SET name=?, type=?, enabled=?, config=?, secret_ref=?, timeout_ms=?, max_attempts=?, revision=?, updated_at=?
 		 WHERE id=?`,
 		name, string(destType), boolToInt(enabled),
-		string(configJSON), secretRef, timeoutMs,
+		string(configJSON), secretRef, timeoutMs, maxAttempts,
 		newRevision, nowStr, id,
 	)
 	if err != nil {
@@ -200,7 +209,7 @@ func scanDestination(row *sql.Row) (*Destination, error) {
 
 	err := row.Scan(
 		&d.ID, &d.Name, &d.Type, &enabled, &configJSON, &d.SecretRef,
-		&d.TimeoutMs, &d.Revision,
+		&d.TimeoutMs, &d.MaxAttempts, &d.Revision,
 		&createdAt, &updatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -228,7 +237,7 @@ func scanDestinationFromRows(rows *sql.Rows) (*Destination, error) {
 
 	err := rows.Scan(
 		&d.ID, &d.Name, &d.Type, &enabled, &configJSON, &d.SecretRef,
-		&d.TimeoutMs, &d.Revision,
+		&d.TimeoutMs, &d.MaxAttempts, &d.Revision,
 		&createdAt, &updatedAt,
 	)
 	if err != nil {

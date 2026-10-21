@@ -289,6 +289,7 @@
     "secretEditPlaceholder": "留空则保持不变",
     "secretPlaceholder": "API 密钥或 Token",
     "timeoutMs": "超时",
+    "maxAttempts": "最大尝试次数",
     "msUnit": "毫秒",
     "nameRequired": "名称为必填项",
     "typeRequired": "类型为必填项",

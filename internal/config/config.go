@@ -46,15 +46,13 @@ type WorkerConfig struct {
 	RetryBaseDelay            time.Duration
 	RetryMaxDelay             time.Duration
 	RetryJitterPercent        int
-	DefaultMaxAttempts        int
 	ClaimPollInterval         time.Duration
 	LeaseRecoveryInterval     time.Duration
 }
 
 type IngestConfig struct {
-	MaxPayloadBytes    int
-	GlobalRateLimit    string
-	EventRetentionDays int
+	MaxPayloadBytes int
+	GlobalRateLimit string
 }
 
 type AdminConfig struct {
@@ -91,14 +89,12 @@ func Load() (*Config, error) {
 			RetryBaseDelay:            30 * time.Second,
 			RetryMaxDelay:             1 * time.Hour,
 			RetryJitterPercent:        20,
-			DefaultMaxAttempts:        getEnvInt("DEFAULT_MAX_ATTEMPTS", 5),
 			ClaimPollInterval:         getEnvDuration("CLAIM_POLL_INTERVAL", 2*time.Second),
 			LeaseRecoveryInterval:     30 * time.Second,
 		},
 		Ingest: IngestConfig{
-			MaxPayloadBytes:    getEnvInt("MAX_PAYLOAD_BYTES", 1048576), // 1MB
-			GlobalRateLimit:    getEnv("INGEST_GLOBAL_RATE_LIMIT", "100/200"),
-			EventRetentionDays: getEnvInt("EVENT_RETENTION_DAYS", 30),
+			MaxPayloadBytes: getEnvInt("MAX_PAYLOAD_BYTES", 1048576), // 1MB
+			GlobalRateLimit: getEnv("INGEST_GLOBAL_RATE_LIMIT", "100/200"),
 		},
 		Admin: AdminConfig{
 			InitialUsername:     getEnv("ADMIN_INITIAL_USER", "admin"),

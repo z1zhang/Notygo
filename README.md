@@ -269,9 +269,10 @@ senderRegistry.Register("xxx", sender.NewXXXSender())
 | `LOG_LEVEL` | `info` | 日志级别 |
 | `EVENT_PROCESSOR_CONCURRENCY` | `4` | 事件处理器并发数 |
 | `DELIVERY_WORKER_CONCURRENCY` | `8` | 投递 Worker 并发数 |
+| `CLAIM_POLL_INTERVAL` | `2s` | Worker 认领轮询间隔（Go duration 格式，如 `500ms`、`2s`） |
+| `LEASE_TIMEOUT` | `30s` | 认领租约超时，超时未完成视为僵死由回收器接管 |
 | `MAX_PAYLOAD_BYTES` | `1048576` | Webhook Payload 最大字节数（默认 1MB） |
 | `INGEST_GLOBAL_RATE_LIMIT` | `100/200` | 全局限流（rate/burst 格式，每秒请求数 / 突发容量） |
-| `EVENT_RETENTION_DAYS` | `30` | 事件保留天数 |
 | `LOGIN_MAX_FAILURES` | `5` | 登录失败锁定阈值（按 IP 与用户名分别计数） |
 | `LOGIN_LOCKOUT_SECONDS` | `900` | 触发锁定后的锁定时长（秒） |
 
@@ -307,22 +308,9 @@ GET  /healthz  /readyz                # 健康检查
 
 ## 🛠️ 技术栈
 
-**后端**
-
-- Go 1.26
-- [chi/v5](https://github.com/go-chi/chi) — HTTP 路由
-- [goose/v3](https://github.com/pressly/goose) — 数据库迁移
-- [go-sql-driver/mysql](https://github.com/go-sql-driver/mysql) — MySQL 驱动
-- [gjson](https://github.com/tidwall/gjson) — JSON 路径查询
-- [oklog/ulid](https://github.com/oklog/ulid) — 事件 ID
-- [golang.org/x/crypto](https://pkg.go.dev/golang.org/x/crypto) — bcrypt / AES 密钥加密
-
-**前端**
-
-- React 19 + TypeScript + Vite
-- Tailwind CSS 4 + shadcn/ui
-- TanStack Query + React Hook Form + Zod
-- react-i18next 双语（zh / en，编译期键校验）、marked + DOMPurify 渲染
+- 后端：Go + chi + MySQL
+- 前端：React + TypeScript + Vite + Tailwind + shadcn/ui
+- 双语界面（zh / en），Docker 一键部署
 
 ## 📁 项目结构
 
@@ -360,9 +348,6 @@ cd web && npm run build                 # 前端生产构建
 docker build -t zpush .                 # 本地构建镜像
 ```
 
-## 📝 待办
-
-- [ ] `EVENT_RETENTION_DAYS` 定时清理逻辑
 
 ## 📄 许可证
 
