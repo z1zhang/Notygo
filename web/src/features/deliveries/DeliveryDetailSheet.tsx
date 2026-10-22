@@ -261,7 +261,7 @@ export function DeliveryDetailSheet({ deliveryId, onClose }: DeliveryDetailSheet
                   </Table>
                 </div>
               ) : (
-                <EmptyState title={t("deliveries.noAttempts")} />
+                <EmptyState bordered title={t("deliveries.noAttempts")} />
               )}
             </DetailSection>
           </div>

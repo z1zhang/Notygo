@@ -311,6 +311,70 @@ func TestEvaluate_NotExists(t *testing.T) {
 	}
 }
 
+func TestEvaluate_NotEmpty(t *testing.T) {
+	rule := &Rule{
+		Enabled: true,
+		Conditions: ConditionGroup{
+			Operator: "and",
+			Conditions: []Condition{
+				{Field: "name", Operator: "not_empty", Value: ""},
+			},
+		},
+	}
+
+	cases := []struct {
+		name   string
+		fields map[string]any
+		want   bool
+	}{
+		{"present non-empty string", map[string]any{"name": "Alice"}, true},
+		{"missing field", map[string]any{"other": "value"}, false},
+		{"empty string", map[string]any{"name": ""}, false},
+		{"whitespace-only string", map[string]any{"name": "  "}, false},
+		{"zero number is a value", map[string]any{"name": float64(0)}, true},
+		{"empty array", map[string]any{"name": []any{}}, false},
+		{"non-empty array", map[string]any{"name": []any{"x"}}, true},
+	}
+
+	for _, tc := range cases {
+		result, err := Evaluate(rule, tc.fields)
+		if err != nil {
+			t.Fatalf("%s: unexpected error: %v", tc.name, err)
+		}
+		if result != tc.want {
+			t.Errorf("%s: expected %v, got %v", tc.name, tc.want, result)
+		}
+	}
+}
+
+func TestEvaluate_Empty(t *testing.T) {
+	rule := &Rule{
+		Enabled: true,
+		Conditions: ConditionGroup{
+			Operator: "and",
+			Conditions: []Condition{
+				{Field: "name", Operator: "empty", Value: ""},
+			},
+		},
+	}
+
+	result, err := Evaluate(rule, map[string]any{"name": ""})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result {
+		t.Error("expected empty to be true for empty string")
+	}
+
+	result, err = Evaluate(rule, map[string]any{"name": "Alice"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result {
+		t.Error("expected empty to be false for non-empty string")
+	}
+}
+
 func TestEvaluate_AndGroup(t *testing.T) {
 	rule := &Rule{
 		Enabled: true,

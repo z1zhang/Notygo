@@ -198,6 +198,8 @@
     "existenceGroup": "Existence",
     "exists": "Exists",
     "notExists": "Not Exists",
+    "notEmpty": "Not Empty",
+    "empty": "Empty",
     "value": "Value",
     "regexPlaceholder": "Regular expression pattern",
     "numericPlaceholder": "Numeric value",

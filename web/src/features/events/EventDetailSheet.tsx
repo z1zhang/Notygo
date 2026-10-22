@@ -166,7 +166,7 @@ export function EventDetailSheet({ eventId, onClose }: EventDetailSheetProps) {
                 </Table>
               </div>
             ) : (
-              <EmptyState title={t("events.noParsedFields")} />
+              <EmptyState bordered title={t("events.noParsedFields")} />
             )}
           </DetailSection>
 
@@ -238,7 +238,7 @@ export function EventDetailSheet({ eventId, onClose }: EventDetailSheetProps) {
                   </Table>
                 </div>
               ) : (
-                <EmptyState title={t("events.noMatchedRules")} />
+                <EmptyState bordered title={t("events.noMatchedRules")} />
               )}
             </DetailSection>
           ) : null}
@@ -286,7 +286,7 @@ export function EventDetailSheet({ eventId, onClose }: EventDetailSheetProps) {
                 </Table>
               </div>
             ) : (
-              <EmptyState title={t("events.noDeliveries")} />
+              <EmptyState bordered title={t("events.noDeliveries")} />
             )}
           </DetailSection>
         </div>

@@ -77,11 +77,13 @@ const OPERATOR_GROUPS: { labelKey: TranslationKey; items: { value: string; label
     items: [
       { value: 'exists', labelKey: 'rules.exists' },
       { value: 'not_exists', labelKey: 'rules.notExists' },
+      { value: 'not_empty', labelKey: 'rules.notEmpty' },
+      { value: 'empty', labelKey: 'rules.empty' },
     ],
   },
 ]
 
-const NO_VALUE_OPERATORS = ['exists', 'not_exists']
+const NO_VALUE_OPERATORS = ['exists', 'not_exists', 'not_empty', 'empty']
 
 const ruleSchema = z.object({
   name: z.string().min(1),

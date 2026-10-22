@@ -198,6 +198,8 @@
     "existenceGroup": "存在性",
     "exists": "存在",
     "notExists": "不存在",
+    "notEmpty": "非空值",
+    "empty": "空值",
     "value": "值",
     "regexPlaceholder": "正则表达式",
     "numericPlaceholder": "数值",
