@@ -12,6 +12,17 @@ import (
 // It is stored as json.RawMessage and decoded on demand.
 type ConditionItem json.RawMessage
 
+// ValidOperators is the single source of truth for operators accepted by
+// evaluateCondition. API-level validation reuses this set so the two can
+// never drift apart.
+var ValidOperators = map[string]bool{
+	"eq": true, "ne": true, "neq": true,
+	"contains": true, "not_contains": true, "regex": true,
+	"gt": true, "lt": true, "gte": true, "lte": true,
+	"exists": true, "not_exists": true,
+	"empty": true, "not_empty": true,
+}
+
 // Evaluate checks whether a rule's conditions match against the provided fields.
 func Evaluate(rule *Rule, fields map[string]any) (bool, error) {
 	if !rule.Enabled {
