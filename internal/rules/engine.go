@@ -116,8 +116,32 @@ func evaluateCondition(cond *Condition, fields map[string]any) (bool, error) {
 	case "not_exists":
 		return fieldVal == nil, nil
 
+	case "empty":
+		return isEmptyValue(fieldVal), nil
+
+	case "not_empty":
+		return !isEmptyValue(fieldVal), nil
+
 	default:
 		return false, fmt.Errorf("unknown operator %q", cond.Operator)
+	}
+}
+
+// isEmptyValue reports whether a resolved field value is "empty":
+// missing, an empty (or whitespace-only) string, an empty array, or an empty object.
+// Zero numbers and false booleans are values, not emptiness.
+func isEmptyValue(val any) bool {
+	switch v := val.(type) {
+	case nil:
+		return true
+	case string:
+		return strings.TrimSpace(v) == ""
+	case []any:
+		return len(v) == 0
+	case map[string]any:
+		return len(v) == 0
+	default:
+		return false
 	}
 }
 

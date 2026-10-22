@@ -401,10 +401,10 @@ func scanEventRun(row *sql.Row) (*EventRun, error) {
 	if err := json.Unmarshal([]byte(validationJSON), &run.ValidationResult); err != nil {
 		run.ValidationResult = map[string]any{}
 	}
-	if err := json.Unmarshal([]byte(ruleSnapshotJSON), &run.RuleSetSnapshot); err != nil {
+	if err := json.Unmarshal([]byte(ruleSnapshotJSON), &run.RuleSetSnapshot); err != nil || run.RuleSetSnapshot == nil {
 		run.RuleSetSnapshot = []RuleSnapshot{}
 	}
-	if err := json.Unmarshal([]byte(matchedRuleIDsJSON), &run.MatchedRuleIDs); err != nil {
+	if err := json.Unmarshal([]byte(matchedRuleIDsJSON), &run.MatchedRuleIDs); err != nil || run.MatchedRuleIDs == nil {
 		run.MatchedRuleIDs = []string{}
 	}
 
