@@ -25,7 +25,8 @@ interface EventDetailSheetProps {
 }
 
 function matchedRules(run: EventRunResponse): RuleSnapshot[] {
-  return run.rule_set_snapshot.filter((r) => run.matched_rule_ids.includes(r.id))
+  // Older runs may carry JSON null for these fields before completion
+  return (run.rule_set_snapshot ?? []).filter((r) => (run.matched_rule_ids ?? []).includes(r.id))
 }
 
 function joinError(code?: string | null, summary?: string | null): string | null {
