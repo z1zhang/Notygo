@@ -25,7 +25,7 @@ func NewFeishuSender() *FeishuSender {
 }
 
 // Send delivers a message to Feishu via the configured webhook.
-func (s *FeishuSender) Send(ctx context.Context, destConfig DestinationConfig, msg RenderedMessage) (*SendResult, error) {
+func (s *FeishuSender) Send(ctx context.Context, destConfig ChannelConfig, msg RenderedMessage) (*SendResult, error) {
 	var cfg FeishuConfig
 	if err := json.Unmarshal(destConfig.Config, &cfg); err != nil {
 		return nil, fmt.Errorf("invalid feishu config: %w", err)

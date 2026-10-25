@@ -1,7 +1,6 @@
 package api
 
 import (
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -9,12 +8,13 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
-	"zpush/internal/audit"
-	"zpush/internal/templates"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"notygo/internal/audit"
+	"notygo/internal/templates"
 )
 
 // ListTemplates returns a paginated list of templates.
-func ListTemplates(db *sql.DB) http.HandlerFunc {
+func ListTemplates(db *pgxpool.Pool) http.HandlerFunc {
 	repo := templates.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		page, size := ParsePagination(r)
@@ -33,7 +33,7 @@ func ListTemplates(db *sql.DB) http.HandlerFunc {
 }
 
 // CreateTemplate creates a new template.
-func CreateTemplate(db *sql.DB, auditRepo *audit.Repository) http.HandlerFunc {
+func CreateTemplate(db *pgxpool.Pool, auditRepo *audit.Repository) http.HandlerFunc {
 	repo := templates.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -84,7 +84,7 @@ func CreateTemplate(db *sql.DB, auditRepo *audit.Repository) http.HandlerFunc {
 }
 
 // GetTemplate returns a single template by ID.
-func GetTemplate(db *sql.DB) http.HandlerFunc {
+func GetTemplate(db *pgxpool.Pool) http.HandlerFunc {
 	repo := templates.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
@@ -98,7 +98,7 @@ func GetTemplate(db *sql.DB) http.HandlerFunc {
 }
 
 // UpdateTemplate updates an existing template, incrementing revision and validating syntax.
-func UpdateTemplate(db *sql.DB, auditRepo *audit.Repository) http.HandlerFunc {
+func UpdateTemplate(db *pgxpool.Pool, auditRepo *audit.Repository) http.HandlerFunc {
 	repo := templates.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
@@ -155,7 +155,7 @@ func UpdateTemplate(db *sql.DB, auditRepo *audit.Repository) http.HandlerFunc {
 }
 
 // DeleteTemplate deletes a template by ID.
-func DeleteTemplate(db *sql.DB, auditRepo *audit.Repository) http.HandlerFunc {
+func DeleteTemplate(db *pgxpool.Pool, auditRepo *audit.Repository) http.HandlerFunc {
 	repo := templates.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")

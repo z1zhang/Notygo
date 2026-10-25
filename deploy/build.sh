@@ -5,14 +5,14 @@ set -euo pipefail
 cd "$(cd "$(dirname "$0")" && pwd)/.."
 
 # ============================================================
-# zPush Docker build & push script
+# Notygo Docker build & push script
 # 用法: ./build.sh [版本标签]
 # 示例: ./build.sh v1.0.0
 #       ./build.sh          # 不传则用 git short commit 作为标签
 # ============================================================
 
 # ---- 配置 ----
-IMAGE_NAME="zhangz1o/zpush"
+IMAGE_NAME="zhangz1o/notygo"
 PROXY="${BUILD_PROXY:-http://127.0.0.1:7890}"   # 代理地址，可通过环境变量覆盖
 REGISTRY_MIRROR="${REGISTRY_MIRROR:-}"            # Docker registry mirror（可选）
 
@@ -44,6 +44,7 @@ docker build \
     --build-arg HTTP_PROXY="${PROXY}" \
     --build-arg HTTPS_PROXY="${PROXY}" \
     --build-arg GOPROXY="https://goproxy.cn,https://proxy.golang.org,direct" \
+    --build-arg VERSION="${TAG}" \
     -t "${FULL_IMAGE}" \
     -t "${LATEST_IMAGE}" \
     -f Dockerfile \

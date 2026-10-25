@@ -12,9 +12,9 @@ import (
 
 // EventMeta contains event metadata accessible in templates.
 type EventMeta struct {
-	ID         string
-	ReceivedAt string
-	SourceName string
+	ID           string
+	ReceivedAt   string
+	EndpointName string
 }
 
 // RenderedMessage holds the output of template rendering.

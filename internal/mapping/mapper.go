@@ -10,7 +10,7 @@ import (
 // ValidationError describes a field-level validation problem encountered during mapping.
 type ValidationError struct {
 	Field  string `json:"field"`
-	Code   string `json:"code"`   // PARSE_001, PARSE_002, PARSE_003, PARSE_004
+	Code   string `json:"code"` // PARSE_001, PARSE_002, PARSE_003, PARSE_004
 	Detail string `json:"detail"`
 }
 
@@ -46,8 +46,8 @@ func applyEntry(entry *MappingEntry, payloadRaw string) (any, []ValidationError)
 	// gjson treats "#" as "array count" (a number), not "the whole array".
 	// For multi-result paths like "#.field", gjson correctly returns an array.
 	// But for bare "#", we need the root array itself.
-	result := gjson.Get(payloadRaw, entry.SourcePath)
-	if entry.SourcePath == "#" {
+	result := gjson.Get(payloadRaw, entry.PayloadPath)
+	if entry.PayloadPath == "#" {
 		result = gjson.Parse(payloadRaw)
 	}
 
@@ -60,7 +60,7 @@ func applyEntry(entry *MappingEntry, payloadRaw string) (any, []ValidationError)
 			errs = append(errs, ValidationError{
 				Field:  entry.TargetKey,
 				Code:   "PARSE_002",
-				Detail: fmt.Sprintf("required field %q not found at path %q", entry.TargetKey, entry.SourcePath),
+				Detail: fmt.Sprintf("required field %q not found at path %q", entry.TargetKey, entry.PayloadPath),
 			})
 		}
 		return nil, errs
@@ -75,7 +75,7 @@ func applyEntry(entry *MappingEntry, payloadRaw string) (any, []ValidationError)
 			errs = append(errs, ValidationError{
 				Field:  entry.TargetKey,
 				Code:   "PARSE_002",
-				Detail: fmt.Sprintf("required field %q is null at path %q", entry.TargetKey, entry.SourcePath),
+				Detail: fmt.Sprintf("required field %q is null at path %q", entry.TargetKey, entry.PayloadPath),
 			})
 		}
 		return nil, errs

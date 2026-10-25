@@ -5,13 +5,13 @@ import (
 	"strings"
 	"testing"
 
-	"zpush/internal/sender"
+	"notygo/internal/sender"
 )
 
 func TestBuildRequestSummary(t *testing.T) {
 	t.Run("chat sender omits empty method/url, always records body", func(t *testing.T) {
 		summary := buildRequestSummary(
-			sender.DestinationConfig{Type: "dingtalk"},
+			sender.ChannelConfig{Type: "dingtalk"},
 			sender.RenderedMessage{},
 		)
 		var m map[string]any
@@ -38,7 +38,7 @@ func TestBuildRequestSummary(t *testing.T) {
 			longBody[i] = 'x'
 		}
 		summary := buildRequestSummary(
-			sender.DestinationConfig{Type: "http", Method: "POST", URL: "https://example.com/hook"},
+			sender.ChannelConfig{Type: "http", Method: "POST", URL: "https://example.com/hook"},
 			sender.RenderedMessage{Title: "标题", Body: string(longBody)},
 		)
 		var m map[string]any

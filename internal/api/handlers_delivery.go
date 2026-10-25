@@ -1,26 +1,25 @@
 package api
 
 import (
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-	"zpush/internal/audit"
-	"zpush/internal/delivery"
-	"zpush/internal/notify"
-	"zpush/internal/storage"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"notygo/internal/audit"
+	"notygo/internal/delivery"
+	"notygo/internal/queue"
 )
 
 // ListDeliveries returns a paginated list of deliveries with optional filters.
-func ListDeliveries(db *sql.DB) http.HandlerFunc {
+func ListDeliveries(db *pgxpool.Pool) http.HandlerFunc {
 	repo := delivery.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		page, size := ParsePagination(r)
 		statusFilter := r.URL.Query().Get("status")
-		destIDFilter := r.URL.Query().Get("destination_id")
+		destIDFilter := r.URL.Query().Get("channel_id")
 		eventIDFilter := r.URL.Query().Get("event_id")
 
 		deliveries, total, err := repo.List(r.Context(), page, size, statusFilter, destIDFilter, eventIDFilter)
@@ -39,7 +38,7 @@ func ListDeliveries(db *sql.DB) http.HandlerFunc {
 }
 
 // GetDelivery returns a single delivery by ID, including delivery_attempts.
-func GetDelivery(db *sql.DB) http.HandlerFunc {
+func GetDelivery(db *pgxpool.Pool) http.HandlerFunc {
 	repo := delivery.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
@@ -62,13 +61,15 @@ func GetDelivery(db *sql.DB) http.HandlerFunc {
 	}
 }
 
-// RetryDelivery resets a delivery back to pending status for retry.
-func RetryDelivery(db *sql.DB, notifier *notify.Notifier, auditRepo *audit.Repository) http.HandlerFunc {
+// RetryDelivery resets a failed/retry_wait delivery and re-enqueues its
+// queue job, atomically.
+func RetryDelivery(db *pgxpool.Pool, q *queue.Manager, auditRepo *audit.Repository) http.HandlerFunc {
 	repo := delivery.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
 		id := chi.URLParam(r, "id")
 
-		d, err := repo.GetByID(r.Context(), id)
+		d, err := repo.GetByID(ctx, id)
 		if err != nil {
 			WriteError(w, http.StatusNotFound, ErrConfigValidation, "delivery not found")
 			return
@@ -80,32 +81,40 @@ func RetryDelivery(db *sql.DB, notifier *notify.Notifier, auditRepo *audit.Repos
 			return
 		}
 
-		// Reset to pending, clear error fields, set next_attempt_at to now
-		nowStr := storage.FormatNow()
-		nowExpr := storage.NowExpr()
-		_, err = db.ExecContext(r.Context(),
-			"UPDATE deliveries SET status='pending', last_error_code=NULL, last_error_summary=NULL, next_attempt_at=?, lease_until=NULL, lease_owner=NULL, updated_at="+nowExpr+" WHERE id=?",
-			nowStr, id,
-		)
+		// Reset to pending and queue a fresh job in one transaction —
+		// a retry without a job would hang forever.
+		tx, err := db.Begin(ctx)
 		if err != nil {
 			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to reset delivery")
 			return
 		}
-
-		// Notify the delivery worker to pick up the retried delivery immediately
-		if notifier != nil {
-			notifier.NotifyDelivery()
+		reset, err := repo.WithTx(tx).ResetForRetry(ctx, id)
+		if err == nil && reset {
+			maxAttempts := d.MaxAttempts
+			if maxAttempts < 1 {
+				maxAttempts = 1
+			}
+			err = q.EnqueueDeliverySendTx(ctx, tx, id, maxAttempts)
+		}
+		if err != nil {
+			_ = tx.Rollback(ctx)
+			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to reset delivery")
+			return
+		}
+		if err := tx.Commit(ctx); err != nil {
+			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to reset delivery")
+			return
 		}
 
-		updated, _ := repo.GetByID(r.Context(), id)
+		updated, _ := repo.GetByID(ctx, id)
 		WriteJSON(w, http.StatusOK, map[string]any{
 			"delivery": updated,
 			"message":  "delivery queued for retry",
 		})
 
 		// Audit log
-		if auditErr := auditRepo.Insert(r.Context(), &audit.AuditLog{
-			Operator:   GetUsernameFromContext(r.Context()),
+		if auditErr := auditRepo.Insert(ctx, &audit.AuditLog{
+			Operator:   GetUsernameFromContext(ctx),
 			Action:     "retry",
 			TargetType: "delivery",
 			TargetID:   id,
@@ -116,13 +125,15 @@ func RetryDelivery(db *sql.DB, notifier *notify.Notifier, auditRepo *audit.Repos
 	}
 }
 
-// BulkRetry resets multiple deliveries back to pending based on filters.
-func BulkRetry(db *sql.DB, notifier *notify.Notifier, auditRepo *audit.Repository) http.HandlerFunc {
+// BulkRetry resets multiple failed/retry_wait deliveries and re-enqueues a
+// queue job for each, atomically.
+func BulkRetry(db *pgxpool.Pool, q *queue.Manager, auditRepo *audit.Repository) http.HandlerFunc {
 	repo := delivery.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
 		var req struct {
-			Status        *string `json:"status,omitempty"`
-			DestinationID *string `json:"destination_id,omitempty"`
+			Status    *string `json:"status,omitempty"`
+			ChannelID *string `json:"channel_id,omitempty"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "invalid request body")
@@ -134,8 +145,8 @@ func BulkRetry(db *sql.DB, notifier *notify.Notifier, auditRepo *audit.Repositor
 			statusFilter = *req.Status
 		}
 		destIDFilter := ""
-		if req.DestinationID != nil {
-			destIDFilter = *req.DestinationID
+		if req.ChannelID != nil {
+			destIDFilter = *req.ChannelID
 		}
 
 		// Only failed or retry_wait deliveries may be retried (dead_letter never)
@@ -146,29 +157,43 @@ func BulkRetry(db *sql.DB, notifier *notify.Notifier, auditRepo *audit.Repositor
 			return
 		}
 
-		count, err := repo.BulkResetPending(r.Context(), statusFilter, destIDFilter)
+		// Reset all matching rows and enqueue a job per delivery in one
+		// transaction, so the visible count matches the queued jobs exactly.
+		tx, err := db.Begin(ctx)
 		if err != nil {
 			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to bulk retry deliveries")
 			return
 		}
-
-		// Notify the delivery worker to pick up the reset deliveries
-		if notifier != nil {
-			notifier.NotifyDelivery()
+		items, err := repo.WithTx(tx).BulkResetForRetry(ctx, statusFilter, destIDFilter)
+		if err == nil {
+			for _, it := range items {
+				if err = q.EnqueueDeliverySendTx(ctx, tx, it.ID, it.MaxAttempts); err != nil {
+					break
+				}
+			}
+		}
+		if err != nil {
+			_ = tx.Rollback(ctx)
+			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to bulk retry deliveries")
+			return
+		}
+		if err := tx.Commit(ctx); err != nil {
+			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to bulk retry deliveries")
+			return
 		}
 
 		WriteJSON(w, http.StatusOK, map[string]any{
-			"reset_count": count,
+			"reset_count": int64(len(items)),
 			"message":     "deliveries queued for retry",
 		})
 
 		// Audit log
-		if auditErr := auditRepo.Insert(r.Context(), &audit.AuditLog{
-			Operator:   GetUsernameFromContext(r.Context()),
+		if auditErr := auditRepo.Insert(ctx, &audit.AuditLog{
+			Operator:   GetUsernameFromContext(ctx),
 			Action:     "bulk_retry",
 			TargetType: "delivery",
 			TargetID:   "",
-			Summary:    stringPtr(fmt.Sprintf("bulk retried %d deliveries", count)),
+			Summary:    stringPtr(fmt.Sprintf("bulk retried %d deliveries", len(items))),
 		}); auditErr != nil {
 			slog.Error("audit log insert failed", "action", "bulk_retry", "target_type", "delivery", "error", auditErr)
 		}

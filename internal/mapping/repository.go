@@ -9,8 +9,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/oklog/ulid/v2"
-	"zpush/internal/storage"
 )
 
 // ErrNotFound is returned when a mapping is not found.
@@ -20,34 +21,23 @@ func newID() string {
 	return ulid.MustNew(ulid.Timestamp(time.Now()), rand.Reader).String()
 }
 
-func boolToInt(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
-}
-
-func intToBool(i int) bool {
-	return i != 0
-}
-
 // mappingColumns is the standard column list for mapping queries.
 const mappingColumns = `id, name, revision, rule_ids, continue_on_match, fields, created_at, updated_at`
 
 // Repository provides CRUD operations for mappings.
 type Repository struct {
-	db *sql.DB
+	db *pgxpool.Pool
 }
 
 // NewRepository creates a new mapping repository.
-func NewRepository(db *sql.DB) *Repository {
+func NewRepository(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
 // Create inserts a new mapping and returns it.
 func (r *Repository) Create(ctx context.Context, name string, ruleIDs []string, continueOnMatch bool, fields []MappingEntry) (*Mapping, error) {
 	id := newID()
-	nowStr := storage.FormatNow()
+	now := time.Now().UTC()
 	fieldsJSON, err := json.Marshal(fields)
 	if err != nil {
 		return nil, fmt.Errorf("marshal fields: %w", err)
@@ -62,9 +52,9 @@ func (r *Repository) Create(ctx context.Context, name string, ruleIDs []string, 
 		ruleIDsJSON = &s
 	}
 
-	_, err = r.db.ExecContext(ctx,
-		`INSERT INTO mappings (id, name, revision, rule_ids, continue_on_match, fields, created_at, updated_at) VALUES (?, ?, 1, ?, ?, ?, ?, ?)`,
-		id, name, ruleIDsJSON, boolToInt(continueOnMatch), string(fieldsJSON), nowStr, nowStr,
+	_, err = r.db.Exec(ctx,
+		`INSERT INTO notygo_mappings (id, name, revision, rule_ids, continue_on_match, fields, created_at, updated_at) VALUES ($1, $2, 1, $3::jsonb, $4, $5::jsonb, $6, $7)`,
+		id, name, ruleIDsJSON, continueOnMatch, string(fieldsJSON), now, now,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("insert mapping: %w", err)
@@ -75,15 +65,15 @@ func (r *Repository) Create(ctx context.Context, name string, ruleIDs []string, 
 
 // GetByID retrieves a mapping by its ID.
 func (r *Repository) GetByID(ctx context.Context, id string) (*Mapping, error) {
-	row := r.db.QueryRowContext(ctx,
-		`SELECT `+mappingColumns+` FROM mappings WHERE id = ?`, id)
+	row := r.db.QueryRow(ctx,
+		`SELECT `+mappingColumns+` FROM notygo_mappings WHERE id = $1`, id)
 	return scanMapping(row)
 }
 
 // List returns a paginated list of mappings and the total count.
 func (r *Repository) List(ctx context.Context, page, size int) ([]Mapping, int64, error) {
 	var total int64
-	err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM mappings`).Scan(&total)
+	err := r.db.QueryRow(ctx, `SELECT COUNT(*) FROM notygo_mappings`).Scan(&total)
 	if err != nil {
 		return nil, 0, fmt.Errorf("count mappings: %w", err)
 	}
@@ -92,8 +82,8 @@ func (r *Repository) List(ctx context.Context, page, size int) ([]Mapping, int64
 	}
 
 	offset := (page - 1) * size
-	rows, err := r.db.QueryContext(ctx,
-		`SELECT `+mappingColumns+` FROM mappings ORDER BY created_at DESC LIMIT ? OFFSET ?`, size, offset)
+	rows, err := r.db.Query(ctx,
+		`SELECT `+mappingColumns+` FROM notygo_mappings ORDER BY created_at DESC LIMIT $1 OFFSET $2`, size, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list mappings: %w", err)
 	}
@@ -157,10 +147,10 @@ func (r *Repository) Update(ctx context.Context, id string, name *string, ruleID
 	}
 
 	newRevision := existing.Revision + 1
-	nowStr := storage.FormatNow()
-	_, err = r.db.ExecContext(ctx,
-		`UPDATE mappings SET name=?, revision=?, rule_ids=?, continue_on_match=?, fields=?, updated_at=? WHERE id=?`,
-		newName, newRevision, ruleIDsJSON, boolToInt(newContinueOnMatch), string(fieldsJSON), nowStr, id,
+	now := time.Now().UTC()
+	_, err = r.db.Exec(ctx,
+		`UPDATE notygo_mappings SET name=$1, revision=$2, rule_ids=$3::jsonb, continue_on_match=$4, fields=$5::jsonb, updated_at=$6 WHERE id=$7`,
+		newName, newRevision, ruleIDsJSON, newContinueOnMatch, string(fieldsJSON), now, id,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("update mapping: %w", err)
@@ -171,25 +161,23 @@ func (r *Repository) Update(ctx context.Context, id string, name *string, ruleID
 
 // Delete removes a mapping by ID.
 func (r *Repository) Delete(ctx context.Context, id string) error {
-	res, err := r.db.ExecContext(ctx, `DELETE FROM mappings WHERE id = ?`, id)
+	res, err := r.db.Exec(ctx, `DELETE FROM notygo_mappings WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("delete mapping: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n := res.RowsAffected()
 	if n == 0 {
 		return ErrNotFound
 	}
 	return nil
 }
 
-func scanMapping(row *sql.Row) (*Mapping, error) {
+func scanMapping(row pgx.Row) (*Mapping, error) {
 	var m Mapping
 	var fieldsJSON string
 	var ruleIDsJSON sql.NullString
-	var continueOnMatch int
-	var createdAt, updatedAt string
-	err := row.Scan(&m.ID, &m.Name, &m.Revision, &ruleIDsJSON, &continueOnMatch, &fieldsJSON, &createdAt, &updatedAt)
-	if errors.Is(err, sql.ErrNoRows) {
+	err := row.Scan(&m.ID, &m.Name, &m.Revision, &ruleIDsJSON, &m.ContinueOnMatch, &fieldsJSON, &m.CreatedAt, &m.UpdatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
@@ -203,19 +191,14 @@ func scanMapping(row *sql.Row) (*Mapping, error) {
 			m.RuleIDs = []string{}
 		}
 	}
-	m.ContinueOnMatch = intToBool(continueOnMatch)
-	m.CreatedAt, _ = storage.ParseTime(createdAt)
-	m.UpdatedAt, _ = storage.ParseTime(updatedAt)
 	return &m, nil
 }
 
-func scanMappingFromRows(rows *sql.Rows) (*Mapping, error) {
+func scanMappingFromRows(rows pgx.Rows) (*Mapping, error) {
 	var m Mapping
 	var fieldsJSON string
 	var ruleIDsJSON sql.NullString
-	var continueOnMatch int
-	var createdAt, updatedAt string
-	err := rows.Scan(&m.ID, &m.Name, &m.Revision, &ruleIDsJSON, &continueOnMatch, &fieldsJSON, &createdAt, &updatedAt)
+	err := rows.Scan(&m.ID, &m.Name, &m.Revision, &ruleIDsJSON, &m.ContinueOnMatch, &fieldsJSON, &m.CreatedAt, &m.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("scan mapping: %w", err)
 	}
@@ -227,8 +210,5 @@ func scanMappingFromRows(rows *sql.Rows) (*Mapping, error) {
 			m.RuleIDs = []string{}
 		}
 	}
-	m.ContinueOnMatch = intToBool(continueOnMatch)
-	m.CreatedAt, _ = storage.ParseTime(createdAt)
-	m.UpdatedAt, _ = storage.ParseTime(updatedAt)
 	return &m, nil
 }

@@ -2,7 +2,6 @@ package api
 
 import (
 	"crypto/rand"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -10,9 +9,10 @@ import (
 	"github.com/go-chi/chi/v5"
 	"log/slog"
 
-	"zpush/internal/audit"
-	"zpush/internal/secret"
-	"zpush/internal/source"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"notygo/internal/audit"
+	"notygo/internal/endpoint"
+	"notygo/internal/secret"
 )
 
 // generateSlug generates a random 32-character UUID slug (no hyphens).
@@ -25,18 +25,18 @@ func generateSlug() string {
 		uuid[0:4], uuid[4:6], uuid[6:8], uuid[8:10], uuid[10:16])
 }
 
-// ListSources returns a paginated list of sources.
-func ListSources(db *sql.DB) http.HandlerFunc {
-	repo := source.NewRepository(db)
+// ListEndpoints returns a paginated list of endpoints.
+func ListEndpoints(db *pgxpool.Pool) http.HandlerFunc {
+	repo := endpoint.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		page, size := ParsePagination(r)
-		sources, total, err := repo.List(r.Context(), page, size)
+		endpoints, total, err := repo.List(r.Context(), page, size)
 		if err != nil {
-			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to list sources")
+			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to list endpoints")
 			return
 		}
-		WriteJSON(w, http.StatusOK, PaginatedResponse[source.Source]{
-			Data:  sources,
+		WriteJSON(w, http.StatusOK, PaginatedResponse[endpoint.Endpoint]{
+			Data:  endpoints,
 			Total: total,
 			Page:  page,
 			Size:  size,
@@ -44,11 +44,11 @@ func ListSources(db *sql.DB) http.HandlerFunc {
 	}
 }
 
-// CreateSource creates a new source.
-func CreateSource(db *sql.DB, secretSvc *secret.Service, auditRepo *audit.Repository) http.HandlerFunc {
-	repo := source.NewRepository(db)
+// CreateEndpoint creates a new endpoint.
+func CreateEndpoint(db *pgxpool.Pool, secretSvc *secret.Service, auditRepo *audit.Repository) http.HandlerFunc {
+	repo := endpoint.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
-		var req source.CreateSourceRequest
+		var req endpoint.CreateEndpointRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "invalid request body")
 			return
@@ -65,18 +65,18 @@ func CreateSource(db *sql.DB, secretSvc *secret.Service, auditRepo *audit.Reposi
 		}
 
 		// Encrypt secret if provided
-		if req.SecretRef != nil && *req.SecretRef != "" && secretSvc != nil {
-			encrypted, err := secretSvc.Encrypt(*req.SecretRef)
+		if req.Secret != nil && *req.Secret != "" && secretSvc != nil {
+			encrypted, err := secretSvc.Encrypt(*req.Secret)
 			if err != nil {
 				WriteError(w, http.StatusInternalServerError, ErrSystemKeyInvalid, "failed to encrypt secret")
 				return
 			}
-			req.SecretRef = &encrypted
+			req.Secret = &encrypted
 		}
 
 		created, err := repo.Create(r.Context(), req)
 		if err != nil {
-			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to create source")
+			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to create endpoint")
 			return
 		}
 
@@ -84,62 +84,62 @@ func CreateSource(db *sql.DB, secretSvc *secret.Service, auditRepo *audit.Reposi
 		if auditErr := auditRepo.Insert(r.Context(), &audit.AuditLog{
 			Operator:   GetUsernameFromContext(r.Context()),
 			Action:     "create",
-			TargetType: "source",
+			TargetType: "endpoint",
 			TargetID:   created.ID,
-			Summary:    stringPtr(fmt.Sprintf("created source %q", created.Name)),
+			Summary:    stringPtr(fmt.Sprintf("created endpoint %q", created.Name)),
 		}); auditErr != nil {
-			slog.Error("audit log insert failed", "action", "create", "target_type", "source", "error", auditErr)
+			slog.Error("audit log insert failed", "action", "create", "target_type", "endpoint", "error", auditErr)
 		}
 
-		resp := toSourceResponse(created)
+		resp := toEndpointResponse(created)
 		WriteJSON(w, http.StatusCreated, resp)
 
 	}
 }
 
-// GetSource returns a single source by ID.
-func GetSource(db *sql.DB) http.HandlerFunc {
-	repo := source.NewRepository(db)
+// GetEndpoint returns a single endpoint by ID.
+func GetEndpoint(db *pgxpool.Pool) http.HandlerFunc {
+	repo := endpoint.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
 		s, err := repo.GetByID(r.Context(), id)
 		if err != nil {
-			WriteError(w, http.StatusNotFound, ErrConfigValidation, "source not found")
+			WriteError(w, http.StatusNotFound, ErrConfigValidation, "endpoint not found")
 			return
 		}
 
-		resp := toSourceResponse(s)
+		resp := toEndpointResponse(s)
 		WriteJSON(w, http.StatusOK, resp)
 	}
 }
 
-// UpdateSource updates an existing source.
-func UpdateSource(db *sql.DB, secretSvc *secret.Service, auditRepo *audit.Repository) http.HandlerFunc {
-	repo := source.NewRepository(db)
+// UpdateEndpoint updates an existing endpoint.
+func UpdateEndpoint(db *pgxpool.Pool, secretSvc *secret.Service, auditRepo *audit.Repository) http.HandlerFunc {
+	repo := endpoint.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
-		var req source.UpdateSourceRequest
+		var req endpoint.UpdateEndpointRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "invalid request body")
 			return
 		}
 
 		// Encrypt secret if provided
-		if req.SecretRef != nil && *req.SecretRef != "" && secretSvc != nil {
-			encrypted, err := secretSvc.Encrypt(*req.SecretRef)
+		if req.Secret != nil && *req.Secret != "" && secretSvc != nil {
+			encrypted, err := secretSvc.Encrypt(*req.Secret)
 			if err != nil {
 				WriteError(w, http.StatusInternalServerError, ErrSystemKeyInvalid, "failed to encrypt secret")
 				return
 			}
-			req.SecretRef = &encrypted
+			req.Secret = &encrypted
 		}
 
 		// Fetch old record for audit snapshot
-		oldSource, _ := repo.GetByID(r.Context(), id)
+		oldEndpoint, _ := repo.GetByID(r.Context(), id)
 
 		updated, err := repo.Update(r.Context(), id, req)
 		if err != nil {
-			WriteError(w, http.StatusNotFound, ErrConfigValidation, "source not found")
+			WriteError(w, http.StatusNotFound, ErrConfigValidation, "endpoint not found")
 			return
 		}
 
@@ -147,30 +147,30 @@ func UpdateSource(db *sql.DB, secretSvc *secret.Service, auditRepo *audit.Reposi
 		if auditErr := auditRepo.Insert(r.Context(), &audit.AuditLog{
 			Operator:       GetUsernameFromContext(r.Context()),
 			Action:         "update",
-			TargetType:     "source",
+			TargetType:     "endpoint",
 			TargetID:       id,
-			SnapshotBefore: marshalSnapshot(oldSource),
-			Summary:        stringPtr(fmt.Sprintf("updated source %q", updated.Name)),
+			SnapshotBefore: marshalSnapshot(oldEndpoint),
+			Summary:        stringPtr(fmt.Sprintf("updated endpoint %q", updated.Name)),
 		}); auditErr != nil {
-			slog.Error("audit log insert failed", "action", "update", "target_type", "source", "error", auditErr)
+			slog.Error("audit log insert failed", "action", "update", "target_type", "endpoint", "error", auditErr)
 		}
 
-		resp := toSourceResponse(updated)
+		resp := toEndpointResponse(updated)
 		WriteJSON(w, http.StatusOK, resp)
 	}
 }
 
-// DeleteSource deletes a source by ID.
-func DeleteSource(db *sql.DB, auditRepo *audit.Repository) http.HandlerFunc {
-	repo := source.NewRepository(db)
+// DeleteEndpoint deletes a endpoint by ID.
+func DeleteEndpoint(db *pgxpool.Pool, auditRepo *audit.Repository) http.HandlerFunc {
+	repo := endpoint.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
 
 		// Fetch old record for audit snapshot
-		oldSource, _ := repo.GetByID(r.Context(), id)
+		oldEndpoint, _ := repo.GetByID(r.Context(), id)
 
 		if err := repo.Delete(r.Context(), id); err != nil {
-			WriteError(w, http.StatusNotFound, ErrConfigValidation, "source not found")
+			WriteError(w, http.StatusNotFound, ErrConfigValidation, "endpoint not found")
 			return
 		}
 
@@ -178,28 +178,28 @@ func DeleteSource(db *sql.DB, auditRepo *audit.Repository) http.HandlerFunc {
 		if auditErr := auditRepo.Insert(r.Context(), &audit.AuditLog{
 			Operator:       GetUsernameFromContext(r.Context()),
 			Action:         "delete",
-			TargetType:     "source",
+			TargetType:     "endpoint",
 			TargetID:       id,
-			SnapshotBefore: marshalSnapshot(oldSource),
-			Summary:        stringPtr(fmt.Sprintf("deleted source %s", id)),
+			SnapshotBefore: marshalSnapshot(oldEndpoint),
+			Summary:        stringPtr(fmt.Sprintf("deleted endpoint %s", id)),
 		}); auditErr != nil {
-			slog.Error("audit log insert failed", "action", "delete", "target_type", "source", "error", auditErr)
+			slog.Error("audit log insert failed", "action", "delete", "target_type", "endpoint", "error", auditErr)
 		}
 
 		WriteJSON(w, http.StatusNoContent, nil)
 	}
 }
 
-// toSourceResponse converts a Source to a SourceResponse, masking the secret.
-func toSourceResponse(s *source.Source) source.SourceResponse {
-	maskedSecretRef := maskSecretRef(s.SecretRef)
-	return source.SourceResponse{
+// toEndpointResponse converts a Endpoint to a EndpointResponse, masking the secret.
+func toEndpointResponse(s *endpoint.Endpoint) endpoint.EndpointResponse {
+	maskedSecret := maskSecretStatus(s.EncryptedSecret)
+	return endpoint.EndpointResponse{
 		ID:                 s.ID,
 		Name:               s.Name,
 		Slug:               s.Slug,
 		Enabled:            s.Enabled,
 		AuthType:           s.AuthType,
-		SecretRef:          maskedSecretRef,
+		Secret:             maskedSecret,
 		PayloadContentType: s.PayloadContentType,
 		MaxBodyBytes:       s.MaxBodyBytes,
 		RateLimit:          s.RateLimit,
@@ -209,8 +209,8 @@ func toSourceResponse(s *source.Source) source.SourceResponse {
 	}
 }
 
-// maskSecretRef masks the secret reference for display.
-func maskSecretRef(ref *string) *string {
+// maskSecretStatus masks the secret reference for display.
+func maskSecretStatus(ref *string) *string {
 	if ref == nil || *ref == "" {
 		s := "not_configured"
 		return &s

@@ -1,7 +1,6 @@
 package api
 
 import (
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -9,31 +8,32 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"zpush/internal/audit"
-	"zpush/internal/destination"
-	"zpush/internal/secret"
-	"zpush/internal/sender"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"notygo/internal/audit"
+	"notygo/internal/channel"
+	"notygo/internal/secret"
+	"notygo/internal/sender"
 )
 
-// ListDestinations returns a paginated list of destinations.
-func ListDestinations(db *sql.DB, secretSvc *secret.Service) http.HandlerFunc {
-	repo := destination.NewRepository(db)
+// ListChannels returns a paginated list of channels.
+func ListChannels(db *pgxpool.Pool, secretSvc *secret.Service) http.HandlerFunc {
+	repo := channel.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		page, size := ParsePagination(r)
 		result, total, err := repo.List(r.Context(), page, size)
 		if err != nil {
-			slog.Error("list destinations failed", "error", err)
-			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to list destinations")
+			slog.Error("list channels failed", "error", err)
+			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to list channels")
 			return
 		}
 
 		// Convert to response DTOs with masked secrets
-		responses := make([]destination.DestinationResponse, len(result))
+		responses := make([]channel.ChannelResponse, len(result))
 		for i := range result {
-			responses[i] = toDestinationResponse(&result[i], secretSvc)
+			responses[i] = toChannelResponse(&result[i], secretSvc)
 		}
 
-		WriteJSON(w, http.StatusOK, PaginatedResponse[destination.DestinationResponse]{
+		WriteJSON(w, http.StatusOK, PaginatedResponse[channel.ChannelResponse]{
 			Data:  responses,
 			Total: total,
 			Page:  page,
@@ -42,11 +42,11 @@ func ListDestinations(db *sql.DB, secretSvc *secret.Service) http.HandlerFunc {
 	}
 }
 
-// CreateDestination creates a new destination.
-func CreateDestination(db *sql.DB, secretSvc *secret.Service, auditRepo *audit.Repository) http.HandlerFunc {
-	repo := destination.NewRepository(db)
+// CreateChannel creates a new channel.
+func CreateChannel(db *pgxpool.Pool, secretSvc *secret.Service, auditRepo *audit.Repository) http.HandlerFunc {
+	repo := channel.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
-		var req destination.CreateDestinationRequest
+		var req channel.CreateChannelRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "invalid request body")
 			return
@@ -66,61 +66,61 @@ func CreateDestination(db *sql.DB, secretSvc *secret.Service, auditRepo *audit.R
 		}
 
 		// Encrypt secret if provided
-		if req.SecretRef != nil && *req.SecretRef != "" && secretSvc != nil {
-			encrypted, err := secretSvc.Encrypt(*req.SecretRef)
+		if req.Secret != nil && *req.Secret != "" && secretSvc != nil {
+			encrypted, err := secretSvc.Encrypt(*req.Secret)
 			if err != nil {
 				WriteError(w, http.StatusInternalServerError, ErrSystemKeyInvalid, "failed to encrypt secret")
 				return
 			}
-			req.SecretRef = &encrypted
+			req.Secret = &encrypted
 		}
 
 		created, err := repo.Create(r.Context(), req)
 		if err != nil {
-			slog.Error("create destination failed", "error", err)
-			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to create destination")
+			slog.Error("create channel failed", "error", err)
+			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to create channel")
 			return
 		}
 
-		resp := toDestinationResponse(created, secretSvc)
+		resp := toChannelResponse(created, secretSvc)
 		WriteJSON(w, http.StatusCreated, resp)
 
 		// Audit log
 		if auditErr := auditRepo.Insert(r.Context(), &audit.AuditLog{
 			Operator:   GetUsernameFromContext(r.Context()),
 			Action:     "create",
-			TargetType: "destination",
+			TargetType: "channel",
 			TargetID:   created.ID,
-			Summary:    stringPtr(fmt.Sprintf("created destination %q", created.Name)),
+			Summary:    stringPtr(fmt.Sprintf("created channel %q", created.Name)),
 		}); auditErr != nil {
-			slog.Error("audit log insert failed", "action", "create", "target_type", "destination", "error", auditErr)
+			slog.Error("audit log insert failed", "action", "create", "target_type", "channel", "error", auditErr)
 		}
 	}
 }
 
-// GetDestination returns a single destination by ID.
-func GetDestination(db *sql.DB, secretSvc *secret.Service) http.HandlerFunc {
-	repo := destination.NewRepository(db)
+// GetChannel returns a single channel by ID.
+func GetChannel(db *pgxpool.Pool, secretSvc *secret.Service) http.HandlerFunc {
+	repo := channel.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
 		d, err := repo.GetByID(r.Context(), id)
 		if err != nil {
-			WriteError(w, http.StatusNotFound, ErrConfigValidation, "destination not found")
+			WriteError(w, http.StatusNotFound, ErrConfigValidation, "channel not found")
 			return
 		}
 
-		resp := toDestinationResponse(d, secretSvc)
+		resp := toChannelResponse(d, secretSvc)
 		WriteJSON(w, http.StatusOK, resp)
 	}
 }
 
-// UpdateDestination updates an existing destination, incrementing revision.
-// Uses UpdateDestinationRequest with pointer fields for partial updates.
-func UpdateDestination(db *sql.DB, secretSvc *secret.Service, auditRepo *audit.Repository) http.HandlerFunc {
-	repo := destination.NewRepository(db)
+// UpdateChannel updates an existing channel, incrementing revision.
+// Uses UpdateChannelRequest with pointer fields for partial updates.
+func UpdateChannel(db *pgxpool.Pool, secretSvc *secret.Service, auditRepo *audit.Repository) http.HandlerFunc {
+	repo := channel.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
-		var req destination.UpdateDestinationRequest
+		var req channel.UpdateChannelRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "invalid request body")
 			return
@@ -131,13 +131,13 @@ func UpdateDestination(db *sql.DB, secretSvc *secret.Service, auditRepo *audit.R
 		}
 
 		// Encrypt secret if provided
-		if req.SecretRef != nil && *req.SecretRef != "" && secretSvc != nil {
-			encrypted, err := secretSvc.Encrypt(*req.SecretRef)
+		if req.Secret != nil && *req.Secret != "" && secretSvc != nil {
+			encrypted, err := secretSvc.Encrypt(*req.Secret)
 			if err != nil {
 				WriteError(w, http.StatusInternalServerError, ErrSystemKeyInvalid, "failed to encrypt secret")
 				return
 			}
-			req.SecretRef = &encrypted
+			req.Secret = &encrypted
 		}
 
 		// Fetch old record for audit snapshot
@@ -145,30 +145,30 @@ func UpdateDestination(db *sql.DB, secretSvc *secret.Service, auditRepo *audit.R
 
 		updated, err := repo.Update(r.Context(), id, req)
 		if err != nil {
-			WriteError(w, http.StatusNotFound, ErrConfigValidation, "destination not found")
+			WriteError(w, http.StatusNotFound, ErrConfigValidation, "channel not found")
 			return
 		}
 
-		resp := toDestinationResponse(updated, secretSvc)
+		resp := toChannelResponse(updated, secretSvc)
 		WriteJSON(w, http.StatusOK, resp)
 
 		// Audit log
 		if auditErr := auditRepo.Insert(r.Context(), &audit.AuditLog{
 			Operator:       GetUsernameFromContext(r.Context()),
 			Action:         "update",
-			TargetType:     "destination",
+			TargetType:     "channel",
 			TargetID:       id,
 			SnapshotBefore: marshalSnapshot(oldDest),
-			Summary:        stringPtr(fmt.Sprintf("updated destination %q", updated.Name)),
+			Summary:        stringPtr(fmt.Sprintf("updated channel %q", updated.Name)),
 		}); auditErr != nil {
-			slog.Error("audit log insert failed", "action", "update", "target_type", "destination", "error", auditErr)
+			slog.Error("audit log insert failed", "action", "update", "target_type", "channel", "error", auditErr)
 		}
 	}
 }
 
-// DeleteDestination deletes a destination by ID.
-func DeleteDestination(db *sql.DB, auditRepo *audit.Repository) http.HandlerFunc {
-	repo := destination.NewRepository(db)
+// DeleteChannel deletes a channel by ID.
+func DeleteChannel(db *pgxpool.Pool, auditRepo *audit.Repository) http.HandlerFunc {
+	repo := channel.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
 
@@ -176,7 +176,7 @@ func DeleteDestination(db *sql.DB, auditRepo *audit.Repository) http.HandlerFunc
 		oldDest, _ := repo.GetByID(r.Context(), id)
 
 		if err := repo.Delete(r.Context(), id); err != nil {
-			WriteError(w, http.StatusNotFound, ErrConfigValidation, "destination not found")
+			WriteError(w, http.StatusNotFound, ErrConfigValidation, "channel not found")
 			return
 		}
 		WriteJSON(w, http.StatusNoContent, nil)
@@ -185,26 +185,26 @@ func DeleteDestination(db *sql.DB, auditRepo *audit.Repository) http.HandlerFunc
 		if auditErr := auditRepo.Insert(r.Context(), &audit.AuditLog{
 			Operator:       GetUsernameFromContext(r.Context()),
 			Action:         "delete",
-			TargetType:     "destination",
+			TargetType:     "channel",
 			TargetID:       id,
 			SnapshotBefore: marshalSnapshot(oldDest),
-			Summary:        stringPtr(fmt.Sprintf("deleted destination %s", id)),
+			Summary:        stringPtr(fmt.Sprintf("deleted channel %s", id)),
 		}); auditErr != nil {
-			slog.Error("audit log insert failed", "action", "delete", "target_type", "destination", "error", auditErr)
+			slog.Error("audit log insert failed", "action", "delete", "target_type", "channel", "error", auditErr)
 		}
 	}
 }
 
-// TestDestination sends a test message through the destination, exercising
+// TestChannel sends a test message through the channel, exercising
 // the same sender/config code path as real deliveries. The outcome (success
 // or failure) is written to the audit log.
-func TestDestination(db *sql.DB, secretSvc *secret.Service, senderRegistry *sender.Registry, auditRepo *audit.Repository) http.HandlerFunc {
-	repo := destination.NewRepository(db)
+func TestChannel(db *pgxpool.Pool, secretSvc *secret.Service, senderRegistry *sender.Registry, auditRepo *audit.Repository) http.HandlerFunc {
+	repo := channel.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
 		dest, err := repo.GetByID(r.Context(), id)
 		if err != nil {
-			WriteError(w, http.StatusNotFound, ErrConfigValidation, "destination not found")
+			WriteError(w, http.StatusNotFound, ErrConfigValidation, "channel not found")
 			return
 		}
 
@@ -215,13 +215,13 @@ func TestDestination(db *sql.DB, secretSvc *secret.Service, senderRegistry *send
 		}
 
 		// Build the exact config a real delivery would use
-		cfg := destination.BuildSenderConfig(dest, secretSvc)
+		cfg := channel.BuildSenderConfig(dest, secretSvc)
 		if cfg.Timeout <= 0 {
 			cfg.Timeout = 10 * time.Second
 		}
 
 		msg := sender.RenderedMessage{
-			Title:  "zPush 测试消息",
+			Title:  "Notygo 测试消息",
 			Body:   fmt.Sprintf("渠道「%s」测试发送\n时间 %s", dest.Name, time.Now().Format("2006-01-02 15:04:05")),
 			Format: "text",
 		}
@@ -230,7 +230,7 @@ func TestDestination(db *sql.DB, secretSvc *secret.Service, senderRegistry *send
 
 		// Transport-level failure
 		if err != nil {
-			auditDestinationTest(r, auditRepo, dest, "failed", err.Error())
+			auditChannelTest(r, auditRepo, dest, "failed", err.Error())
 			WriteError(w, http.StatusBadGateway, "DELIVER_001", err.Error())
 			return
 		}
@@ -238,7 +238,7 @@ func TestDestination(db *sql.DB, secretSvc *secret.Service, senderRegistry *send
 		// 2xx + no business error code = success
 		businessOK := result.BusinessCode == "" || result.BusinessCode == "0"
 		if result.StatusCode >= 200 && result.StatusCode < 300 && businessOK {
-			auditDestinationTest(r, auditRepo, dest, "success", fmt.Sprintf("status %d", result.StatusCode))
+			auditChannelTest(r, auditRepo, dest, "success", fmt.Sprintf("status %d", result.StatusCode))
 			WriteJSON(w, http.StatusOK, map[string]any{
 				"success":       true,
 				"status_code":   result.StatusCode,
@@ -255,26 +255,26 @@ func TestDestination(db *sql.DB, secretSvc *secret.Service, senderRegistry *send
 		if snippet := truncateResponse(result.Body); snippet != "" {
 			detail += ": " + snippet
 		}
-		auditDestinationTest(r, auditRepo, dest, "failed", detail)
+		auditChannelTest(r, auditRepo, dest, "failed", detail)
 		WriteError(w, http.StatusBadGateway, "DELIVER_004", "test send failed ("+detail+")")
 	}
 }
 
-// auditDestinationTest records a destination test-send outcome; a write
+// auditChannelTest records a channel test-send outcome; a write
 // failure is logged but never blocks the response.
-func auditDestinationTest(r *http.Request, auditRepo *audit.Repository, dest *destination.Destination, outcome, detail string) {
+func auditChannelTest(r *http.Request, auditRepo *audit.Repository, dest *channel.Channel, outcome, detail string) {
 	if auditRepo == nil {
 		return
 	}
-	summary := fmt.Sprintf("tested destination %q: %s (%s)", dest.Name, outcome, detail)
+	summary := fmt.Sprintf("tested channel %q: %s (%s)", dest.Name, outcome, detail)
 	if err := auditRepo.Insert(r.Context(), &audit.AuditLog{
 		Operator:   GetUsernameFromContext(r.Context()),
 		Action:     "test",
-		TargetType: "destination",
+		TargetType: "channel",
 		TargetID:   dest.ID,
 		Summary:    &summary,
 	}); err != nil {
-		slog.Error("audit log insert failed", "action", "test", "target_type", "destination", "error", err)
+		slog.Error("audit log insert failed", "action", "test", "target_type", "channel", "error", err)
 	}
 }
 
@@ -287,29 +287,29 @@ func truncateResponse(body string) string {
 	return body
 }
 
-// toDestinationResponse converts a Destination to a DestinationResponse, masking the secret.
-func toDestinationResponse(d *destination.Destination, secretSvc *secret.Service) destination.DestinationResponse {
-	maskedSecretRef := maskDestSecretRef(d.SecretRef, secretSvc)
-	return destination.DestinationResponse{
-		ID:        d.ID,
-		Name:      d.Name,
-		Type:      d.Type,
-		Enabled:   d.Enabled,
+// toChannelResponse converts a Channel to a ChannelResponse, masking the secret.
+func toChannelResponse(d *channel.Channel, secretSvc *secret.Service) channel.ChannelResponse {
+	maskedSecret := maskChannelSecret(d.EncryptedSecret, secretSvc)
+	return channel.ChannelResponse{
+		ID:          d.ID,
+		Name:        d.Name,
+		Type:        d.Type,
+		Enabled:     d.Enabled,
 		Config:      d.Config,
-		SecretRef:   maskedSecretRef,
+		Secret:      maskedSecret,
 		TimeoutMs:   d.TimeoutMs,
 		MaxAttempts: d.MaxAttempts,
 		Revision:    d.Revision,
-		CreatedAt: formatTimeOrNil(d.CreatedAt),
-		UpdatedAt: formatTimeOrNil(d.UpdatedAt),
+		CreatedAt:   formatTimeOrNil(d.CreatedAt),
+		UpdatedAt:   formatTimeOrNil(d.UpdatedAt),
 	}
 }
 
-// maskDestSecretRef returns the decrypted secret for display.
+// maskChannelSecret returns the decrypted secret for display.
 // The frontend uses type="password" to mask it visually; the user can click
 // the eye icon to reveal the full value. Falls back to a status label if
 // decryption fails.
-func maskDestSecretRef(ref *string, secretSvc *secret.Service) *string {
+func maskChannelSecret(ref *string, secretSvc *secret.Service) *string {
 	if ref == nil || *ref == "" {
 		s := "not_configured"
 		return &s

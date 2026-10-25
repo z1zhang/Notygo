@@ -1,57 +1,59 @@
-package source
+package endpoint
 
 import "time"
 
-// Source represents a webhook source in the system.
-type Source struct {
-	ID                 string    `json:"id"`
-	Name               string    `json:"name"`
-	Slug               string    `json:"slug"`
-	Enabled            bool      `json:"enabled"`
-	AuthType           string    `json:"auth_type"`
-	SecretRef          *string   `json:"secret_ref,omitempty"`
+// Endpoint represents a webhook endpoint in the system.
+type Endpoint struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Slug     string `json:"slug"`
+	Enabled  bool   `json:"enabled"`
+	AuthType string `json:"auth_type"`
+	// EncryptedSecret is the AES-GCM ciphertext of the endpoint's bearer
+	// token; the plaintext only ever exists in memory at ingest time.
+	EncryptedSecret    *string   `json:"encrypted_secret,omitempty"`
 	PayloadContentType string    `json:"payload_content_type"`
 	MaxBodyBytes       int       `json:"max_body_bytes"`
 	RateLimit          *string   `json:"rate_limit,omitempty"`
 	MappingID          *string   `json:"mapping_id,omitempty"`
-	CreatedAt time.Time `json:"created_at,omitempty"`
-	UpdatedAt time.Time `json:"updated_at,omitempty"`
+	CreatedAt          time.Time `json:"created_at,omitempty"`
+	UpdatedAt          time.Time `json:"updated_at,omitempty"`
 }
 
-// CreateSourceRequest is the DTO for creating a new source.
-type CreateSourceRequest struct {
+// CreateEndpointRequest is the DTO for creating a new endpoint.
+type CreateEndpointRequest struct {
 	Name               string  `json:"name"`
 	Slug               string  `json:"slug"`
 	Enabled            *bool   `json:"enabled,omitempty"`
 	AuthType           *string `json:"auth_type,omitempty"`
-	SecretRef          *string `json:"secret_ref,omitempty"`
+	Secret             *string `json:"secret,omitempty"`
 	PayloadContentType *string `json:"payload_content_type,omitempty"`
 	MaxBodyBytes       *int    `json:"max_body_bytes,omitempty"`
 	RateLimit          *string `json:"rate_limit,omitempty"`
 	MappingID          *string `json:"mapping_id,omitempty"`
 }
 
-// UpdateSourceRequest is the DTO for updating an existing source.
-type UpdateSourceRequest struct {
+// UpdateEndpointRequest is the DTO for updating an existing endpoint.
+type UpdateEndpointRequest struct {
 	Name               *string `json:"name,omitempty"`
 	Slug               *string `json:"slug,omitempty"`
 	Enabled            *bool   `json:"enabled,omitempty"`
 	AuthType           *string `json:"auth_type,omitempty"`
-	SecretRef          *string `json:"secret_ref,omitempty"`
+	Secret             *string `json:"secret,omitempty"`
 	PayloadContentType *string `json:"payload_content_type,omitempty"`
 	MaxBodyBytes       *int    `json:"max_body_bytes,omitempty"`
 	RateLimit          *string `json:"rate_limit,omitempty"`
 	MappingID          *string `json:"mapping_id,omitempty"`
 }
 
-// SourceResponse is the DTO returned by the API.
-type SourceResponse struct {
+// EndpointResponse is the DTO returned by the API.
+type EndpointResponse struct {
 	ID                 string  `json:"id"`
 	Name               string  `json:"name"`
 	Slug               string  `json:"slug"`
 	Enabled            bool    `json:"enabled"`
 	AuthType           string  `json:"auth_type"`
-	SecretRef          *string `json:"secret_ref,omitempty"`
+	Secret             *string `json:"secret,omitempty"`
 	PayloadContentType string  `json:"payload_content_type"`
 	MaxBodyBytes       int     `json:"max_body_bytes"`
 	RateLimit          *string `json:"rate_limit,omitempty"`

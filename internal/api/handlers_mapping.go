@@ -1,19 +1,19 @@
 package api
 
 import (
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-	"zpush/internal/audit"
-	"zpush/internal/mapping"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"notygo/internal/audit"
+	"notygo/internal/mapping"
 )
 
 // ListMappings returns a paginated list of mappings.
-func ListMappings(db *sql.DB) http.HandlerFunc {
+func ListMappings(db *pgxpool.Pool) http.HandlerFunc {
 	repo := mapping.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		page, size := ParsePagination(r)
@@ -32,7 +32,7 @@ func ListMappings(db *sql.DB) http.HandlerFunc {
 }
 
 // CreateMapping creates a new mapping.
-func CreateMapping(db *sql.DB, auditRepo *audit.Repository) http.HandlerFunc {
+func CreateMapping(db *pgxpool.Pool, auditRepo *audit.Repository) http.HandlerFunc {
 	repo := mapping.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -80,7 +80,7 @@ func CreateMapping(db *sql.DB, auditRepo *audit.Repository) http.HandlerFunc {
 }
 
 // GetMapping returns a single mapping by ID.
-func GetMapping(db *sql.DB) http.HandlerFunc {
+func GetMapping(db *pgxpool.Pool) http.HandlerFunc {
 	repo := mapping.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
@@ -94,7 +94,7 @@ func GetMapping(db *sql.DB) http.HandlerFunc {
 }
 
 // UpdateMapping updates an existing mapping, incrementing revision.
-func UpdateMapping(db *sql.DB, auditRepo *audit.Repository) http.HandlerFunc {
+func UpdateMapping(db *pgxpool.Pool, auditRepo *audit.Repository) http.HandlerFunc {
 	repo := mapping.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
@@ -135,7 +135,7 @@ func UpdateMapping(db *sql.DB, auditRepo *audit.Repository) http.HandlerFunc {
 }
 
 // DeleteMapping deletes a mapping by ID.
-func DeleteMapping(db *sql.DB, auditRepo *audit.Repository) http.HandlerFunc {
+func DeleteMapping(db *pgxpool.Pool, auditRepo *audit.Repository) http.HandlerFunc {
 	repo := mapping.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")

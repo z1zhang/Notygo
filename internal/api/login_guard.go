@@ -9,7 +9,7 @@ import (
 
 // loginGuard tracks failed login attempts per key (IP and username) and
 // locks out keys that exceed the configured failure count within the
-// lockout window. It is in-memory by design: zPush runs as a single
+// lockout window. It is in-memory by design: Notygo runs as a single
 // instance, and losing counters on restart is an acceptable trade-off.
 type loginGuard struct {
 	mu          sync.Mutex

@@ -3,12 +3,11 @@ package config
 import (
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/go-sql-driver/mysql"
 )
 
 // Config holds all application configuration.
@@ -16,7 +15,7 @@ type Config struct {
 	Server   ServerConfig
 	Database DatabaseConfig
 	Secret   SecretConfig
-	Worker   WorkerConfig
+	Queue    QueueConfig
 	Ingest   IngestConfig
 	Admin    AdminConfig
 	Log      LogConfig
@@ -27,27 +26,27 @@ type ServerConfig struct {
 }
 
 type DatabaseConfig struct {
-	DSN      string // resolved MySQL DSN, assembled from the parts below
+	DSN      string // resolved PostgreSQL DSN, assembled from the parts below
 	Host     string
 	Port     int
 	User     string
 	Password string
 	Name     string
+	SSLMode  string
 }
 
 type SecretConfig struct {
 	MasterKeyEnv string // raw ENCRYPTION_MASTER_KEY value
 }
 
-type WorkerConfig struct {
-	EventProcessorConcurrency int
-	DeliveryWorkerConcurrency int
-	LeaseTimeout              time.Duration
-	RetryBaseDelay            time.Duration
-	RetryMaxDelay             time.Duration
-	RetryJitterPercent        int
-	ClaimPollInterval         time.Duration
-	LeaseRecoveryInterval     time.Duration
+// QueueConfig configures the River job queues.
+type QueueConfig struct {
+	EventConcurrency    int           // MaxWorkers for the event_process queue
+	DeliveryConcurrency int           // MaxWorkers for the delivery_send queue
+	RetryBaseDelay      time.Duration // first retry backoff
+	RetryMaxDelay       time.Duration // backoff cap
+	RetryJitterPercent  int           // +-jitter in percent around the backoff
+	JobRetention        time.Duration // completed/cancelled River job retention
 }
 
 type IngestConfig struct {
@@ -74,23 +73,22 @@ func Load() (*Config, error) {
 		},
 		Database: DatabaseConfig{
 			Host:     getEnv("DB_HOST", "127.0.0.1"),
-			Port:     getEnvInt("DB_PORT", 3306),
+			Port:     getEnvInt("DB_PORT", 5432),
 			User:     os.Getenv("DB_USER"),
 			Password: os.Getenv("DB_PASSWORD"),
-			Name:     getEnv("DB_NAME", "zpush"),
+			Name:     getEnv("DB_NAME", "notygo"),
+			SSLMode:  getEnv("DB_SSLMODE", "disable"),
 		},
 		Secret: SecretConfig{
 			MasterKeyEnv: os.Getenv("ENCRYPTION_MASTER_KEY"),
 		},
-		Worker: WorkerConfig{
-			EventProcessorConcurrency: getEnvInt("EVENT_PROCESSOR_CONCURRENCY", 4),
-			DeliveryWorkerConcurrency: getEnvInt("DELIVERY_WORKER_CONCURRENCY", 8),
-			LeaseTimeout:              getEnvDuration("LEASE_TIMEOUT", 30*time.Second),
-			RetryBaseDelay:            30 * time.Second,
-			RetryMaxDelay:             1 * time.Hour,
-			RetryJitterPercent:        20,
-			ClaimPollInterval:         getEnvDuration("CLAIM_POLL_INTERVAL", 2*time.Second),
-			LeaseRecoveryInterval:     30 * time.Second,
+		Queue: QueueConfig{
+			EventConcurrency:    getEnvInt("QUEUE_EVENT_CONCURRENCY", 4),
+			DeliveryConcurrency: getEnvInt("QUEUE_DELIVERY_CONCURRENCY", 8),
+			RetryBaseDelay:      getEnvDuration("QUEUE_RETRY_BASE_DELAY", 30*time.Second),
+			RetryMaxDelay:       getEnvDuration("QUEUE_RETRY_MAX_DELAY", 1*time.Hour),
+			RetryJitterPercent:  getEnvInt("QUEUE_RETRY_JITTER_PERCENT", 20),
+			JobRetention:        getEnvDuration("RIVER_JOB_RETENTION", 24*time.Hour),
 		},
 		Ingest: IngestConfig{
 			MaxPayloadBytes: getEnvInt("MAX_PAYLOAD_BYTES", 1048576), // 1MB
@@ -107,11 +105,11 @@ func Load() (*Config, error) {
 		},
 	}
 
-	// The MySQL connection is assembled from the DB_* parts.
+	// The PostgreSQL connection is assembled from the DB_* parts.
 	if cfg.Database.User == "" || cfg.Database.Password == "" {
 		return nil, fmt.Errorf("DB_USER and DB_PASSWORD are required but not set")
 	}
-	cfg.Database.DSN = buildMySQLDSN(cfg.Database)
+	cfg.Database.DSN = buildPostgresDSN(cfg.Database)
 
 	if cfg.Secret.MasterKeyEnv == "" {
 		return nil, fmt.Errorf("ENCRYPTION_MASTER_KEY is required but not set")
@@ -149,19 +147,20 @@ func getEnvDuration(key string, fallback time.Duration) time.Duration {
 	return fallback
 }
 
-// buildMySQLDSN assembles a go-sql-driver DSN from discrete parts.
-// mysql.Config.FormatDSN escapes special characters (e.g. passwords
-// containing ':' or '@') that would break a hand-written DSN string.
-func buildMySQLDSN(cfg DatabaseConfig) string {
-	mc := mysql.Config{
-		Net:       "tcp",
-		Addr:      net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port)),
-		User:      cfg.User,
-		Passwd:    cfg.Password,
-		DBName:    cfg.Name,
-		ParseTime: true,
+// buildPostgresDSN assembles a PostgreSQL URL from discrete parts.
+// net/url escapes special characters (e.g. passwords containing ':' or '@')
+// that would break a hand-written DSN string.
+func buildPostgresDSN(cfg DatabaseConfig) string {
+	u := url.URL{
+		Scheme: "postgres",
+		User:   url.UserPassword(cfg.User, cfg.Password),
+		Host:   net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port)),
+		Path:   "/" + cfg.Name,
 	}
-	return mc.FormatDSN()
+	q := u.Query()
+	q.Set("sslmode", cfg.SSLMode)
+	u.RawQuery = q.Encode()
+	return u.String()
 }
 
 // ParseGlobalRateLimit parses "rate/burst" format (e.g. "100/200").

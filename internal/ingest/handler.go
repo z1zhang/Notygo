@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,32 +15,33 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/oklog/ulid/v2"
 
-	"zpush/internal/notify"
-	"zpush/internal/observability"
-	"zpush/internal/secret"
-	"zpush/internal/source"
-	"zpush/internal/storage"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"notygo/internal/endpoint"
+	"notygo/internal/event"
+	"notygo/internal/observability"
+	"notygo/internal/queue"
+	"notygo/internal/secret"
 )
 
 // Ingester handles incoming webhook ingestion requests.
 type Ingester struct {
-	db           *sql.DB
-	sourceRepo   *source.Repository
+	db           *pgxpool.Pool
+	endpointRepo *endpoint.Repository
 	secretSvc    *secret.Service
 	rateLimiter  *RateLimiter
 	maxBodyBytes int
-	notifier     *notify.Notifier
+	queue        *queue.Manager
 }
 
 // NewIngester creates a new Ingester.
-func NewIngester(db *sql.DB, sourceRepo *source.Repository, secretSvc *secret.Service, rl *RateLimiter, maxBodyBytes int, notifier *notify.Notifier) *Ingester {
+func NewIngester(db *pgxpool.Pool, endpointRepo *endpoint.Repository, secretSvc *secret.Service, rl *RateLimiter, maxBodyBytes int, q *queue.Manager) *Ingester {
 	return &Ingester{
 		db:           db,
-		sourceRepo:   sourceRepo,
+		endpointRepo: endpointRepo,
 		secretSvc:    secretSvc,
 		rateLimiter:  rl,
 		maxBodyBytes: maxBodyBytes,
-		notifier:     notifier,
+		queue:        q,
 	}
 }
 
@@ -55,27 +55,27 @@ type ingestResponse struct {
 func (h *Ingester) HandleIngest(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// 1. Extract source slug from URL
-	slug := chi.URLParam(r, "source_slug")
+	// 1. Extract endpoint slug from URL
+	slug := chi.URLParam(r, "slug")
 	if slug == "" {
-		writeIngestError(w, http.StatusBadRequest, "INGEST_005", "missing source_slug in URL path")
+		writeIngestError(w, http.StatusBadRequest, "INGEST_005", "missing slug in URL path")
 		return
 	}
 
-	// 2. Lookup source by slug
-	src, err := h.sourceRepo.GetBySlug(ctx, slug)
+	// 2. Lookup endpoint by slug
+	src, err := h.endpointRepo.GetBySlug(ctx, slug)
 	if err != nil {
-		if err == source.ErrNotFound {
-			writeIngestError(w, http.StatusNotFound, "INGEST_005", fmt.Sprintf("source %q not found", slug))
+		if err == endpoint.ErrNotFound {
+			writeIngestError(w, http.StatusNotFound, "INGEST_005", fmt.Sprintf("endpoint %q not found", slug))
 			return
 		}
 		writeIngestError(w, http.StatusInternalServerError, "INGEST_006", "database unavailable")
 		return
 	}
 
-	// 3. Check source is enabled
+	// 3. Check endpoint is enabled
 	if !src.Enabled {
-		writeIngestError(w, http.StatusForbidden, "INGEST_005", fmt.Sprintf("source %q is disabled", slug))
+		writeIngestError(w, http.StatusForbidden, "INGEST_005", fmt.Sprintf("endpoint %q is disabled", slug))
 		return
 	}
 
@@ -88,11 +88,11 @@ func (h *Ingester) HandleIngest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 5. Check rate limit
-	sourceRateLimit := ""
+	endpointRateLimit := ""
 	if src.RateLimit != nil {
-		sourceRateLimit = *src.RateLimit
+		endpointRateLimit = *src.RateLimit
 	}
-	if !h.rateLimiter.Allow(slug, sourceRateLimit) {
+	if !h.rateLimiter.Allow(slug, endpointRateLimit) {
 		writeIngestError(w, http.StatusTooManyRequests, "INGEST_004", "rate limit exceeded")
 		return
 	}
@@ -124,10 +124,10 @@ func (h *Ingester) HandleIngest(w http.ResponseWriter, r *http.Request) {
 	hash := sha256.Sum256(body)
 	payloadHash := fmt.Sprintf("%x", hash[:])
 
-	// 9. Check for duplicate source_event_id (from X-Delivery-Id header)
+	// 9. Check for duplicate upstream_event_id (from X-Delivery-Id header)
 	deliveryID := r.Header.Get("X-Delivery-Id")
 	if deliveryID != "" {
-		isDup, err := h.sourceRepo.CheckDuplicateSourceEventID(ctx, src.ID, deliveryID)
+		isDup, err := h.endpointRepo.CheckDuplicateUpstreamEventID(ctx, src.ID, deliveryID)
 		if err != nil {
 			// Log but don't block on duplicate check failure
 			// Continue processing
@@ -144,27 +144,47 @@ func (h *Ingester) HandleIngest(w http.ResponseWriter, r *http.Request) {
 	// 11. Get request ID from context
 	requestID := observability.GetRequestID(ctx)
 
-	// 12. INSERT INTO events
-	receivedAt := storage.FormatNow()
-
-	var sourceEventID *string
-	if deliveryID != "" {
-		sourceEventID = &deliveryID
+	// 12. INSERT INTO notygo_events + queue the processing job in one transaction:
+	// the event row and its event_process job are atomic — a crash in between
+	// can never leave an unprocessed event behind.
+	receivedAt := time.Now().UTC()
+	statusCode, err := event.StatusToCode(event.EventStatusReceived)
+	if err != nil {
+		writeIngestError(w, http.StatusInternalServerError, "INGEST_006", "failed to store event")
+		return
 	}
-
-	_, err = h.db.ExecContext(ctx,
-		`INSERT INTO events (id, source_id, source_event_id, request_id, received_at, content_type, payload_raw, payload_hash, status, run_type)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		eventID, src.ID, sourceEventID, requestID, receivedAt, src.PayloadContentType, string(body), payloadHash, "received", "initial",
-	)
+	runTypeCode, err := event.RunTypeToCode(event.EventRunTypeInitial)
 	if err != nil {
 		writeIngestError(w, http.StatusInternalServerError, "INGEST_006", "failed to store event")
 		return
 	}
 
-	// Notify the event processor that a new event is available
-	if h.notifier != nil {
-		h.notifier.NotifyEvent()
+	var upstreamEventID *string
+	if deliveryID != "" {
+		upstreamEventID = &deliveryID
+	}
+
+	tx, err := h.db.Begin(ctx)
+	if err != nil {
+		writeIngestError(w, http.StatusInternalServerError, "INGEST_006", "failed to store event")
+		return
+	}
+	_, err = tx.Exec(ctx,
+		`INSERT INTO notygo_events (id, endpoint_id, upstream_event_id, request_id, received_at, content_type, payload_raw, payload_hash, status, run_type)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+		eventID, src.ID, upstreamEventID, requestID, receivedAt, src.PayloadContentType, string(body), payloadHash, statusCode, runTypeCode,
+	)
+	if err == nil {
+		err = h.queue.EnqueueEventProcessTx(ctx, tx, eventID)
+	}
+	if err != nil {
+		_ = tx.Rollback(ctx)
+		writeIngestError(w, http.StatusInternalServerError, "INGEST_006", "failed to store event")
+		return
+	}
+	if err := tx.Commit(ctx); err != nil {
+		writeIngestError(w, http.StatusInternalServerError, "INGEST_006", "failed to store event")
+		return
 	}
 
 	// 13. Return 202 Accepted
@@ -177,16 +197,16 @@ func (h *Ingester) HandleIngest(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-// validateBearerAuth checks the Authorization: Bearer header against the source's decrypted secret.
-func (h *Ingester) validateBearerAuth(ctx context.Context, src *source.Source, r *http.Request) error {
-	if src.SecretRef == nil {
+// validateBearerAuth checks the Authorization: Bearer header against the endpoint's decrypted secret.
+func (h *Ingester) validateBearerAuth(ctx context.Context, src *endpoint.Endpoint, r *http.Request) error {
+	if src.EncryptedSecret == nil {
 		return fmt.Errorf("bearer auth required but no secret configured")
 	}
 
 	// Decrypt the stored secret
-	decrypted, err := h.secretSvc.Decrypt(*src.SecretRef)
+	decrypted, err := h.secretSvc.Decrypt(*src.EncryptedSecret)
 	if err != nil {
-		return fmt.Errorf("failed to decrypt source secret: %w", err)
+		return fmt.Errorf("failed to decrypt endpoint secret: %w", err)
 	}
 
 	// Extract Bearer token from Authorization header

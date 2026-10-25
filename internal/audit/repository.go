@@ -3,14 +3,14 @@ package audit
 import (
 	"context"
 	"crypto/rand"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/oklog/ulid/v2"
-	"zpush/internal/storage"
 )
 
 // ErrNotFound is returned when an audit log is not found.
@@ -22,11 +22,11 @@ func newID() string {
 
 // Repository provides data access for audit logs.
 type Repository struct {
-	db *sql.DB
+	db *pgxpool.Pool
 }
 
 // NewRepository creates a new audit repository.
-func NewRepository(db *sql.DB) *Repository {
+func NewRepository(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
@@ -43,11 +43,11 @@ func (r *Repository) Insert(ctx context.Context, a *AuditLog) error {
 		snapshotBefore = a.SnapshotBefore
 	}
 
-	_, err := r.db.ExecContext(ctx,
-		`INSERT INTO audit_logs (id, operator, action, target_type, target_id, snapshot_before, summary, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+	_, err := r.db.Exec(ctx,
+		`INSERT INTO notygo_audit_logs (id, operator, action, target_type, target_id, snapshot_before, summary, created_at)
+		 VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)`,
 		a.ID, a.Operator, a.Action, a.TargetType, a.TargetID,
-		snapshotBefore, a.Summary, storage.FormatNow(),
+		snapshotBefore, a.Summary, time.Now().UTC(),
 	)
 	if err != nil {
 		return fmt.Errorf("insert audit_log: %w", err)
@@ -60,25 +60,25 @@ func (r *Repository) List(ctx context.Context, page, size int, action, targetTyp
 	where := "WHERE 1=1"
 	var args []any
 	if action != "" {
-		where += " AND action = ?"
+		where += fmt.Sprintf(" AND action = $%d", len(args)+1)
 		args = append(args, action)
 	}
 	if targetType != "" {
-		where += " AND target_type = ?"
+		where += fmt.Sprintf(" AND target_type = $%d", len(args)+1)
 		args = append(args, targetType)
 	}
 	if startTime != "" {
-		where += " AND created_at >= ?"
+		where += fmt.Sprintf(" AND created_at >= $%d::timestamptz", len(args)+1)
 		args = append(args, startTime)
 	}
 	if endTime != "" {
-		where += " AND created_at <= ?"
+		where += fmt.Sprintf(" AND created_at <= $%d::timestamptz", len(args)+1)
 		args = append(args, endTime+"T23:59:59.999Z")
 	}
 
 	var total int64
-	countSQL := "SELECT COUNT(*) FROM audit_logs " + where
-	err := r.db.QueryRowContext(ctx, countSQL, args...).Scan(&total)
+	countSQL := "SELECT COUNT(*) FROM notygo_audit_logs " + where
+	err := r.db.QueryRow(ctx, countSQL, args...).Scan(&total)
 	if err != nil {
 		return nil, 0, fmt.Errorf("count audit_logs: %w", err)
 	}
@@ -88,10 +88,10 @@ func (r *Repository) List(ctx context.Context, page, size int, action, targetTyp
 
 	offset := (page - 1) * size
 	listSQL := `SELECT id, operator, action, target_type, target_id, snapshot_before, summary, created_at
-		FROM audit_logs ` + where + ` ORDER BY created_at DESC LIMIT ? OFFSET ?`
+		FROM notygo_audit_logs ` + where + fmt.Sprintf(` ORDER BY created_at DESC LIMIT $%d OFFSET $%d`, len(args)+1, len(args)+2)
 	listArgs := append(args, size, offset)
 
-	rows, err := r.db.QueryContext(ctx, listSQL, listArgs...)
+	rows, err := r.db.Query(ctx, listSQL, listArgs...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list audit_logs: %w", err)
 	}
@@ -112,17 +112,15 @@ func (r *Repository) List(ctx context.Context, page, size int, action, targetTyp
 	return logs, total, nil
 }
 
-func scanAuditLogFromRows(rows *sql.Rows) (*AuditLog, error) {
+func scanAuditLogFromRows(rows pgx.Rows) (*AuditLog, error) {
 	var a AuditLog
-	var createdAt string
 	err := rows.Scan(
 		&a.ID, &a.Operator, &a.Action, &a.TargetType, &a.TargetID,
-		&a.SnapshotBefore, &a.Summary, &createdAt,
+		&a.SnapshotBefore, &a.Summary, &a.CreatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("scan audit_log: %w", err)
 	}
-	a.CreatedAt, _ = storage.ParseTime(createdAt)
 	return &a, nil
 }
 

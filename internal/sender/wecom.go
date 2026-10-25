@@ -25,7 +25,7 @@ func NewWeComSender() *WeComSender {
 }
 
 // Send delivers a message to WeCom via the configured webhook.
-func (s *WeComSender) Send(ctx context.Context, destConfig DestinationConfig, msg RenderedMessage) (*SendResult, error) {
+func (s *WeComSender) Send(ctx context.Context, destConfig ChannelConfig, msg RenderedMessage) (*SendResult, error) {
 	var cfg WeComConfig
 	if err := json.Unmarshal(destConfig.Config, &cfg); err != nil {
 		return nil, fmt.Errorf("invalid wecom config: %w", err)

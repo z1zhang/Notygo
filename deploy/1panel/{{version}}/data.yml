@@ -34,24 +34,24 @@ additionalProperties:
       type: password
     # 数据库绑定：type: apps 触发 1Panel 自动建库/建用户/生成密码
     - type: apps
-      default: mysql
+      default: postgres
       edit: false
       envKey: PANEL_DB_TYPE
       labelEn: Database Service
       labelZh: 数据库服务
       description:
-        zh: 选择已部署的 MySQL 服务实例（需提前在 1Panel 中部署 MySQL）
-        en: Select a deployed MySQL service instance (deploy MySQL in 1Panel in advance)
+        zh: 选择已部署的 PostgreSQL 服务实例（需提前在 1Panel 中部署 PostgreSQL）
+        en: Select a deployed PostgreSQL service instance (deploy PostgreSQL in 1Panel in advance)
       required: true
       values:
-        - label: MySQL
-          value: mysql
+        - label: PostgreSQL
+          value: postgres
       child:
         type: service
         default: ""
         envKey: PANEL_DB_HOST
         required: true
-    - default: 3306
+    - default: 5432
       edit: true
       envKey: PANEL_DB_PORT
       labelEn: Database Port
@@ -59,19 +59,19 @@ additionalProperties:
       required: true
       rule: paramPort
       type: number
-    - default: zpush
+    - default: notygo
       edit: false
       envKey: PANEL_DB_NAME
       labelEn: Database Name
       labelZh: 数据库名
       description:
-        zh: 将在所选 MySQL 实例中自动创建
-        en: Will be created automatically in the selected MySQL instance
+        zh: 将在所选 PostgreSQL 实例中自动创建
+        en: Will be created automatically in the selected PostgreSQL instance
       random: true
       required: true
       rule: paramCommon
       type: text
-    - default: zpush
+    - default: notygo
       edit: false
       envKey: PANEL_DB_USER
       labelEn: Database User

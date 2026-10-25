@@ -21,13 +21,13 @@ func NewError(code, message string) Error {
 // --- Ingest errors ---
 
 const (
-	ErrIngestAuthFailed    = "INGEST_001"
-	ErrIngestBodyTooLarge  = "INGEST_002"
-	ErrIngestInvalidJSON   = "INGEST_003"
-	ErrIngestRateLimited   = "INGEST_004"
-	ErrIngestSourceMissing = "INGEST_005"
-	ErrIngestDBUnavailable = "INGEST_006"
-	ErrIngestDuplicate     = "INGEST_007"
+	ErrIngestAuthFailed      = "INGEST_001"
+	ErrIngestBodyTooLarge    = "INGEST_002"
+	ErrIngestInvalidJSON     = "INGEST_003"
+	ErrIngestRateLimited     = "INGEST_004"
+	ErrIngestEndpointMissing = "INGEST_005"
+	ErrIngestDBUnavailable   = "INGEST_006"
+	ErrIngestDuplicate       = "INGEST_007"
 )
 
 // --- Auth errors ---

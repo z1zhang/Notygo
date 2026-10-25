@@ -12,30 +12,33 @@ import (
 	"syscall"
 	"time"
 
-	"database/sql"
-
 	"golang.org/x/crypto/bcrypt"
 
-	"zpush/internal/api"
-	"zpush/internal/audit"
-	"zpush/internal/config"
-	"zpush/internal/delivery"
-	"zpush/internal/destination"
-	"zpush/internal/event"
-	"zpush/internal/ingest"
-	"zpush/internal/mapping"
-	"zpush/internal/notify"
-	"zpush/internal/observability"
-	"zpush/internal/processor"
-	"zpush/internal/rules"
-	"zpush/internal/secret"
-	"zpush/internal/sender"
-	"zpush/internal/source"
-	"zpush/internal/storage"
-	"zpush/internal/templates"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"notygo/internal/api"
+	"notygo/internal/audit"
+	"notygo/internal/backoff"
+	"notygo/internal/channel"
+	"notygo/internal/config"
+	"notygo/internal/delivery"
+	"notygo/internal/endpoint"
+	"notygo/internal/event"
+	"notygo/internal/ingest"
+	"notygo/internal/mapping"
+	"notygo/internal/observability"
+	"notygo/internal/processor"
+	"notygo/internal/queue"
+	"notygo/internal/rules"
+	"notygo/internal/secret"
+	"notygo/internal/sender"
+	"notygo/internal/storage"
+	"notygo/internal/templates"
 )
 
 func main() {
+	rootCtx, rootCancel := context.WithCancel(context.Background())
+	defer rootCancel()
+
 	cfg, err := config.Load()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "configuration error: %v\n", err)
@@ -43,21 +46,28 @@ func main() {
 	}
 
 	observability.SetupLogger(cfg.Log.Level)
-	slog.Info("starting zPush", "listen_addr", cfg.Server.ListenAddr)
+	slog.Info("starting Notygo", "listen_addr", cfg.Server.ListenAddr)
 
-	// Open database
-	db, err := storage.Open(cfg.Database.DSN)
+	// Open database (native pgx pool)
+	db, err := storage.Open(rootCtx, cfg.Database.DSN)
 	if err != nil {
 		slog.Error("open database", "error", err)
 		os.Exit(1)
 	}
 	defer db.Close()
 
-	// Run migrations
-	if err := storage.RunMigrations(db); err != nil {
+	// Run migrations (goose only accepts *sql.DB, derived from the same DSN)
+	migDB, err := storage.OpenMigrationsDB(cfg.Database.DSN)
+	if err != nil {
+		slog.Error("open migrations db", "error", err)
+		os.Exit(1)
+	}
+	if err := storage.RunMigrations(migDB); err != nil {
+		migDB.Close()
 		slog.Error("run migrations", "error", err)
 		os.Exit(1)
 	}
+	migDB.Close()
 	slog.Info("migrations applied")
 
 	// Initialize secret service
@@ -69,17 +79,17 @@ func main() {
 	slog.Info("secret service initialized", "active_key_version", secretSvc.ActiveVersion())
 
 	// Initialize admin user if needed
-	if err := ensureAdminUser(db, cfg); err != nil {
+	if err := ensureAdminUser(rootCtx, db, cfg); err != nil {
 		slog.Error("ensure admin user", "error", err)
 		os.Exit(1)
 	}
 
 	// Create repositories
-	sourceRepo := source.NewRepository(db)
+	endpointRepo := endpoint.NewRepository(db)
 	mappingRepo := mapping.NewRepository(db)
 	ruleRepo := rules.NewRepository(db)
 	templateRepo := templates.NewRepository(db)
-	destRepo := destination.NewRepository(db)
+	destRepo := channel.NewRepository(db)
 	eventRepo := event.NewRepository(db)
 	deliveryRepo := delivery.NewRepository(db)
 	auditRepo := audit.NewRepository(db)
@@ -93,12 +103,6 @@ func main() {
 	}
 	rateLimiter := ingest.NewRateLimiter(globalRate, globalBurst)
 
-	// Create notifier for instant wake-up between ingest → processor → worker
-	notifier := notify.NewNotifier()
-
-	// Create ingester
-	ingester := ingest.NewIngester(db, sourceRepo, secretSvc, rateLimiter, cfg.Ingest.MaxPayloadBytes, notifier)
-
 	// Create sender registry and register adapters
 	senderRegistry := sender.NewRegistry()
 	senderRegistry.Register("dingtalk", sender.NewDingTalkSender())
@@ -107,25 +111,45 @@ func main() {
 	senderRegistry.Register("email", sender.NewEmailSender())
 	senderRegistry.Register("http", sender.NewHTTPSender())
 
-	// Create delivery worker
-	deliveryWorker := delivery.NewDeliveryWorker(cfg.Worker, destRepo, deliveryRepo, senderRegistry, secretSvc, notifier)
+	// Create the River queue: services, workers, then the client. The
+	// processor enqueues delivery jobs via the manager; the back-reference is
+	// completed before the queue starts.
+	proc := processor.NewService(db, endpointRepo, mappingRepo, ruleRepo, templateRepo,
+		destRepo, eventRepo, deliveryRepo, nil)
+	queueManager, err := queue.NewManager(db, cfg.Queue, queue.Deps{
+		EventRepo:    eventRepo,
+		DeliveryRepo: deliveryRepo,
+		Processor:    proc,
+		SenderService: delivery.NewSendService(db, destRepo, deliveryRepo,
+			senderRegistry, secretSvc, backoff.Config{
+				Base:          cfg.Queue.RetryBaseDelay,
+				Max:           cfg.Queue.RetryMaxDelay,
+				JitterPercent: cfg.Queue.RetryJitterPercent,
+			}),
+	})
+	if err != nil {
+		slog.Error("create queue manager", "error", err)
+		os.Exit(1)
+	}
+	proc.SetEnqueuer(queueManager)
 
-	// Create event processor
-	eventProcessor := processor.NewEventProcessor(cfg.Worker, sourceRepo, mappingRepo, ruleRepo, templateRepo, destRepo, eventRepo, deliveryRepo, notifier)
+	if err := queueManager.Migrate(rootCtx); err != nil {
+		slog.Error("migrate river schema", "error", err)
+		os.Exit(1)
+	}
+	slog.Info("river queue migrations applied")
 
-	// Create worker context that can be canceled
-	workerCtx, workerCancel := context.WithCancel(context.Background())
+	// Create ingester (ingest inserts the event and its job in one transaction)
+	ingester := ingest.NewIngester(db, endpointRepo, secretSvc, rateLimiter, cfg.Ingest.MaxPayloadBytes, queueManager)
 
-	// Start workers
-	go eventProcessor.Run(workerCtx)
-	slog.Info("event processor started", "concurrency", cfg.Worker.EventProcessorConcurrency)
-
-	go deliveryWorker.Run(workerCtx)
-	slog.Info("delivery worker started", "concurrency", cfg.Worker.DeliveryWorkerConcurrency)
-
-	// Start lease recovery loops
-	go processor.LeaseRecoveryLoop(workerCtx, db, cfg.Worker.LeaseRecoveryInterval, notifier)
-	go delivery.LeaseRecoveryLoop(workerCtx, db, cfg.Worker.LeaseRecoveryInterval, notifier)
+	// Start the queue workers
+	if err := queueManager.Start(rootCtx); err != nil {
+		slog.Error("start river queue", "error", err)
+		os.Exit(1)
+	}
+	slog.Info("river queue started",
+		"event_concurrency", cfg.Queue.EventConcurrency,
+		"delivery_concurrency", cfg.Queue.DeliveryConcurrency)
 
 	// Create login guard (brute-force lockout, in-memory)
 	loginGuard := api.NewLoginGuard(
@@ -137,7 +161,7 @@ func main() {
 		"lockout_seconds", cfg.Admin.LoginLockoutSeconds)
 
 	// Create router
-	router := api.NewRouter(db, secretSvc, sourceRepo, mappingRepo, ruleRepo, templateRepo, destRepo, eventRepo, deliveryRepo, ingester, notifier, auditRepo, loginGuard, senderRegistry)
+	router := api.NewRouter(cfg, db, secretSvc, endpointRepo, mappingRepo, ruleRepo, templateRepo, destRepo, eventRepo, deliveryRepo, ingester, queueManager, auditRepo, loginGuard, senderRegistry)
 
 	// Start HTTP server
 	srv := &http.Server{
@@ -162,25 +186,30 @@ func main() {
 	sig := <-quit
 	slog.Info("shutdown signal received", "signal", sig.String())
 
-	// Stop workers first (cancel their context)
-	workerCancel()
-	slog.Info("workers stopped, waiting for in-flight tasks...")
+	// Stop the queue first so in-flight jobs finish and their business
+	// writes land before the HTTP server goes away.
+	stopCtx, stopCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer stopCancel()
+	if err := queueManager.Stop(stopCtx); err != nil {
+		slog.Error("queue stop error", "error", err)
+	}
+	slog.Info("queue stopped")
 
 	// Graceful shutdown with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	if err := srv.Shutdown(ctx); err != nil {
 		slog.Error("server shutdown error", "error", err)
 	}
 
-	slog.Info("zPush stopped")
+	slog.Info("Notygo stopped")
 }
 
 // ensureAdminUser creates the initial admin user on first boot if ADMIN_INITIAL_PASSWORD is set.
 // The username is configurable via ADMIN_INITIAL_USER (default "admin"); both
 // only take effect when no admin user exists yet.
-func ensureAdminUser(db *sql.DB, cfg *config.Config) error {
+func ensureAdminUser(ctx context.Context, db *pgxpool.Pool, cfg *config.Config) error {
 	if cfg.Admin.InitialPassword == "" {
 		slog.Warn("ADMIN_INITIAL_PASSWORD not set; skipping admin user creation")
 		return nil
@@ -192,7 +221,7 @@ func ensureAdminUser(db *sql.DB, cfg *config.Config) error {
 
 	// Check if any admin user exists
 	var count int
-	err := db.QueryRow(`SELECT COUNT(*) FROM admin_users`).Scan(&count)
+	err := db.QueryRow(ctx, `SELECT COUNT(*) FROM notygo_users`).Scan(&count)
 	if err != nil {
 		return fmt.Errorf("check admin users: %w", err)
 	}
@@ -207,8 +236,8 @@ func ensureAdminUser(db *sql.DB, cfg *config.Config) error {
 		return fmt.Errorf("hash admin password: %w", err)
 	}
 
-	_, err = db.Exec(
-		`INSERT INTO admin_users (id, username, password_hash) VALUES (?, ?, ?)`,
+	_, err = db.Exec(ctx,
+		`INSERT INTO notygo_users (id, username, password) VALUES ($1, $2, $3)`,
 		generateID(), username, string(hash),
 	)
 	if err != nil {

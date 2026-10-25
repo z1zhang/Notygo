@@ -1,18 +1,18 @@
-package destination
+package channel
 
 import (
 	"encoding/json"
 	"time"
 
-	"zpush/internal/secret"
-	"zpush/internal/sender"
+	"notygo/internal/secret"
+	"notygo/internal/sender"
 )
 
-// BuildSenderConfig builds a sender.DestinationConfig from a destination model,
+// BuildSenderConfig builds a sender.ChannelConfig from a channel model,
 // decrypting the stored secret. Shared by the delivery worker and the
-// destination test-send endpoint so both exercise the exact same code path.
-func BuildSenderConfig(dest *Destination, secretSvc *secret.Service) sender.DestinationConfig {
-	cfg := sender.DestinationConfig{
+// channel test-send endpoint so both exercise the exact same code path.
+func BuildSenderConfig(dest *Channel, secretSvc *secret.Service) sender.ChannelConfig {
+	cfg := sender.ChannelConfig{
 		Type:      string(dest.Type),
 		Timeout:   time.Duration(dest.TimeoutMs) * time.Millisecond,
 		RawConfig: dest.Config,
@@ -40,11 +40,10 @@ func BuildSenderConfig(dest *Destination, secretSvc *secret.Service) sender.Dest
 	}
 
 	// Decrypt secret if available
-	if dest.SecretRef != nil && *dest.SecretRef != "" && secretSvc != nil {
-		decrypted, err := secretSvc.Decrypt(*dest.SecretRef)
+	if dest.EncryptedSecret != nil && *dest.EncryptedSecret != "" && secretSvc != nil {
+		decrypted, err := secretSvc.Decrypt(*dest.EncryptedSecret)
 		if err == nil {
 			cfg.Secret = decrypted
-			cfg.SecretRef = decrypted
 		}
 	}
 

@@ -1,7 +1,6 @@
 package api
 
 import (
-	"database/sql"
 	"net/http"
 	"os"
 	"path"
@@ -11,34 +10,37 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 
-	"zpush/internal/audit"
-	"zpush/internal/delivery"
-	"zpush/internal/destination"
-	"zpush/internal/event"
-	"zpush/internal/ingest"
-	"zpush/internal/mapping"
-	"zpush/internal/notify"
-	"zpush/internal/observability"
-	"zpush/internal/rules"
-	"zpush/internal/secret"
-	"zpush/internal/sender"
-	"zpush/internal/source"
-	"zpush/internal/templates"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"notygo/internal/audit"
+	"notygo/internal/config"
+	"notygo/internal/channel"
+	"notygo/internal/delivery"
+	"notygo/internal/endpoint"
+	"notygo/internal/event"
+	"notygo/internal/ingest"
+	"notygo/internal/mapping"
+	"notygo/internal/observability"
+	"notygo/internal/queue"
+	"notygo/internal/rules"
+	"notygo/internal/secret"
+	"notygo/internal/sender"
+	"notygo/internal/templates"
 )
 
 // NewRouter creates the main HTTP router with all routes and middleware.
 func NewRouter(
-	db *sql.DB,
+	cfg *config.Config,
+	db *pgxpool.Pool,
 	secretSvc *secret.Service,
-	sourceRepo *source.Repository,
+	endpointRepo *endpoint.Repository,
 	mappingRepo *mapping.Repository,
 	ruleRepo *rules.Repository,
 	templateRepo *templates.Repository,
-	destRepo *destination.Repository,
+	destRepo *channel.Repository,
 	eventRepo *event.Repository,
 	deliveryRepo *delivery.Repository,
 	ingester *ingest.Ingester,
-	notifier *notify.Notifier,
+	q *queue.Manager,
 	auditRepo *audit.Repository,
 	loginGuard *loginGuard,
 	senderRegistry *sender.Registry,
@@ -54,8 +56,8 @@ func NewRouter(
 	// Root endpoint — welcome / version info
 	r.Get("/", func(w http.ResponseWriter, _ *http.Request) {
 		WriteJSON(w, http.StatusOK, map[string]string{
-			"name":    "zPush",
-			"version": "0.1.0",
+			"name":    AppName,
+			"version": Version,
 			"status":  "running",
 		})
 	})
@@ -69,8 +71,11 @@ func NewRouter(
 
 	// Notification API (data plane) — untrusted webhook traffic, isolated
 	// from the admin API namespace so proxies and logs can treat it
-	// separately. Source-level auth is enforced inside the handler.
-	r.Post("/ingest/{source_slug}", ingester.HandleIngest)
+	// separately. Singular "/endpoint/" is deliberate: it never collides
+	// with the SPA page route "/endpoints" or the admin API
+	// "/api/v1/endpoints/". Endpoint-level auth is enforced inside the
+	// handler.
+	r.Post("/endpoint/{slug}", ingester.HandleIngest)
 
 	// API v1
 	r.Route("/api/v1", func(r chi.Router) {
@@ -82,13 +87,13 @@ func NewRouter(
 			r.Use(AdminAuthMiddleware(db))
 
 			// Configuration CRUD
-			r.Route("/sources", func(r chi.Router) {
-				r.Get("/", ListSources(db))
-				r.Post("/", CreateSource(db, secretSvc, auditRepo))
+			r.Route("/endpoints", func(r chi.Router) {
+				r.Get("/", ListEndpoints(db))
+				r.Post("/", CreateEndpoint(db, secretSvc, auditRepo))
 				r.Route("/{id}", func(r chi.Router) {
-					r.Get("/", GetSource(db))
-					r.Put("/", UpdateSource(db, secretSvc, auditRepo))
-					r.Delete("/", DeleteSource(db, auditRepo))
+					r.Get("/", GetEndpoint(db))
+					r.Put("/", UpdateEndpoint(db, secretSvc, auditRepo))
+					r.Delete("/", DeleteEndpoint(db, auditRepo))
 				})
 			})
 
@@ -122,14 +127,14 @@ func NewRouter(
 				})
 			})
 
-			r.Route("/destinations", func(r chi.Router) {
-				r.Get("/", ListDestinations(db, secretSvc))
-				r.Post("/", CreateDestination(db, secretSvc, auditRepo))
+			r.Route("/channels", func(r chi.Router) {
+				r.Get("/", ListChannels(db, secretSvc))
+				r.Post("/", CreateChannel(db, secretSvc, auditRepo))
 				r.Route("/{id}", func(r chi.Router) {
-					r.Get("/", GetDestination(db, secretSvc))
-					r.Put("/", UpdateDestination(db, secretSvc, auditRepo))
-					r.Delete("/", DeleteDestination(db, auditRepo))
-					r.Post("/test", TestDestination(db, secretSvc, senderRegistry, auditRepo))
+					r.Get("/", GetChannel(db, secretSvc))
+					r.Put("/", UpdateChannel(db, secretSvc, auditRepo))
+					r.Delete("/", DeleteChannel(db, auditRepo))
+					r.Post("/test", TestChannel(db, secretSvc, senderRegistry, auditRepo))
 				})
 			})
 
@@ -138,7 +143,7 @@ func NewRouter(
 				r.Get("/", ListEvents(db))
 				r.Route("/{id}", func(r chi.Router) {
 					r.Get("/", GetEvent(db))
-					r.Post("/replay", ReplayEvent(db, notifier, auditRepo))
+					r.Post("/replay", ReplayEvent(db, q, auditRepo))
 				})
 			})
 
@@ -146,10 +151,16 @@ func NewRouter(
 				r.Get("/", ListDeliveries(db))
 				r.Route("/{id}", func(r chi.Router) {
 					r.Get("/", GetDelivery(db))
-					r.Post("/retry", RetryDelivery(db, notifier, auditRepo))
+					r.Post("/retry", RetryDelivery(db, q, auditRepo))
 				})
-				r.Post("/bulk-retry", BulkRetry(db, notifier, auditRepo))
+				r.Post("/bulk-retry", BulkRetry(db, q, auditRepo))
 			})
+
+			// Queue (River) health
+			r.Get("/queue/stats", GetQueueStats(q))
+
+			// System runtime info (version, concurrency, limits)
+			r.Get("/system", SystemInfo(cfg))
 
 			// Audit logs
 			r.Get("/audit", ListAuditLogs(db))
@@ -189,7 +200,7 @@ func serveFrontend(r chi.Router) {
 	// SPA fallback: any non-API route serves a real file from the dist root
 	// when one exists (favicon.svg etc.), otherwise index.html.
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/ingest/") {
+		if strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/endpoint/") {
 			WriteError(w, http.StatusNotFound, "CONFIG_001", "endpoint not found")
 			return
 		}

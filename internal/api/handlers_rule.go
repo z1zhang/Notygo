@@ -1,19 +1,19 @@
 package api
 
 import (
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-	"zpush/internal/audit"
-	"zpush/internal/rules"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"notygo/internal/audit"
+	"notygo/internal/rules"
 )
 
 // ListRules returns a paginated list of rules.
-func ListRules(db *sql.DB) http.HandlerFunc {
+func ListRules(db *pgxpool.Pool) http.HandlerFunc {
 	repo := rules.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		page, size := ParsePagination(r)
@@ -32,7 +32,7 @@ func ListRules(db *sql.DB) http.HandlerFunc {
 }
 
 // CreateRule creates a new rule.
-func CreateRule(db *sql.DB, auditRepo *audit.Repository) http.HandlerFunc {
+func CreateRule(db *pgxpool.Pool, auditRepo *audit.Repository) http.HandlerFunc {
 	repo := rules.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		var rule rules.Rule
@@ -74,7 +74,7 @@ func CreateRule(db *sql.DB, auditRepo *audit.Repository) http.HandlerFunc {
 }
 
 // GetRule returns a single rule by ID.
-func GetRule(db *sql.DB) http.HandlerFunc {
+func GetRule(db *pgxpool.Pool) http.HandlerFunc {
 	repo := rules.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
@@ -88,7 +88,7 @@ func GetRule(db *sql.DB) http.HandlerFunc {
 }
 
 // UpdateRule updates an existing rule, incrementing revision and validating conditions.
-func UpdateRule(db *sql.DB, auditRepo *audit.Repository) http.HandlerFunc {
+func UpdateRule(db *pgxpool.Pool, auditRepo *audit.Repository) http.HandlerFunc {
 	repo := rules.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
@@ -135,7 +135,7 @@ func UpdateRule(db *sql.DB, auditRepo *audit.Repository) http.HandlerFunc {
 }
 
 // DeleteRule deletes a rule by ID.
-func DeleteRule(db *sql.DB, auditRepo *audit.Repository) http.HandlerFunc {
+func DeleteRule(db *pgxpool.Pool, auditRepo *audit.Repository) http.HandlerFunc {
 	repo := rules.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")

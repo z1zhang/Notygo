@@ -1,55 +1,58 @@
 package storage
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
-	"strings"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/stdlib"
 )
 
-// Open opens a MySQL database connection using the provided DSN.
-// Automatically appends multiStatements=true for goose migration support.
-func Open(dsn string) (*sql.DB, error) {
+// Open opens a native pgx connection pool for the application.
+func Open(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 	if dsn == "" {
 		return nil, fmt.Errorf("database DSN is empty (check DB_USER / DB_PASSWORD)")
 	}
 
-	// Ensure multiStatements is enabled so goose can run multi-statement migrations
-	if !strings.Contains(dsn, "multiStatements") {
-		if strings.Contains(dsn, "?") {
-			dsn += "&multiStatements=true"
-		} else {
-			dsn += "?multiStatements=true"
-		}
-	}
-
-	db, err := sql.Open("mysql", dsn)
+	cfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
-		return nil, fmt.Errorf("open mysql: %w", err)
+		return nil, fmt.Errorf("parse postgres dsn: %w", err)
 	}
 
-	// MySQL connection pool settings
-	// MaxOpenConns=50: with 4 event processors + 8 delivery workers, each
+	// Connection pool settings
+	// MaxConns=50: with 4 event processors + 8 delivery workers, each
 	// requiring 7-9 DB queries per event/delivery, 25 connections caused pool
 	// exhaustion under concurrent load (queries silently failed → events
 	// processed with 0 matched rules).
-	db.SetMaxOpenConns(50)
-	db.SetMaxIdleConns(20)
-	db.SetConnMaxLifetime(5 * time.Minute)
-	db.SetConnMaxIdleTime(2 * time.Minute)
+	cfg.MaxConns = 50
+	cfg.MinConns = 4
+	cfg.MaxConnLifetime = 5 * time.Minute
+	cfg.MaxConnIdleTime = 2 * time.Minute
+
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("open postgres: %w", err)
+	}
 
 	// Verify connection
-	if err := db.Ping(); err != nil {
-		return nil, fmt.Errorf("ping mysql: %w", err)
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("ping postgres: %w", err)
 	}
 
-	// Set strict SQL mode
-	_, err = db.Exec("SET sql_mode = 'STRICT_TRANS_TABLES'")
+	return pool, nil
+}
+
+// OpenMigrationsDB opens a database/sql connection used only for running
+// goose migrations, which only accepts *sql.DB. It is derived from the same
+// DSN as the application pool; business code must use the pgx pool.
+func OpenMigrationsDB(dsn string) (*sql.DB, error) {
+	connConfig, err := pgx.ParseConfig(dsn)
 	if err != nil {
-		return nil, fmt.Errorf("set sql_mode: %w", err)
+		return nil, fmt.Errorf("parse postgres dsn: %w", err)
 	}
-
-	return db, nil
+	return stdlib.OpenDB(*connConfig), nil
 }

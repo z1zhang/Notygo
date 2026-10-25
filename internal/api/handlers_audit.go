@@ -1,14 +1,14 @@
 package api
 
 import (
-	"database/sql"
 	"net/http"
 
-	"zpush/internal/audit"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"notygo/internal/audit"
 )
 
 // ListAuditLogs returns a paginated list of audit logs with optional filtering.
-func ListAuditLogs(db *sql.DB) http.HandlerFunc {
+func ListAuditLogs(db *pgxpool.Pool) http.HandlerFunc {
 	repo := audit.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		page, size := ParsePagination(r)

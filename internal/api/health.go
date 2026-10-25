@@ -2,7 +2,7 @@ package api
 
 import (
 	"context"
-	"database/sql"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"net/http"
 	"time"
 )
@@ -13,12 +13,12 @@ func Healthz(w http.ResponseWriter, _ *http.Request) {
 }
 
 // Readyz returns 200 if the database is reachable, 503 otherwise.
-func Readyz(db *sql.DB) http.HandlerFunc {
+func Readyz(db *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 		defer cancel()
 
-		if err := db.PingContext(ctx); err != nil {
+		if err := db.Ping(ctx); err != nil {
 			WriteError(w, http.StatusServiceUnavailable, ErrIngestDBUnavailable, "database unavailable")
 			return
 		}

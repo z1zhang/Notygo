@@ -37,14 +37,14 @@ func TestRender_EventMeta(t *testing.T) {
 		Name:          "test",
 		Format:        "markdown",
 		TitleTemplate: "Event {{.Event.ID}}",
-		BodyTemplate:  "Received at {{.Event.ReceivedAt}} from {{.Event.SourceName}}",
+		BodyTemplate:  "Received at {{.Event.ReceivedAt}} from {{.Event.EndpointName}}",
 		Revision:      1,
 	}
 	data := map[string]any{
 		"Event": map[string]any{
-			"ID":         "evt-123",
-			"ReceivedAt": "2025-01-01T00:00:00Z",
-			"SourceName": "monitoring",
+			"ID":           "evt-123",
+			"ReceivedAt":   "2025-01-01T00:00:00Z",
+			"EndpointName": "monitoring",
 		},
 	}
 

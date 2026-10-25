@@ -33,8 +33,8 @@ func NewEmailSender() *EmailSender {
 }
 
 // Send delivers a message via SMTP email.
-// destConfig.SecretRef is used as the SMTP password for authentication.
-func (s *EmailSender) Send(ctx context.Context, destConfig DestinationConfig, msg RenderedMessage) (*SendResult, error) {
+// destConfig.Secret is used as the SMTP password for authentication.
+func (s *EmailSender) Send(ctx context.Context, destConfig ChannelConfig, msg RenderedMessage) (*SendResult, error) {
 	var cfg EmailConfig
 	if err := json.Unmarshal(destConfig.Config, &cfg); err != nil {
 		return nil, fmt.Errorf("invalid email config: %w", err)
@@ -78,7 +78,7 @@ func (s *EmailSender) Send(ctx context.Context, destConfig DestinationConfig, ms
 	recipients = append(recipients, cfg.CC...)
 
 	addr := fmt.Sprintf("%s:%d", cfg.SMTPHost, cfg.SMTPPort)
-	password := destConfig.SecretRef // decrypted SMTP password
+	password := destConfig.Secret // decrypted SMTP password
 
 	timeout := destConfig.Timeout
 	if timeout == 0 {

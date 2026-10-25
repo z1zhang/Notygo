@@ -4,17 +4,17 @@ import "time"
 
 // Rule represents a routing/matching rule.
 type Rule struct {
-	ID             string         `json:"id"`
-	Name           string         `json:"name"`
-	Enabled        bool           `json:"enabled"`
-	Priority       int            `json:"priority"`
-	Conditions     ConditionGroup `json:"conditions"`
-	TemplateID     *string        `json:"template_id,omitempty"`
-	DestinationIDs []string       `json:"destination_ids"`
-	DedupeConfig   *DedupeConfig  `json:"dedupe_config,omitempty"`
-	Revision       int            `json:"revision"`
-	CreatedAt      time.Time      `json:"created_at,omitempty"`
-	UpdatedAt      time.Time      `json:"updated_at,omitempty"`
+	ID           string         `json:"id"`
+	Name         string         `json:"name"`
+	Enabled      bool           `json:"enabled"`
+	Priority     int            `json:"priority"`
+	Conditions   ConditionGroup `json:"conditions"`
+	TemplateID   *string        `json:"template_id,omitempty"`
+	ChannelIDs   []string       `json:"channel_ids"`
+	DedupeConfig *DedupeConfig  `json:"dedupe_config,omitempty"`
+	Revision     int            `json:"revision"`
+	CreatedAt    time.Time      `json:"created_at,omitempty"`
+	UpdatedAt    time.Time      `json:"updated_at,omitempty"`
 }
 
 // ConditionGroup is the top-level container for rule conditions.

@@ -2,13 +2,13 @@ package api
 
 import (
 	"context"
-	"database/sql"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
-	"zpush/internal/storage"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"notygo/internal/storage"
 )
 
 type authContextKey string
@@ -69,7 +69,7 @@ func (w *statusWriter) WriteHeader(code int) {
 
 // AdminAuthMiddleware validates the admin session token from the Authorization header.
 // V1 uses a simple session token stored in the sessions table.
-func AdminAuthMiddleware(db *sql.DB) func(http.Handler) http.Handler {
+func AdminAuthMiddleware(db *pgxpool.Pool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			token := extractBearerToken(r)
@@ -80,9 +80,9 @@ func AdminAuthMiddleware(db *sql.DB) func(http.Handler) http.Handler {
 
 			nowExpr := storage.NowExpr()
 			var userID string
-			err := db.QueryRowContext(r.Context(),
-				"SELECT user_id FROM sessions WHERE token = ? AND expires_at > "+nowExpr,
-				token,
+			err := db.QueryRow(r.Context(),
+				"SELECT user_id FROM notygo_sessions WHERE token_hash = $1 AND expires_at > "+nowExpr,
+				hashToken(token),
 			).Scan(&userID)
 
 			if err != nil {
@@ -92,8 +92,8 @@ func AdminAuthMiddleware(db *sql.DB) func(http.Handler) http.Handler {
 
 			// Lookup username for audit logging
 			var username string
-			_ = db.QueryRowContext(r.Context(),
-				"SELECT username FROM admin_users WHERE id = ?", userID,
+			_ = db.QueryRow(r.Context(),
+				"SELECT username FROM notygo_users WHERE id = $1", userID,
 			).Scan(&username)
 
 			ctx := context.WithValue(r.Context(), userIDKey, userID)

@@ -6,13 +6,15 @@ import (
 	"net/http"
 	"time"
 
-	"zpush/internal/storage"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"notygo/internal/delivery"
+	"notygo/internal/event"
 )
 
 // failedEventSummary is a dashboard row: the fields the error list needs, no payload.
 type failedEventSummary struct {
 	ID           string    `json:"id"`
-	SourceID     string    `json:"source_id"`
+	EndpointID   string    `json:"endpoint_id"`
 	Status       string    `json:"status"`
 	ErrorCode    *string   `json:"error_code"`
 	ErrorSummary *string   `json:"error_summary"`
@@ -22,7 +24,7 @@ type failedEventSummary struct {
 // failedDeliverySummary is a dashboard row: the fields the error list needs, no rendered content.
 type failedDeliverySummary struct {
 	ID               string    `json:"id"`
-	DestinationID    string    `json:"destination_id"`
+	ChannelID        string    `json:"channel_id"`
 	Status           string    `json:"status"`
 	LastErrorCode    *string   `json:"last_error_code"`
 	LastErrorSummary *string   `json:"last_error_summary"`
@@ -32,13 +34,13 @@ type failedDeliverySummary struct {
 // DashboardStats returns all dashboard data in one atomic call:
 // status counts for the stat tiles plus the recent failed events/deliveries
 // for the error list. Replaces the previous 4-6 separate list requests.
-func DashboardStats(db *sql.DB) http.HandlerFunc {
+func DashboardStats(db *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
 		// Status counts via GROUP BY — one query per table instead of one per tile
 		eventCounts := map[string]int64{}
-		rows, err := db.QueryContext(ctx, "SELECT status, COUNT(*) FROM events GROUP BY status")
+		rows, err := db.Query(ctx, "SELECT status, COUNT(*) FROM notygo_events GROUP BY status")
 		if err != nil {
 			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to count events")
 			return
@@ -56,7 +58,7 @@ func DashboardStats(db *sql.DB) http.HandlerFunc {
 		rows.Close()
 
 		deliveryCounts := map[string]int64{}
-		rows, err = db.QueryContext(ctx, "SELECT status, COUNT(*) FROM deliveries GROUP BY status")
+		rows, err = db.Query(ctx, "SELECT status, COUNT(*) FROM notygo_deliveries GROUP BY status")
 		if err != nil {
 			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to count deliveries")
 			return
@@ -101,9 +103,10 @@ func DashboardStats(db *sql.DB) http.HandlerFunc {
 	}
 }
 
-func queryFailedEvents(ctx context.Context, db *sql.DB) ([]failedEventSummary, error) {
-	rows, err := db.QueryContext(ctx,
-		"SELECT id, source_id, status, error_code, error_summary, received_at FROM events WHERE status = 'failed' ORDER BY received_at DESC LIMIT 5")
+func queryFailedEvents(ctx context.Context, db *pgxpool.Pool) ([]failedEventSummary, error) {
+	rows, err := db.Query(ctx,
+		// event status code: 4=failed (see internal/event/codes.go)
+		"SELECT id, endpoint_id, error_code, error_summary, received_at FROM notygo_events WHERE status = 4 ORDER BY received_at DESC LIMIT 5")
 	if err != nil {
 		return nil, err
 	}
@@ -111,10 +114,9 @@ func queryFailedEvents(ctx context.Context, db *sql.DB) ([]failedEventSummary, e
 
 	var out []failedEventSummary
 	for rows.Next() {
-		var s failedEventSummary
+		s := failedEventSummary{Status: event.EventStatusFailed}
 		var errorCode, errorSummary sql.NullString
-		var receivedAt string
-		if err := rows.Scan(&s.ID, &s.SourceID, &s.Status, &errorCode, &errorSummary, &receivedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.EndpointID, &errorCode, &errorSummary, &s.ReceivedAt); err != nil {
 			return nil, err
 		}
 		if errorCode.Valid {
@@ -123,15 +125,15 @@ func queryFailedEvents(ctx context.Context, db *sql.DB) ([]failedEventSummary, e
 		if errorSummary.Valid {
 			s.ErrorSummary = &errorSummary.String
 		}
-		s.ReceivedAt, _ = storage.ParseTime(receivedAt)
 		out = append(out, s)
 	}
 	return out, rows.Err()
 }
 
-func queryFailedDeliveries(ctx context.Context, db *sql.DB) ([]failedDeliverySummary, error) {
-	rows, err := db.QueryContext(ctx,
-		"SELECT id, destination_id, status, last_error_code, last_error_summary, created_at FROM deliveries WHERE status = 'failed' ORDER BY created_at DESC LIMIT 5")
+func queryFailedDeliveries(ctx context.Context, db *pgxpool.Pool) ([]failedDeliverySummary, error) {
+	rows, err := db.Query(ctx,
+		// delivery status code: 4=failed (see internal/delivery/codes.go)
+		"SELECT id, channel_id, last_error_code, last_error_summary, created_at FROM notygo_deliveries WHERE status = 4 ORDER BY created_at DESC LIMIT 5")
 	if err != nil {
 		return nil, err
 	}
@@ -139,10 +141,9 @@ func queryFailedDeliveries(ctx context.Context, db *sql.DB) ([]failedDeliverySum
 
 	var out []failedDeliverySummary
 	for rows.Next() {
-		var s failedDeliverySummary
+		s := failedDeliverySummary{Status: delivery.DeliveryStatusFailed}
 		var errorCode, errorSummary sql.NullString
-		var createdAt string
-		if err := rows.Scan(&s.ID, &s.DestinationID, &s.Status, &errorCode, &errorSummary, &createdAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.ChannelID, &errorCode, &errorSummary, &s.CreatedAt); err != nil {
 			return nil, err
 		}
 		if errorCode.Valid {
@@ -151,7 +152,6 @@ func queryFailedDeliveries(ctx context.Context, db *sql.DB) ([]failedDeliverySum
 		if errorSummary.Valid {
 			s.LastErrorSummary = &errorSummary.String
 		}
-		s.CreatedAt, _ = storage.ParseTime(createdAt)
 		out = append(out, s)
 	}
 	return out, rows.Err()

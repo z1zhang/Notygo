@@ -1,7 +1,6 @@
 package api
 
 import (
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -9,8 +8,9 @@ import (
 
 	"github.com/tidwall/gjson"
 
-	"zpush/internal/mapping"
-	"zpush/internal/templates"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"notygo/internal/mapping"
+	"notygo/internal/templates"
 )
 
 // ---------------------------------------------------------------------------
@@ -35,7 +35,7 @@ type structureInfo struct {
 }
 
 type suggestedField struct {
-	SourcePath      string `json:"source_path"`
+	PayloadPath     string `json:"payload_path"`
 	TargetKey       string `json:"target_key"`
 	ValueType       string `json:"value_type"`
 	MultiResultMode string `json:"multi_result_mode,omitempty"`
@@ -93,7 +93,7 @@ func analyzeArrayPayload(payload string, arr []gjson.Result) []suggestedField {
 
 	// Suggest # with multi_result_mode "array" (whole array of objects)
 	fields = append(fields, suggestedField{
-		SourcePath:      "#",
+		PayloadPath:     "#",
 		TargetKey:       "items",
 		ValueType:       "array",
 		MultiResultMode: "array",
@@ -102,7 +102,7 @@ func analyzeArrayPayload(payload string, arr []gjson.Result) []suggestedField {
 
 	// Suggest # with multi_result_mode "count"
 	fields = append(fields, suggestedField{
-		SourcePath:      "#",
+		PayloadPath:     "#",
 		TargetKey:       "item_count",
 		ValueType:       "number",
 		MultiResultMode: "count",
@@ -138,7 +138,7 @@ func walkObjectForArray(payload string, obj gjson.Result, pathPrefix string, dep
 			innerArr := val.Array()
 			sample := fmt.Sprintf("[%d items]", len(innerArr))
 			*fields = append(*fields, suggestedField{
-				SourcePath:      fieldPath,
+				PayloadPath:     fieldPath,
 				TargetKey:       autoTargetKey(fieldPath),
 				ValueType:       "array",
 				MultiResultMode: "array",
@@ -183,7 +183,7 @@ func walkObjectForArray(payload string, obj gjson.Result, pathPrefix string, dep
 		}
 
 		*fields = append(*fields, suggestedField{
-			SourcePath:      fieldPath,
+			PayloadPath:     fieldPath,
 			TargetKey:       autoTargetKey(fieldPath),
 			ValueType:       vt,
 			MultiResultMode: mrm,
@@ -228,7 +228,7 @@ func analyzeObjectPayload(payload string, obj gjson.Result, pathPrefix string, d
 				sample = strings.Join(parts, ", ")
 			}
 			fields = append(fields, suggestedField{
-				SourcePath:      fieldPath,
+				PayloadPath:     fieldPath,
 				TargetKey:       autoTargetKey(fieldPath),
 				ValueType:       vt,
 				MultiResultMode: mrm,
@@ -239,7 +239,7 @@ func analyzeObjectPayload(payload string, obj gjson.Result, pathPrefix string, d
 
 		vt := inferType(val)
 		fields = append(fields, suggestedField{
-			SourcePath:  fieldPath,
+			PayloadPath: fieldPath,
 			TargetKey:   autoTargetKey(fieldPath),
 			ValueType:   vt,
 			SampleValue: formatSampleValue(val),
@@ -288,12 +288,12 @@ func formatSampleValue(r gjson.Result) string {
 	}
 }
 
-// autoTargetKey generates a target_key from a source path.
+// autoTargetKey generates a target_key from a endpoint path.
 // Examples: "#.image.name" → "image_names", "#.name" → "names", "name" → "name",
 // "#.count" → "count", "host.name" → "host_name"
-func autoTargetKey(sourcePath string) string {
+func autoTargetKey(payloadPath string) string {
 	// Strip leading "#"
-	s := strings.TrimPrefix(sourcePath, "#")
+	s := strings.TrimPrefix(payloadPath, "#")
 	s = strings.TrimPrefix(s, ".")
 
 	if s == "" {
@@ -319,7 +319,7 @@ func autoTargetKey(sourcePath string) string {
 	}
 
 	// If the path has a parent, prepend it with underscore for context
-	if len(parts) > 1 && sourcePath != "" && sourcePath[0] == '#' {
+	if len(parts) > 1 && payloadPath != "" && payloadPath[0] == '#' {
 		// Multi-result: include parent for disambiguation
 		parent := parts[len(parts)-2]
 		return parent + "_" + leaf
@@ -462,7 +462,7 @@ func PreviewDelivery() http.HandlerFunc {
 // PreviewTemplate renders a template with sample data using the real Go template engine.
 // It accepts either a stored template_id, or an inline template spec (title_template /
 // body_template / format) for previewing unsaved content — no database writes either way.
-func PreviewTemplate(db *sql.DB) http.HandlerFunc {
+func PreviewTemplate(db *pgxpool.Pool) http.HandlerFunc {
 	repo := templates.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req struct {

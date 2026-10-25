@@ -21,6 +21,7 @@ FROM golang:1.26-alpine AS backend-builder
 ARG HTTP_PROXY
 ARG HTTPS_PROXY
 ARG GOPROXY=https://goproxy.cn,https://proxy.golang.org,direct
+ARG VERSION=dev
 ENV HTTP_PROXY=${HTTP_PROXY} HTTPS_PROXY=${HTTPS_PROXY} GOPROXY=${GOPROXY}
 
 WORKDIR /app
@@ -29,8 +30,8 @@ RUN go mod download
 COPY . .
 # Copy frontend dist from builder (Go server serves web/dist as SPA root)
 COPY --from=web-builder /web/dist /app/web/dist
-# Build the server binary
-RUN CGO_ENABLED=0 GOOS=linux go build -o /zpush ./cmd/server/
+# Build the server binary (VERSION is injected via ldflags)
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags "-X notygo/internal/api.Version=${VERSION}" -o /notygo ./cmd/server/
 
 # Runtime stage
 FROM alpine:latest
@@ -38,17 +39,17 @@ FROM alpine:latest
 RUN apk --no-cache add ca-certificates tzdata wget
 
 # Create non-root user
-RUN addgroup -S zpush && adduser -S zpush -G zpush
+RUN addgroup -S notygo && adduser -S notygo -G notygo
 
 WORKDIR /app
 
 # Copy binary from builder
-COPY --from=backend-builder /zpush /app/zpush
+COPY --from=backend-builder /notygo /app/notygo
 
 # Copy frontend static files
 COPY --from=web-builder /web/dist /app/web/dist
 
-USER zpush
+USER notygo
 
 EXPOSE 9003
 
@@ -57,4 +58,4 @@ EXPOSE 9003
 ENV LISTEN_ADDR=:9003
 ENV LOG_LEVEL=info
 
-ENTRYPOINT ["/app/zpush"]
+ENTRYPOINT ["/app/notygo"]

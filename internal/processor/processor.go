@@ -1,203 +1,134 @@
+// Package processor drives the event pipeline: applying mappings, evaluating
+// rules, rendering templates, and creating deliveries. It runs inside the
+// River event_process worker, one transaction per event.
 package processor
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
-	"zpush/internal/config"
-	"zpush/internal/delivery"
-	"zpush/internal/destination"
-	"zpush/internal/event"
-	"zpush/internal/mapping"
-	"zpush/internal/notify"
-	"zpush/internal/rules"
-	"zpush/internal/source"
-	"zpush/internal/templates"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"notygo/internal/channel"
+	"notygo/internal/delivery"
+	"notygo/internal/endpoint"
+	"notygo/internal/event"
+	"notygo/internal/mapping"
+	"notygo/internal/rules"
+	"notygo/internal/templates"
 )
 
-// EventProcessor processes received events by claiming them, applying mappings,
-// evaluating rules, rendering templates, and creating deliveries.
-type EventProcessor struct {
-	cfg          config.WorkerConfig
-	sourceRepo   *source.Repository
+// DeliveryEnqueuer queues a delivery_send job in the caller's transaction.
+// Implemented by the queue manager; an interface here keeps processor
+// independent of the queue package.
+type DeliveryEnqueuer interface {
+	EnqueueDeliverySendTx(ctx context.Context, tx pgx.Tx, deliveryID string, maxAttempts int) error
+}
+
+// Service processes events through the full pipeline.
+type Service struct {
+	pool         *pgxpool.Pool
+	endpointRepo *endpoint.Repository
 	mappingRepo  *mapping.Repository
 	ruleRepo     *rules.Repository
 	templateRepo *templates.Repository
-	destRepo     *destination.Repository
+	destRepo     *channel.Repository
 	eventRepo    *event.Repository
 	deliveryRepo *delivery.Repository
-	notifier     *notify.Notifier
-	workerID     string
+	enqueue      DeliveryEnqueuer
 }
 
-// NewEventProcessor creates a new EventProcessor.
-func NewEventProcessor(
-	cfg config.WorkerConfig,
-	sourceRepo *source.Repository,
+// NewService creates a processor Service. enqueue may be nil at construction
+// and bound later with SetEnqueuer (the queue manager needs the processor to
+// build its workers, and the processor needs the manager to enqueue — the
+// reference is completed before the queue starts).
+func NewService(
+	pool *pgxpool.Pool,
+	endpointRepo *endpoint.Repository,
 	mappingRepo *mapping.Repository,
 	ruleRepo *rules.Repository,
 	templateRepo *templates.Repository,
-	destRepo *destination.Repository,
+	destRepo *channel.Repository,
 	eventRepo *event.Repository,
 	deliveryRepo *delivery.Repository,
-	notifier *notify.Notifier,
-) *EventProcessor {
-	workerID := generateWorkerID()
-	return &EventProcessor{
-		cfg:          cfg,
-		sourceRepo:   sourceRepo,
+	enqueue DeliveryEnqueuer,
+) *Service {
+	return &Service{
+		pool:         pool,
+		endpointRepo: endpointRepo,
 		mappingRepo:  mappingRepo,
 		ruleRepo:     ruleRepo,
 		templateRepo: templateRepo,
 		destRepo:     destRepo,
 		eventRepo:    eventRepo,
 		deliveryRepo: deliveryRepo,
-		notifier:     notifier,
-		workerID:     workerID,
+		enqueue:      enqueue,
 	}
 }
 
-// Run starts the event processing loop. Blocks until context is cancelled.
-func (p *EventProcessor) Run(ctx context.Context) {
-	slog.Info("event processor starting", "worker_id", p.workerID, "concurrency", p.cfg.EventProcessorConcurrency)
-
-	// Work channel: buffered to concurrency capacity. When full, the dispatcher
-	// blocks on send, providing natural backpressure.
-	workCh := make(chan *event.Event, p.cfg.EventProcessorConcurrency)
-
-	// doneCh signals when a worker finishes processing — allows the dispatcher
-	// to wake up immediately and claim more events without waiting for the ticker.
-	doneCh := make(chan struct{}, p.cfg.EventProcessorConcurrency)
-
-	// Start worker pool — N goroutines reading from workCh
-	var wg sync.WaitGroup
-	for i := 0; i < p.cfg.EventProcessorConcurrency; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for evt := range workCh {
-				func() {
-					defer func() {
-						if r := recover(); r != nil {
-							slog.Error("event processor worker panic", "event_id", evt.ID, "panic", r)
-						}
-					}()
-					p.processEvent(ctx, evt)
-				}()
-				// Signal that a slot is free (non-blocking, doneCh is buffered)
-				select {
-				case doneCh <- struct{}{}:
-				default:
-				}
-			}
-		}()
-	}
-
-	// Dispatcher: wait for notification, worker-done, or ticker, then batch-claim loop
-	ticker := time.NewTicker(p.cfg.ClaimPollInterval)
-	defer ticker.Stop()
-
-	notifyCh := p.notifier.EventCh() // nil if notifier is nil
-
-dispatch:
-	for {
-		// Wait for a signal: notification, worker-done, or ticker fallback
-		if notifyCh != nil {
-			select {
-			case <-ctx.Done():
-				break dispatch
-			case <-notifyCh:
-				// New event arrived, drain coalesced signals
-				drainChannel(notifyCh)
-			case <-doneCh:
-				// A worker finished, try to claim more immediately
-			case <-ticker.C:
-				// Fallback poll
-			}
-		} else {
-			// No notifier: listen on doneCh + ticker
-			select {
-			case <-ctx.Done():
-				break dispatch
-			case <-doneCh:
-			case <-ticker.C:
-			}
-		}
-
-		// Batch claim loop: claim events until workCh is full or no more claimable
-		for {
-			select {
-			case <-ctx.Done():
-				break dispatch
-			default:
-			}
-
-			evt, err := p.eventRepo.ClaimEvent(ctx, p.workerID, p.cfg.LeaseTimeout)
-			if err != nil {
-				if err != event.ErrAlreadyClaimed {
-					// Transient DB error — log and retry after brief pause
-					slog.Error("claim event error, retrying", "error", err)
-					select {
-					case <-ctx.Done():
-						break dispatch
-					case <-time.After(200 * time.Millisecond):
-						continue // retry the claim immediately
-					}
-				}
-				break // no more events to claim right now
-			}
-
-			// Push to workCh. This blocks when the channel is full, which means
-			// all N workers are busy. This is natural backpressure — the dispatcher
-			// stops claiming until a worker frees up. The claim is held under lease
-			// so it won't be lost; the worker will process it when a slot opens.
-			select {
-			case workCh <- evt:
-				// Event dispatched to worker pool
-			case <-ctx.Done():
-				// Context cancelled while waiting for a slot.
-				// The event is claimed but not dispatched. Lease recovery will handle it.
-				break dispatch
-			}
-		}
-	}
-
-	// Graceful shutdown: close workCh so workers drain, then wait
-	close(workCh)
-	slog.Info("event processor stopping, waiting for in-flight tasks", "worker_id", p.workerID)
-	wg.Wait()
-	slog.Info("event processor stopped", "worker_id", p.workerID)
+// SetEnqueuer binds the delivery job enqueuer (two-phase construction).
+func (s *Service) SetEnqueuer(enqueue DeliveryEnqueuer) {
+	s.enqueue = enqueue
 }
 
-// drainChannel drains any coalesced signals from a notification channel.
-func drainChannel(ch <-chan struct{}) {
-	for {
-		select {
-		case <-ch:
-		default:
-			return
-		}
-	}
-}
+// Process handles a single event through the full processing pipeline in one
+// transaction: the EventRun, matched-rule deliveries, their queue jobs, and
+// the final event status are committed atomically. Business failures (missing
+// endpoint/mapping, template render error) are written as status=failed and
+// return nil — the queue job completes. An infrastructure error rolls the
+// whole transaction back (the event stays `received`) and is returned so the
+// caller can surface it; the stuck sweep re-drives such events later.
+func (s *Service) Process(ctx context.Context, evt *event.Event) error {
+	slog.Info("processing event", "event_id", evt.ID, "endpoint_id", evt.EndpointID)
 
-// processEvent handles a single event through the full processing pipeline.
-func (p *EventProcessor) processEvent(ctx context.Context, evt *event.Event) {
-	slog.Info("processing event", "event_id", evt.ID, "source_id", evt.SourceID)
-
-	// 1. Fetch source + mapping
-	src, err := p.sourceRepo.GetByID(ctx, evt.SourceID)
+	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		slog.Error("failed to fetch source for event", "event_id", evt.ID, "source_id", evt.SourceID, "error", err)
-		_ = p.eventRepo.MarkFailed(ctx, evt.ID, "PROCESSOR_001", "source not found")
-		return
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx) // no-op after commit
+
+	eventTx := s.eventRepo.WithTx(tx)
+	deliveryTx := s.deliveryRepo.WithTx(tx)
+
+	// Claim guard: flip received → processing. Zero rows means another job
+	// already owns this event (duplicate enqueue) — nothing to do.
+	claimed, err := eventTx.MarkProcessing(ctx, evt.ID)
+	if err != nil {
+		return fmt.Errorf("mark event processing: %w", err)
+	}
+	if !claimed {
+		return nil
+	}
+
+	err = s.processEvent(ctx, tx, eventTx, deliveryTx, evt)
+	if err != nil {
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit: %w", err)
+	}
+	return nil
+}
+
+// processEvent handles a single event through the full processing pipeline
+// against the given transaction. Business failures are recorded as
+// status=failed and swallowed (nil); infrastructure errors are returned and
+// roll back everything the run wrote.
+func (s *Service) processEvent(ctx context.Context, tx pgx.Tx, eventTx *event.Repository, deliveryTx *delivery.Repository, evt *event.Event) error {
+	// 1. Fetch endpoint + mapping
+	src, err := s.endpointRepo.GetByID(ctx, evt.EndpointID)
+	if err != nil {
+		slog.Error("failed to fetch endpoint for event", "event_id", evt.ID, "endpoint_id", evt.EndpointID, "error", err)
+		_ = eventTx.MarkFailed(ctx, evt.ID, "PROCESSOR_001", "endpoint not found")
+		return nil
 	}
 
 	var mapObj *mapping.Mapping
@@ -205,17 +136,17 @@ func (p *EventProcessor) processEvent(ctx context.Context, evt *event.Event) {
 	var mappingRevision *int
 
 	if src.MappingID != nil && *src.MappingID != "" {
-		mapObj, err = p.mappingRepo.GetByID(ctx, *src.MappingID)
+		mapObj, err = s.mappingRepo.GetByID(ctx, *src.MappingID)
 		if err != nil {
 			slog.Error("failed to fetch mapping for event", "event_id", evt.ID, "mapping_id", *src.MappingID, "error", err)
-			_ = p.eventRepo.MarkFailed(ctx, evt.ID, "PROCESSOR_003", fmt.Sprintf("mapping %s not found", *src.MappingID))
-			return
+			_ = eventTx.MarkFailed(ctx, evt.ID, "PROCESSOR_003", fmt.Sprintf("mapping %s not found", *src.MappingID))
+			return nil
 		}
 		mappingID = &mapObj.ID
 		mappingRevision = &mapObj.Revision
 		slog.Info("mapping loaded", "event_id", evt.ID, "mapping_id", mapObj.ID, "mapping_name", mapObj.Name, "field_count", len(mapObj.Fields), "rule_ids", mapObj.RuleIDs)
 	} else {
-		slog.Warn("no mapping configured for source", "event_id", evt.ID, "source_id", src.ID, "source_name", src.Name)
+		slog.Warn("no mapping configured for endpoint", "event_id", evt.ID, "endpoint_id", src.ID, "endpoint_name", src.Name)
 	}
 
 	// 2. Parse the mapping.Fields JSON into []MappingEntry and apply mapping
@@ -248,16 +179,16 @@ func (p *EventProcessor) processEvent(ctx context.Context, evt *event.Event) {
 		evalFields[k] = v
 	}
 	evalFields["payload_hash"] = evt.PayloadHash
-	evalFields["source_id"] = evt.SourceID
+	evalFields["endpoint_id"] = evt.EndpointID
 
 	// 3. Get enabled rules selected by this mapping, and build rule_set_snapshot
 	var enabledRules []rules.Rule
 	if mapObj != nil && len(mapObj.RuleIDs) > 0 {
-		enabledRules, err = p.ruleRepo.ListEnabledByIDs(ctx, mapObj.RuleIDs)
+		enabledRules, err = s.ruleRepo.ListEnabledByIDs(ctx, mapObj.RuleIDs)
 		if err != nil {
 			slog.Error("failed to list enabled rules by mapping", "event_id", evt.ID, "mapping_id", mapObj.ID, "rule_ids", mapObj.RuleIDs, "error", err)
-			_ = p.eventRepo.MarkFailed(ctx, evt.ID, "PROCESSOR_004", fmt.Sprintf("failed to fetch rules for mapping %s", mapObj.ID))
-			return
+			_ = eventTx.MarkFailed(ctx, evt.ID, "PROCESSOR_004", fmt.Sprintf("failed to fetch rules for mapping %s", mapObj.ID))
+			return nil
 		}
 		slog.Info("rules fetched for event", "event_id", evt.ID, "requested_rule_ids", mapObj.RuleIDs, "fetched_count", len(enabledRules))
 	} else {
@@ -270,11 +201,11 @@ func (p *EventProcessor) processEvent(ctx context.Context, evt *event.Event) {
 	ruleSetSnapshot := make([]event.RuleSnapshot, 0, len(enabledRules))
 	for _, r := range enabledRules {
 		ruleSetSnapshot = append(ruleSetSnapshot, event.RuleSnapshot{
-			ID:           r.ID,
-			Name:         r.Name,
-			Priority:     r.Priority,
-			Conditions:   r.Conditions,
-			Destinations: r.DestinationIDs,
+			ID:         r.ID,
+			Name:       r.Name,
+			Priority:   r.Priority,
+			Conditions: r.Conditions,
+			Channels:   r.ChannelIDs,
 		})
 	}
 
@@ -291,11 +222,9 @@ func (p *EventProcessor) processEvent(ctx context.Context, evt *event.Event) {
 		Status:           event.EventRunStatusProcessing,
 	}
 
-	createdRun, err := p.eventRepo.CreateEventRun(ctx, eventRun)
+	createdRun, err := eventTx.CreateEventRun(ctx, eventRun)
 	if err != nil {
-		slog.Error("failed to create event run", "event_id", evt.ID, "error", err)
-		_ = p.eventRepo.MarkFailed(ctx, evt.ID, "PROCESSOR_002", "failed to create event run")
-		return
+		return fmt.Errorf("create event run: %w", err)
 	}
 
 	// 5. Evaluate rules
@@ -314,7 +243,7 @@ func (p *EventProcessor) processEvent(ctx context.Context, evt *event.Event) {
 			matchedRuleIDs = append(matchedRuleIDs, rule.ID)
 
 			// 6. For each matched rule: render template, create deliveries
-			created, renderErr := p.processMatchedRule(ctx, evt, src, createdRun, rule, evalFields)
+			created, renderErr := s.processMatchedRule(ctx, tx, eventTx, deliveryTx, evt, src, createdRun, rule, evalFields)
 			if renderErr != nil {
 				// Template render failure — do NOT create empty-content deliveries;
 				// fail the event so the error is visible and fixable
@@ -336,19 +265,19 @@ func (p *EventProcessor) processEvent(ctx context.Context, evt *event.Event) {
 
 	// 7. Mark EventRun completed (or failed when a template could not render)
 	if renderFailure != nil {
-		_ = p.eventRepo.FailEventRun(ctx, createdRun.ID, "PROCESSOR_005", renderFailure.Error())
-		_ = p.eventRepo.MarkFailed(ctx, evt.ID, "PROCESSOR_005", renderFailure.Error())
+		_ = eventTx.FailEventRun(ctx, createdRun.ID, "PROCESSOR_005", renderFailure.Error())
+		_ = eventTx.MarkFailed(ctx, evt.ID, "PROCESSOR_005", renderFailure.Error())
 		slog.Error("event failed: template render error", "event_id", evt.ID, "error", renderFailure)
-		return
+		return nil
 	}
-	_ = p.eventRepo.CompleteEventRun(ctx, createdRun.ID, matchedRuleIDs)
+	_ = eventTx.CompleteEventRun(ctx, createdRun.ID, matchedRuleIDs)
 
 	// 8. Mark Event status: deduped if all matched rules were skipped, completed otherwise
 	if len(matchedRuleIDs) > 0 && !deliveryCreated {
-		_ = p.eventRepo.MarkDeduped(ctx, evt.ID)
+		_ = eventTx.MarkDeduped(ctx, evt.ID)
 		slog.Info("event deduped", "event_id", evt.ID, "matched_rules", len(matchedRuleIDs), "all_deduped", true)
 	} else {
-		_ = p.eventRepo.MarkProcessed(ctx, evt.ID)
+		_ = eventTx.MarkProcessed(ctx, evt.ID)
 		slog.Info("event processed", "event_id", evt.ID, "matched_rules", len(matchedRuleIDs), "deliveries_created", deliveryCreated)
 	}
 	if len(matchedRuleIDs) == 0 && mapObj != nil {
@@ -360,22 +289,23 @@ func (p *EventProcessor) processEvent(ctx context.Context, evt *event.Event) {
 			"available_fields", formatFieldSummary(evalFields),
 		)
 	}
+	return nil
 }
 
 // processMatchedRule renders the template and creates deliveries for a matched rule.
 // If the rule has dedupe enabled, it checks for duplicates before creating deliveries.
 // Returns (true, nil) if deliveries were actually created, (false, nil) if dedupe-skipped,
 // and (_, err) when the template could not be rendered (no deliveries are created then).
-func (p *EventProcessor) processMatchedRule(ctx context.Context, evt *event.Event, src *source.Source, run *event.EventRun, rule rules.Rule, fields map[string]any) (bool, error) {
+func (s *Service) processMatchedRule(ctx context.Context, tx pgx.Tx, eventTx *event.Repository, deliveryTx *delivery.Repository, evt *event.Event, src *endpoint.Endpoint, run *event.EventRun, rule rules.Rule, fields map[string]any) (bool, error) {
 	// === Deduplication check ===
 	if rule.DedupeConfig != nil && rule.DedupeConfig.WindowSeconds > 0 {
-		// Dedupe key: rule_id + payload_hash â same content within window = skip
+		// Dedupe key: rule_id + payload_hash — same content within window = skip
 		dedupeKey := rule.ID + ":payload_hash=" + evt.PayloadHash
 		dedupeHash := sha256Hash(dedupeKey)
 
-		result, err := p.deliveryRepo.CheckAndInsertDedupeKey(ctx, rule.ID, dedupeHash, rule.DedupeConfig.WindowSeconds, time.Now().UTC())
+		result, err := deliveryTx.CheckAndInsertDedupeKey(ctx, rule.ID, dedupeHash, rule.DedupeConfig.WindowSeconds, time.Now().UTC())
 		if err != nil {
-			// Dedupe check failed â degrade gracefully (prefer extra delivery over lost delivery)
+			// Dedupe check failed — degrade gracefully (prefer extra delivery over lost delivery)
 			slog.Error("dedupe check failed, proceeding without dedupe", "event_id", evt.ID, "rule_id", rule.ID, "error", err)
 		} else if result.IsDuplicate {
 			slog.Info("dedupe: skipping duplicate event", "event_id", evt.ID, "rule_id", rule.ID, "payload_hash", evt.PayloadHash)
@@ -386,17 +316,18 @@ func (p *EventProcessor) processMatchedRule(ctx context.Context, evt *event.Even
 	}
 
 	// Render template and create deliveries
-	return true, p.renderAndCreateDeliveries(ctx, evt, src, run, rule, fields)
+	return true, s.renderAndCreateDeliveries(ctx, tx, deliveryTx, evt, src, run, rule, fields)
 }
 
-// renderAndCreateDeliveries renders the template and creates deliveries.
+// renderAndCreateDeliveries renders the template and creates deliveries,
+// queueing a delivery_send job for each inside the same transaction.
 // Rendering failures return an error — deliveries with empty content are never created.
-func (p *EventProcessor) renderAndCreateDeliveries(ctx context.Context, evt *event.Event, src *source.Source, run *event.EventRun, rule rules.Rule, fields map[string]any) error {
+func (s *Service) renderAndCreateDeliveries(ctx context.Context, tx pgx.Tx, deliveryTx *delivery.Repository, evt *event.Event, src *endpoint.Endpoint, run *event.EventRun, rule rules.Rule, fields map[string]any) error {
 	if rule.TemplateID == nil || *rule.TemplateID == "" {
 		return fmt.Errorf("rule %q has no template configured", rule.Name)
 	}
 
-	tmpl, err := p.templateRepo.GetByID(ctx, *rule.TemplateID)
+	tmpl, err := s.templateRepo.GetByID(ctx, *rule.TemplateID)
 	if err != nil {
 		return fmt.Errorf("template %s not found: %w", *rule.TemplateID, err)
 	}
@@ -407,9 +338,9 @@ func (p *EventProcessor) renderAndCreateDeliveries(ctx context.Context, evt *eve
 		templateData[k] = v
 	}
 	templateData["Event"] = map[string]any{
-		"ID":         evt.ID,
-		"ReceivedAt": evt.ReceivedAt.Format(time.RFC3339),
-		"SourceName": src.Name,
+		"ID":           evt.ID,
+		"ReceivedAt":   evt.ReceivedAt.Format(time.RFC3339),
+		"EndpointName": src.Name,
 	}
 	msg, renderErr := templates.Render(tmpl, templateData)
 	if renderErr != nil {
@@ -420,41 +351,38 @@ func (p *EventProcessor) renderAndCreateDeliveries(ctx context.Context, evt *eve
 	renderedBody := msg.Body
 	renderedFormat := msg.Format
 
-	nextAttemptAt := time.Now().UTC()
-
-	// Create deliveries for each destination. The retry budget comes from the
-	// destination's max_attempts (fallback: DB default 5 for deleted/legacy rows).
-	for _, destID := range rule.DestinationIDs {
-		idempotencyKey := fmt.Sprintf("%s-%s-%s-%s", evt.ID, run.ID, rule.ID, destID)
-
+	// Create deliveries for each channel. The retry budget comes from the
+	// channel's max_attempts (fallback: DB default 5 for deleted/legacy rows).
+	for _, destID := range rule.ChannelIDs {
 		maxAttempts := 5
-		if dest, err := p.destRepo.GetByID(ctx, destID); err == nil && dest.MaxAttempts > 0 {
+		if dest, err := s.destRepo.GetByID(ctx, destID); err == nil && dest.MaxAttempts > 0 {
 			maxAttempts = dest.MaxAttempts
 		}
 
+		idempotencyKey := fmt.Sprintf("%s-%s-%s-%s", evt.ID, run.ID, rule.ID, destID)
 		d := &delivery.Delivery{
 			EventID:        evt.ID,
 			EventRunID:     run.ID,
 			RuleID:         rule.ID,
-			DestinationID:  destID,
+			ChannelID:      destID,
 			IdempotencyKey: idempotencyKey,
 			Status:         delivery.DeliveryStatusPending,
 			MaxAttempts:    maxAttempts,
-			NextAttemptAt:  nextAttemptAt,
 			RenderedTitle:  &renderedTitle,
 			RenderedBody:   &renderedBody,
 			RenderedFormat: &renderedFormat,
 		}
 
-		_, err := p.deliveryRepo.Create(ctx, d)
+		created, err := deliveryTx.Create(ctx, d)
 		if err != nil {
-			slog.Error("failed to create delivery", "event_id", evt.ID, "destination_id", destID, "error", err)
+			return fmt.Errorf("create delivery: %w", err)
 		}
-	}
 
-	// Notify the delivery worker that new deliveries are available
-	if p.notifier != nil {
-		p.notifier.NotifyDelivery()
+		// Queue the send job in the same transaction — the delivery row and
+		// its job become atomic: no row without a job, no job without a row.
+		if err := s.enqueue.EnqueueDeliverySendTx(ctx, tx, created.ID, maxAttempts); err != nil {
+			return fmt.Errorf("enqueue delivery job: %w", err)
+		}
 	}
 
 	return nil
@@ -661,12 +589,6 @@ func compareValues(a any, b string, op string) bool {
 		return aStr <= b
 	}
 	return false
-}
-
-func generateWorkerID() string {
-	b := make([]byte, 8)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
 }
 
 // sha256Hash returns the hex-encoded SHA-256 hash of the input string.

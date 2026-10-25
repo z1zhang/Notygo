@@ -30,8 +30,8 @@ func NewDingTalkSender() *DingTalkSender {
 }
 
 // Send delivers a message to DingTalk via the configured webhook.
-// If destConfig.SecretRef is provided (decrypted secret), signed mode is used.
-func (s *DingTalkSender) Send(ctx context.Context, destConfig DestinationConfig, msg RenderedMessage) (*SendResult, error) {
+// If destConfig.Secret is provided (decrypted secret), signed mode is used.
+func (s *DingTalkSender) Send(ctx context.Context, destConfig ChannelConfig, msg RenderedMessage) (*SendResult, error) {
 	var cfg DingTalkConfig
 	if err := json.Unmarshal(destConfig.Config, &cfg); err != nil {
 		return nil, fmt.Errorf("invalid dingtalk config: %w", err)
@@ -40,9 +40,9 @@ func (s *DingTalkSender) Send(ctx context.Context, destConfig DestinationConfig,
 	webhookURL := cfg.WebhookURL
 
 	// If a secret is provided, use signed mode
-	if destConfig.SecretRef != "" {
+	if destConfig.Secret != "" {
 		timestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
-		sign, err := computeDingTalkSign(timestamp, destConfig.SecretRef)
+		sign, err := computeDingTalkSign(timestamp, destConfig.Secret)
 		if err != nil {
 			return nil, fmt.Errorf("compute dingtalk sign: %w", err)
 		}

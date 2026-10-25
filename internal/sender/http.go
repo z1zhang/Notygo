@@ -15,21 +15,21 @@ import (
 // HTTPConfig holds the configuration for a generic HTTP webhook sender.
 type HTTPConfig struct {
 	URL        string            `json:"url"`
-	Method     string            `json:"method"`  // GET, POST, PUT, etc.
-	Headers    map[string]string `json:"headers"` // Custom headers
+	Method     string            `json:"method"`      // GET, POST, PUT, etc.
+	Headers    map[string]string `json:"headers"`     // Custom headers
 	BodyFields []BodyField       `json:"body_fields"` // Structured body tree
 }
 
 // BodyField is one node of the request-body tree. A leaf maps a JSON key to
 // a value source ("title"|"body"|"format"|"literal"); a group (type
 // "object"|"array") nests children under a key. Multiple keys may map the
-// same source. Inside an array, child keys are ignored (position decides).
+// same endpoint. Inside an array, child keys are ignored (position decides).
 type BodyField struct {
-	Key      string      `json:"key"`
-	Source   string      `json:"source,omitempty"` // leaf only
-	Value    string      `json:"value,omitempty"`  // literal source only
-	Type     string      `json:"type,omitempty"`   // group only: "object" | "array"
-	Children []BodyField `json:"children,omitempty"`
+	Key         string      `json:"key"`
+	ValueSource string      `json:"value_source,omitempty"` // leaf only
+	Value       string      `json:"value,omitempty"`        // literal endpoint only
+	Type        string      `json:"type,omitempty"`         // group only: "object" | "array"
+	Children    []BodyField `json:"children,omitempty"`
 }
 
 func (f BodyField) isGroup() bool {
@@ -45,7 +45,7 @@ func NewHTTPSender() *HTTPSender {
 }
 
 // Send delivers a message via HTTP webhook with SSRF protection.
-func (s *HTTPSender) Send(ctx context.Context, destConfig DestinationConfig, msg RenderedMessage) (*SendResult, error) {
+func (s *HTTPSender) Send(ctx context.Context, destConfig ChannelConfig, msg RenderedMessage) (*SendResult, error) {
 	var cfg HTTPConfig
 	if err := json.Unmarshal(destConfig.Config, &cfg); err != nil {
 		return nil, fmt.Errorf("invalid webhook config: %w", err)
@@ -112,7 +112,7 @@ func (s *HTTPSender) Send(ctx context.Context, destConfig DestinationConfig, msg
 
 	// Set default headers
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "zPush/1.0")
+	req.Header.Set("User-Agent", "Notygo/1.0")
 
 	// Apply custom headers (can override defaults)
 	for k, v := range cfg.Headers {
@@ -164,7 +164,7 @@ func buildBodyFields(fields []BodyField, msg RenderedMessage) (any, error) {
 			root[f.Key] = v
 			continue
 		}
-		v, err := resolveBodySource(f, msg)
+		v, err := resolveValueSource(f, msg)
 		if err != nil {
 			return nil, err
 		}
@@ -187,7 +187,7 @@ func buildGroupValue(g BodyField, msg RenderedMessage, where string) (any, error
 				arr = append(arr, v)
 				continue
 			}
-			v, err := resolveBodySource(c, msg)
+			v, err := resolveValueSource(c, msg)
 			if err != nil {
 				return nil, fmt.Errorf("%s[%d]: %w", where, i, err)
 			}
@@ -213,7 +213,7 @@ func buildGroupValue(g BodyField, msg RenderedMessage, where string) (any, error
 			m[c.Key] = v
 			continue
 		}
-		v, err := resolveBodySource(c, msg)
+		v, err := resolveValueSource(c, msg)
 		if err != nil {
 			return nil, fmt.Errorf("%s.%s: %w", where, c.Key, err)
 		}
@@ -222,9 +222,9 @@ func buildGroupValue(g BodyField, msg RenderedMessage, where string) (any, error
 	return m, nil
 }
 
-// resolveBodySource maps a leaf to its value from the rendered message.
-func resolveBodySource(f BodyField, msg RenderedMessage) (string, error) {
-	switch f.Source {
+// resolveValueSource maps a leaf to its value from the rendered message.
+func resolveValueSource(f BodyField, msg RenderedMessage) (string, error) {
+	switch f.ValueSource {
 	case "title":
 		return msg.Title, nil
 	case "body":
@@ -234,10 +234,10 @@ func resolveBodySource(f BodyField, msg RenderedMessage) (string, error) {
 	case "literal":
 		return f.Value, nil
 	default:
-		if f.Source == "" {
+		if f.ValueSource == "" {
 			return "", fmt.Errorf("field %q has no value source", f.Key)
 		}
-		return "", fmt.Errorf("field %q has invalid source %q", f.Key, f.Source)
+		return "", fmt.Errorf("field %q has invalid value source %q", f.Key, f.ValueSource)
 	}
 }
 

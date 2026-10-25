@@ -1,6 +1,6 @@
 additionalProperties:
-  key: zpush
-  name: zPush
+  key: notygo
+  name: Notygo
   tags:
     - Tool
   shortDescZh: 自托管 Webhook 事件路由与通知推送
@@ -8,9 +8,9 @@ additionalProperties:
   type: tool
   crossVersionUpdate: true
   limit: 0
-  website: https://github.com/z1zhang/zpush
-  github: https://github.com/z1zhang/zpush
-  document: https://github.com/z1zhang/zpush/blob/master/README.md
+  website: https://github.com/z1zhang/notygo
+  github: https://github.com/z1zhang/notygo
+  document: https://github.com/z1zhang/notygo/blob/master/README.md
   description:
     en: Self-hosted webhook event routing and notification push system. Receives webhooks, applies field mapping, rule matching and template rendering, then delivers to DingTalk / Feishu / WeCom / Email / HTTP.
     zh: 自托管 Webhook 事件路由与通知推送系统。接收外部 Webhook，经字段映射、规则匹配、模板渲染后投递到钉钉、飞书、企业微信、邮件及 HTTP 渠道

@@ -7,9 +7,9 @@ import (
 func TestApply_BasicExtraction(t *testing.T) {
 	m := &Mapping{
 		Fields: []MappingEntry{
-			{SourcePath: "name", TargetKey: "name", ValueType: "string"},
-			{SourcePath: "age", TargetKey: "age", ValueType: "number"},
-			{SourcePath: "active", TargetKey: "active", ValueType: "boolean"},
+			{PayloadPath: "name", TargetKey: "name", ValueType: "string"},
+			{PayloadPath: "age", TargetKey: "age", ValueType: "number"},
+			{PayloadPath: "active", TargetKey: "active", ValueType: "boolean"},
 		},
 	}
 	payload := `{"name":"Alice","age":30,"active":true}`
@@ -35,8 +35,8 @@ func TestApply_BasicExtraction(t *testing.T) {
 func TestApply_NestedPath(t *testing.T) {
 	m := &Mapping{
 		Fields: []MappingEntry{
-			{SourcePath: "data.user.email", TargetKey: "email", ValueType: "string"},
-			{SourcePath: "data.items.0.name", TargetKey: "first_item", ValueType: "string"},
+			{PayloadPath: "data.user.email", TargetKey: "email", ValueType: "string"},
+			{PayloadPath: "data.items.0.name", TargetKey: "first_item", ValueType: "string"},
 		},
 	}
 	payload := `{"data":{"user":{"email":"test@example.com"},"items":[{"name":"item1"},{"name":"item2"}]}}`
@@ -60,9 +60,9 @@ func TestApply_MissingField(t *testing.T) {
 	defVal := "default"
 	m := &Mapping{
 		Fields: []MappingEntry{
-			{SourcePath: "missing", TargetKey: "missing_optional", ValueType: "string"},
-			{SourcePath: "missing_required", TargetKey: "missing_required", ValueType: "string", Required: true},
-			{SourcePath: "missing_with_default", TargetKey: "missing_default", ValueType: "string", DefaultValue: &defVal},
+			{PayloadPath: "missing", TargetKey: "missing_optional", ValueType: "string"},
+			{PayloadPath: "missing_required", TargetKey: "missing_required", ValueType: "string", Required: true},
+			{PayloadPath: "missing_with_default", TargetKey: "missing_default", ValueType: "string", DefaultValue: &defVal},
 		},
 	}
 	payload := `{}`
@@ -98,9 +98,9 @@ func TestApply_NullValue(t *testing.T) {
 	defVal := "fallback"
 	m := &Mapping{
 		Fields: []MappingEntry{
-			{SourcePath: "x", TargetKey: "null_optional", ValueType: "string"},
-			{SourcePath: "y", TargetKey: "null_required", ValueType: "string", Required: true},
-			{SourcePath: "z", TargetKey: "null_with_default", ValueType: "string", DefaultValue: &defVal},
+			{PayloadPath: "x", TargetKey: "null_optional", ValueType: "string"},
+			{PayloadPath: "y", TargetKey: "null_required", ValueType: "string", Required: true},
+			{PayloadPath: "z", TargetKey: "null_with_default", ValueType: "string", DefaultValue: &defVal},
 		},
 	}
 	payload := `{"x":null,"y":null,"z":null}`
@@ -132,9 +132,9 @@ func TestApply_NullValue(t *testing.T) {
 func TestApply_EmptyStringAndFalseAndZero(t *testing.T) {
 	m := &Mapping{
 		Fields: []MappingEntry{
-			{SourcePath: "empty_str", TargetKey: "empty_str", ValueType: "string", Required: true},
-			{SourcePath: "false_val", TargetKey: "false_val", ValueType: "boolean", Required: true},
-			{SourcePath: "zero_val", TargetKey: "zero_val", ValueType: "number", Required: true},
+			{PayloadPath: "empty_str", TargetKey: "empty_str", ValueType: "string", Required: true},
+			{PayloadPath: "false_val", TargetKey: "false_val", ValueType: "boolean", Required: true},
+			{PayloadPath: "zero_val", TargetKey: "zero_val", ValueType: "number", Required: true},
 		},
 	}
 	payload := `{"empty_str":"","false_val":false,"zero_val":0}`
@@ -169,9 +169,9 @@ func TestApply_DefaultValues(t *testing.T) {
 
 	m := &Mapping{
 		Fields: []MappingEntry{
-			{SourcePath: "s", TargetKey: "str_default", ValueType: "string", DefaultValue: &strDef},
-			{SourcePath: "b", TargetKey: "bool_default", ValueType: "boolean", DefaultValue: &boolDef},
-			{SourcePath: "n", TargetKey: "num_default", ValueType: "number", DefaultValue: &numDef},
+			{PayloadPath: "s", TargetKey: "str_default", ValueType: "string", DefaultValue: &strDef},
+			{PayloadPath: "b", TargetKey: "bool_default", ValueType: "boolean", DefaultValue: &boolDef},
+			{PayloadPath: "n", TargetKey: "num_default", ValueType: "number", DefaultValue: &numDef},
 		},
 	}
 	payload := `{}`
@@ -197,10 +197,10 @@ func TestApply_DefaultValues(t *testing.T) {
 func TestApply_TypeValidation(t *testing.T) {
 	m := &Mapping{
 		Fields: []MappingEntry{
-			{SourcePath: "not_a_number", TargetKey: "num_field", ValueType: "number"},
-			{SourcePath: "not_a_bool", TargetKey: "bool_field", ValueType: "boolean"},
-			{SourcePath: "not_an_array", TargetKey: "arr_field", ValueType: "array"},
-			{SourcePath: "not_an_object", TargetKey: "obj_field", ValueType: "object"},
+			{PayloadPath: "not_a_number", TargetKey: "num_field", ValueType: "number"},
+			{PayloadPath: "not_a_bool", TargetKey: "bool_field", ValueType: "boolean"},
+			{PayloadPath: "not_an_array", TargetKey: "arr_field", ValueType: "array"},
+			{PayloadPath: "not_an_object", TargetKey: "obj_field", ValueType: "object"},
 		},
 	}
 	payload := `{"not_a_number":"abc","not_a_bool":"yes","not_an_array":1,"not_an_object":"str"}`
@@ -226,7 +226,7 @@ func TestApply_MultiResultMode_First(t *testing.T) {
 	mode := "first"
 	m := &Mapping{
 		Fields: []MappingEntry{
-			{SourcePath: "items", TargetKey: "first_item", ValueType: "string", MultiResultMode: &mode},
+			{PayloadPath: "items", TargetKey: "first_item", ValueType: "string", MultiResultMode: &mode},
 		},
 	}
 	payload := `{"items":["alpha","beta","gamma"]}`
@@ -247,7 +247,7 @@ func TestApply_MultiResultMode_Array(t *testing.T) {
 	mode := "array"
 	m := &Mapping{
 		Fields: []MappingEntry{
-			{SourcePath: "tags", TargetKey: "tag_list", ValueType: "array", MultiResultMode: &mode},
+			{PayloadPath: "tags", TargetKey: "tag_list", ValueType: "array", MultiResultMode: &mode},
 		},
 	}
 	payload := `{"tags":["go","rust","zig"]}`
@@ -275,7 +275,7 @@ func TestApply_MultiResultMode_Join(t *testing.T) {
 	mode := "join(, )"
 	m := &Mapping{
 		Fields: []MappingEntry{
-			{SourcePath: "names", TargetKey: "joined", ValueType: "string", MultiResultMode: &mode},
+			{PayloadPath: "names", TargetKey: "joined", ValueType: "string", MultiResultMode: &mode},
 		},
 	}
 	payload := `{"names":["Alice","Bob","Carol"]}`
@@ -296,7 +296,7 @@ func TestApply_MultiResultMode_Count(t *testing.T) {
 	mode := "count"
 	m := &Mapping{
 		Fields: []MappingEntry{
-			{SourcePath: "items", TargetKey: "item_count", ValueType: "number", MultiResultMode: &mode},
+			{PayloadPath: "items", TargetKey: "item_count", ValueType: "number", MultiResultMode: &mode},
 		},
 	}
 	payload := `{"items":[1,2,3,4,5]}`
@@ -318,7 +318,7 @@ func TestApply_MultiResultMode_EmptyArray(t *testing.T) {
 	defVal := "none"
 	m := &Mapping{
 		Fields: []MappingEntry{
-			{SourcePath: "items", TargetKey: "first_item", ValueType: "string", MultiResultMode: &mode, DefaultValue: &defVal},
+			{PayloadPath: "items", TargetKey: "first_item", ValueType: "string", MultiResultMode: &mode, DefaultValue: &defVal},
 		},
 	}
 	payload := `{"items":[]}`
@@ -339,7 +339,7 @@ func TestApply_MultiResultMode_Unknown(t *testing.T) {
 	mode := "invalid_mode"
 	m := &Mapping{
 		Fields: []MappingEntry{
-			{SourcePath: "items", TargetKey: "bad_mode", ValueType: "string", MultiResultMode: &mode},
+			{PayloadPath: "items", TargetKey: "bad_mode", ValueType: "string", MultiResultMode: &mode},
 		},
 	}
 	payload := `{"items":["a","b"]}`
@@ -363,7 +363,7 @@ func TestApply_Transform_Upper(t *testing.T) {
 	transform := "to_upper"
 	m := &Mapping{
 		Fields: []MappingEntry{
-			{SourcePath: "name", TargetKey: "name_upper", ValueType: "string", Transform: &transform},
+			{PayloadPath: "name", TargetKey: "name_upper", ValueType: "string", Transform: &transform},
 		},
 	}
 	payload := `{"name":"alice"}`
@@ -384,7 +384,7 @@ func TestApply_Transform_Lower(t *testing.T) {
 	transform := "to_lower"
 	m := &Mapping{
 		Fields: []MappingEntry{
-			{SourcePath: "name", TargetKey: "name_lower", ValueType: "string", Transform: &transform},
+			{PayloadPath: "name", TargetKey: "name_lower", ValueType: "string", Transform: &transform},
 		},
 	}
 	payload := `{"name":"ALICE"}`
@@ -405,7 +405,7 @@ func TestApply_Transform_Trim(t *testing.T) {
 	transform := "trim"
 	m := &Mapping{
 		Fields: []MappingEntry{
-			{SourcePath: "name", TargetKey: "name_trimmed", ValueType: "string", Transform: &transform},
+			{PayloadPath: "name", TargetKey: "name_trimmed", ValueType: "string", Transform: &transform},
 		},
 	}
 	payload := `{"name":"  alice  "}`
@@ -426,7 +426,7 @@ func TestApply_Transform_NonString_NoOp(t *testing.T) {
 	transform := "to_upper"
 	m := &Mapping{
 		Fields: []MappingEntry{
-			{SourcePath: "count", TargetKey: "count", ValueType: "number", Transform: &transform},
+			{PayloadPath: "count", TargetKey: "count", ValueType: "number", Transform: &transform},
 		},
 	}
 	payload := `{"count":42}`
@@ -446,7 +446,7 @@ func TestApply_Transform_NonString_NoOp(t *testing.T) {
 func TestApply_ObjectExtraction(t *testing.T) {
 	m := &Mapping{
 		Fields: []MappingEntry{
-			{SourcePath: "metadata", TargetKey: "meta", ValueType: "object"},
+			{PayloadPath: "metadata", TargetKey: "meta", ValueType: "object"},
 		},
 	}
 	payload := `{"metadata":{"key":"value","nested":true}}`
@@ -470,7 +470,7 @@ func TestApply_ObjectExtraction(t *testing.T) {
 func TestApply_NoValueType(t *testing.T) {
 	m := &Mapping{
 		Fields: []MappingEntry{
-			{SourcePath: "anything", TargetKey: "any_val"},
+			{PayloadPath: "anything", TargetKey: "any_val"},
 		},
 	}
 	payload := `{"anything":42}`
@@ -492,8 +492,8 @@ func TestApply_DefaultValueBooleanConversions(t *testing.T) {
 	boolZero := "0"
 	m := &Mapping{
 		Fields: []MappingEntry{
-			{SourcePath: "missing1", TargetKey: "b1", ValueType: "boolean", DefaultValue: &boolFalse},
-			{SourcePath: "missing2", TargetKey: "b2", ValueType: "boolean", DefaultValue: &boolZero},
+			{PayloadPath: "missing1", TargetKey: "b1", ValueType: "boolean", DefaultValue: &boolFalse},
+			{PayloadPath: "missing2", TargetKey: "b2", ValueType: "boolean", DefaultValue: &boolZero},
 		},
 	}
 	payload := `{}`
@@ -517,7 +517,7 @@ func TestApply_DefaultValueInvalidNumber(t *testing.T) {
 	invalidNum := "not_a_number"
 	m := &Mapping{
 		Fields: []MappingEntry{
-			{SourcePath: "missing", TargetKey: "n", ValueType: "number", DefaultValue: &invalidNum},
+			{PayloadPath: "missing", TargetKey: "n", ValueType: "number", DefaultValue: &invalidNum},
 		},
 	}
 	payload := `{}`
@@ -543,7 +543,7 @@ func TestApply_MultiResultMode_ArrayOfBooleans(t *testing.T) {
 	arrMode := "array"
 	m := &Mapping{
 		Fields: []MappingEntry{
-			{SourcePath: "#.tag.semver", TargetKey: "tag_semvers", ValueType: "array", MultiResultMode: &arrMode},
+			{PayloadPath: "#.tag.semver", TargetKey: "tag_semvers", ValueType: "array", MultiResultMode: &arrMode},
 		},
 	}
 	payload := `[{"tag":{"semver":false}},{"tag":{"semver":false}},{"tag":{"semver":true}}]`
@@ -569,7 +569,7 @@ func TestApply_MultiResultMode_JoinArrayOfBooleans(t *testing.T) {
 	joinMode := "join(, )"
 	m := &Mapping{
 		Fields: []MappingEntry{
-			{SourcePath: "#.tag.semver", TargetKey: "tag_semvers_joined", ValueType: "string", MultiResultMode: &joinMode},
+			{PayloadPath: "#.tag.semver", TargetKey: "tag_semvers_joined", ValueType: "string", MultiResultMode: &joinMode},
 		},
 	}
 	payload := `[{"tag":{"semver":false}},{"tag":{"semver":true}}]`
@@ -591,7 +591,7 @@ func TestApply_MultiResultMode_FirstArrayOfBooleans(t *testing.T) {
 	firstMode := "first"
 	m := &Mapping{
 		Fields: []MappingEntry{
-			{SourcePath: "#.tag.semver", TargetKey: "first_semver", ValueType: "boolean", MultiResultMode: &firstMode},
+			{PayloadPath: "#.tag.semver", TargetKey: "first_semver", ValueType: "boolean", MultiResultMode: &firstMode},
 		},
 	}
 	payload := `[{"tag":{"semver":false}},{"tag":{"semver":true}}]`
@@ -614,7 +614,7 @@ func TestApply_HashPath_WholeArray(t *testing.T) {
 	arrMode := "array"
 	m := &Mapping{
 		Fields: []MappingEntry{
-			{SourcePath: "#", TargetKey: "items", ValueType: "array", MultiResultMode: &arrMode},
+			{PayloadPath: "#", TargetKey: "items", ValueType: "array", MultiResultMode: &arrMode},
 		},
 	}
 	payload := `[{"name":"dbx"},{"name":"redis"},{"name":"mysql"},{"name":"piclist"}]`
@@ -640,7 +640,7 @@ func TestApply_HashPath_Count(t *testing.T) {
 	countMode := "count"
 	m := &Mapping{
 		Fields: []MappingEntry{
-			{SourcePath: "#", TargetKey: "item_count", ValueType: "number", MultiResultMode: &countMode},
+			{PayloadPath: "#", TargetKey: "item_count", ValueType: "number", MultiResultMode: &countMode},
 		},
 	}
 	payload := `[{"name":"dbx"},{"name":"redis"},{"name":"mysql"}]`
@@ -662,7 +662,7 @@ func TestApply_HashPath_First(t *testing.T) {
 	firstMode := "first"
 	m := &Mapping{
 		Fields: []MappingEntry{
-			{SourcePath: "#", TargetKey: "first_item", ValueType: "object", MultiResultMode: &firstMode},
+			{PayloadPath: "#", TargetKey: "first_item", ValueType: "object", MultiResultMode: &firstMode},
 		},
 	}
 	payload := `[{"name":"dbx"},{"name":"redis"}]`

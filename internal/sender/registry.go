@@ -20,33 +20,32 @@ type SendResult struct {
 	RequestPayload string `json:"request_payload,omitempty"`
 }
 
-// Sender is the interface that destination senders must implement.
+// Sender is the interface that channel senders must implement.
 type Sender interface {
-	Send(ctx context.Context, destConfig DestinationConfig, msg RenderedMessage) (*SendResult, error)
+	Send(ctx context.Context, destConfig ChannelConfig, msg RenderedMessage) (*SendResult, error)
 }
 
-// DestinationConfig holds the resolved configuration for a destination.
-type DestinationConfig struct {
+// ChannelConfig holds the resolved configuration for a channel.
+type ChannelConfig struct {
 	ID        string
 	Type      string
 	URL       string
 	Method    string
 	Headers   map[string]string
-	Secret    string // Decrypted secret value
-	RawConfig map[string]any // Original config from destination model
+	Secret    string         // Decrypted secret value
+	RawConfig map[string]any // Original config from channel model
 	Config    json.RawMessage
-	SecretRef string
 	Timeout   time.Duration
 }
 
-// RenderedMessage represents the rendered content to be sent to a destination.
+// RenderedMessage represents the rendered content to be sent to a channel.
 type RenderedMessage struct {
 	Title  string `json:"title"`
 	Body   string `json:"body"`
 	Format string `json:"format"`
 }
 
-// Registry manages registered senders by destination type.
+// Registry manages registered senders by channel type.
 type Registry struct {
 	senders map[string]Sender
 }
@@ -58,17 +57,17 @@ func NewRegistry() *Registry {
 	}
 }
 
-// Register adds a sender implementation for a given destination type.
-func (r *Registry) Register(destType string, sender Sender) {
-	r.senders[destType] = sender
+// Register adds a sender implementation for a given channel type.
+func (r *Registry) Register(channelType string, sender Sender) {
+	r.senders[channelType] = sender
 }
 
-// Get retrieves the sender for a given destination type.
+// Get retrieves the sender for a given channel type.
 // Returns the sender and an error if not found (compatible with delivery worker expectations).
-func (r *Registry) Get(destType string) (Sender, error) {
-	s, ok := r.senders[destType]
+func (r *Registry) Get(channelType string) (Sender, error) {
+	s, ok := r.senders[channelType]
 	if !ok {
-		return nil, fmt.Errorf("no sender registered for destination type %q", destType)
+		return nil, fmt.Errorf("no sender registered for channel type %q", channelType)
 	}
 	return s, nil
 }
