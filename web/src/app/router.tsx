@@ -6,11 +6,11 @@ import { LoginPage } from '@/features/auth/LoginPage'
 import { TableSkeleton } from '@/components/data-display/TableSkeleton'
 
 const DashboardPage = lazy(() => import('@/features/dashboard/DashboardPage'))
-const SourcesPage = lazy(() => import('@/features/sources/SourcesPage'))
+const EndpointsPage = lazy(() => import('@/features/endpoints/EndpointsPage'))
 const MappingsPage = lazy(() => import('@/features/mappings/MappingsPage'))
 const RulesPage = lazy(() => import('@/features/rules/RulesPage'))
 const TemplatesPage = lazy(() => import('@/features/templates/TemplatesPage'))
-const DestinationsPage = lazy(() => import('@/features/destinations/DestinationsPage'))
+const ChannelsPage = lazy(() => import('@/features/channels/ChannelsPage'))
 const EventsPage = lazy(() => import('@/features/events/EventsPage'))
 const DeliveriesPage = lazy(() => import('@/features/deliveries/DeliveriesPage'))
 const AuditPage = lazy(() => import('@/features/audit/AuditPage'))
@@ -44,10 +44,10 @@ const router = createBrowserRouter([
         ),
       },
       {
-        path: 'sources',
+        path: 'endpoints',
         element: (
           <Suspense fallback={<PageFallback />}>
-            <SourcesPage />
+            <EndpointsPage />
           </Suspense>
         ),
       },
@@ -76,10 +76,10 @@ const router = createBrowserRouter([
         ),
       },
       {
-        path: 'destinations',
+        path: 'channels',
         element: (
           <Suspense fallback={<PageFallback />}>
-            <DestinationsPage />
+            <ChannelsPage />
           </Suspense>
         ),
       },

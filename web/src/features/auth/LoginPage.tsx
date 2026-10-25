@@ -64,7 +64,7 @@ export function LoginPage() {
           <div className="flex size-10 items-center justify-center rounded-lg bg-primary font-bold text-lg text-primary-foreground">
             z
           </div>
-          <h1 className="text-2xl font-bold tracking-tight">zPush</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Notygo</h1>
           <p className="text-sm text-muted-foreground">{t('login.subtitle')}</p>
         </div>
 

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { listDestinations, listMappings, listRules, listSources, listTemplates } from '@/lib/api'
+import { listChannels, listMappings, listRules, listEndpoints, listTemplates } from '@/lib/api'
 
 export interface LookupItem {
   id: string
@@ -10,10 +10,10 @@ function toItems(rows: { id: string; name: string }[] | undefined): LookupItem[]
   return (rows ?? []).map((r) => ({ id: r.id, name: r.name }))
 }
 
-export function useSourceOptions() {
+export function useEndpointOptions() {
   return useQuery({
-    queryKey: ['lookup', 'sources'],
-    queryFn: () => listSources({ page: 1, size: 100 }),
+    queryKey: ['lookup', 'endpoints'],
+    queryFn: () => listEndpoints({ page: 1, size: 100 }),
     select: (res) => toItems(res.data),
   })
 }
@@ -42,10 +42,10 @@ export function useTemplateOptions() {
   })
 }
 
-export function useDestinationOptions() {
+export function useChannelOptions() {
   return useQuery({
-    queryKey: ['lookup', 'destinations'],
-    queryFn: () => listDestinations({ page: 1, size: 100 }),
+    queryKey: ['lookup', 'channels'],
+    queryFn: () => listChannels({ page: 1, size: 100 }),
     select: (res) => toItems(res.data),
   })
 }

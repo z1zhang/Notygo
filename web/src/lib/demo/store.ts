@@ -3,7 +3,7 @@
 // Clearing site data resets the demo back to the seed.
 import { buildSeed, type DemoState } from './seed'
 
-const STORE_KEY = 'zpush-demo-db'
+const STORE_KEY = 'notygo-demo-db'
 
 let cached: DemoState | null = null
 

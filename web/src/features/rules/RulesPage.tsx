@@ -10,10 +10,10 @@ import { type TranslationKey } from '@/i18n'
 import { createRule, deleteRule, listRules, updateRule } from '@/lib/api'
 import { getErrorMessage } from '@/lib/api-client'
 import type { Condition, ConditionGroup, RuleResponse } from '@/lib/types'
-import { lookupName, useDestinationOptions, useTemplateOptions } from '@/hooks/use-lookup'
+import { lookupName, useChannelOptions, useTemplateOptions } from '@/hooks/use-lookup'
 import { usePagination } from '@/hooks/use-pagination'
 import { PageHeader } from '@/components/layout/PageHeader'
-import { Badge } from '@/components/ui/badge'
+import { OverflowBadges } from '@/components/data-display/OverflowBadges'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -98,7 +98,7 @@ const ruleSchema = z.object({
     }),
   ),
   template_id: z.string(),
-  destination_ids: z.array(z.string()),
+  channel_ids: z.array(z.string()),
   dedupeEnabled: z.boolean(),
   dedupeWindow: z.number().min(1).max(86400),
 })
@@ -112,7 +112,7 @@ const defaultForm: RuleForm = {
   mode: 'and',
   conditions: [],
   template_id: '',
-  destination_ids: [],
+  channel_ids: [],
   dedupeEnabled: false,
   dedupeWindow: 300,
 }
@@ -146,7 +146,7 @@ export default function RulesPage() {
     queryFn: () => listRules({ page, size }),
   })
   const templateOptions = useTemplateOptions()
-  const destinationOptions = useDestinationOptions()
+  const channelOptions = useChannelOptions()
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ['rules'] })
@@ -163,7 +163,7 @@ export default function RulesPage() {
         priority: row.priority,
         conditions: row.conditions ?? { operator: 'and', conditions: [] },
         template_id: row.template_id ?? null,
-        destination_ids: row.destination_ids ?? [],
+        channel_ids: row.channel_ids ?? [],
         dedupe_config: row.dedupe_config ?? null,
       }),
     onSuccess: (_data, variables) => {
@@ -192,7 +192,7 @@ export default function RulesPage() {
         enabled: data.enabled,
         conditions: { operator: data.mode, conditions },
         template_id: data.template_id || null,
-        destination_ids: data.destination_ids,
+        channel_ids: data.channel_ids,
         dedupe_config: data.dedupeEnabled ? { window_seconds: data.dedupeWindow } : null,
       }
       if (editing) {
@@ -251,7 +251,7 @@ export default function RulesPage() {
         value: c.value ?? '',
       })),
       template_id: row.template_id ?? '',
-      destination_ids: row.destination_ids ?? [],
+      channel_ids: row.channel_ids ?? [],
       dedupeEnabled: Boolean(row.dedupe_config && (row.dedupe_config.window_seconds ?? 0) > 0),
       dedupeWindow: row.dedupe_config?.window_seconds && row.dedupe_config.window_seconds > 0
         ? row.dedupe_config.window_seconds
@@ -318,17 +318,15 @@ export default function RulesPage() {
                 <TableHead className="w-20">{t('rules.priority')}</TableHead>
                 <TableHead className="w-20">{t('common.enabled')}</TableHead>
                 <TableHead>{t('rules.template')}</TableHead>
-                <TableHead>{t('rules.destinations')}</TableHead>
-                <TableHead className="w-24 text-right">{t('common.actions')}</TableHead>
+                <TableHead className="w-full min-w-24">{t('rules.channels')}</TableHead>
+                <TableHead className="sticky right-0 z-20 w-20 bg-background text-right">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.map((row) => {
-                const destIds = row.destination_ids ?? []
-                const shown = destIds.slice(0, 3)
-                const rest = destIds.length - shown.length
+                const destIds = row.channel_ids ?? []
                 return (
-                  <TableRow key={row.id}>
+                  <TableRow key={row.id} className="group">
                     <TableCell className="text-muted-foreground">{row.name}</TableCell>
                     <TableCell className="text-muted-foreground">{row.priority}</TableCell>
                     <TableCell>
@@ -347,25 +345,18 @@ export default function RulesPage() {
                       {destIds.length === 0 ? (
                         <span className="text-muted-foreground">-</span>
                       ) : (
-                        <div className="flex flex-wrap gap-1">
-                          {shown.map((id) => (
-                            <Badge key={id} variant="secondary" className="max-w-40">
-                              <span className="truncate">
-                                {lookupName(destinationOptions.data, id)}
-                              </span>
-                            </Badge>
-                          ))}
-                          {rest > 0 ? (
-                            <Badge variant="outline">+{rest}</Badge>
-                          ) : null}
-                        </div>
+                        <OverflowBadges
+                          items={destIds}
+                          nameOf={(id) => lookupName(channelOptions.data, id)}
+                        />
                       )}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="sticky right-0 z-10 bg-background text-right group-hover:bg-muted/50">
                       <div className="flex justify-end gap-1">
                         <Button
                           variant="ghost"
                           size="icon-sm"
+                          className="size-7"
                           onClick={() => openEdit(row)}
                           aria-label={t('common.edit')}
                         >
@@ -374,7 +365,7 @@ export default function RulesPage() {
                         <Button
                           variant="ghost"
                           size="icon-sm"
-                          className="text-destructive hover:text-destructive"
+                          className="size-7 text-destructive hover:text-destructive"
                           onClick={() => setDeleteTarget(row)}
                           aria-label={t('common.delete')}
                         >
@@ -519,7 +510,7 @@ export default function RulesPage() {
                         type="button"
                         variant="ghost"
                         size="sm"
-                        className="text-destructive hover:text-destructive"
+                        className="size-7 text-destructive hover:text-destructive"
                         onClick={() => remove(index)}
                       >
                         {t('common.remove')}
@@ -602,12 +593,12 @@ export default function RulesPage() {
             </div>
 
             <div className="space-y-2">
-              <Label>{t('rules.destinations')}</Label>
+              <Label>{t('rules.channels')}</Label>
               <MultiSelect
-                options={destinationOptions.data}
-                value={form.watch('destination_ids')}
-                onChange={(value) => form.setValue('destination_ids', value)}
-                placeholder={t('rules.selectDestinations')}
+                options={channelOptions.data}
+                value={form.watch('channel_ids')}
+                onChange={(value) => form.setValue('channel_ids', value)}
+                placeholder={t('rules.selectChannels')}
                 removeLabel={t('common.remove')}
               />
             </div>

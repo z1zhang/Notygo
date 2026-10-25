@@ -4,7 +4,7 @@
   },
   "dashboard": {
     "noErrors": "暂无错误记录",
-    "sourceOrTarget": "来源 / 目标"
+    "endpointOrTarget": "来源 / 目标"
   },
   "audit": {
     "bulkRetry": "批量重试",

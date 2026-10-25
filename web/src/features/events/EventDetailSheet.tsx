@@ -6,7 +6,7 @@ import { getEvent, listDeliveries, replayEvent } from "@/lib/api"
 import { getErrorMessage } from "@/lib/api-client"
 import { formatTime, stringifyValue } from "@/lib/formatters"
 import type { EventRunResponse, RuleSnapshot } from "@/lib/types"
-import { lookupName, useDestinationOptions, useSourceOptions } from "@/hooks/use-lookup"
+import { lookupName, useChannelOptions, useEndpointOptions } from "@/hooks/use-lookup"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { DetailList, DetailSection } from "@/components/data-display/DetailList"
@@ -37,8 +37,8 @@ function joinError(code?: string | null, summary?: string | null): string | null
 export function EventDetailSheet({ eventId, onClose }: EventDetailSheetProps) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const sourceOptions = useSourceOptions()
-  const destinationOptions = useDestinationOptions()
+  const endpointOptions = useEndpointOptions()
+  const channelOptions = useChannelOptions()
 
   const detailQuery = useQuery({
     queryKey: ["events", "detail", eventId],
@@ -110,8 +110,8 @@ export function EventDetailSheet({ eventId, onClose }: EventDetailSheetProps) {
               },
               { label: t("common.status"), value: <StatusBadge kind="event" status={event.status} /> },
               {
-                label: t("events.source"),
-                value: lookupName(sourceOptions.data, event.source_id),
+                label: t("events.endpoint"),
+                value: lookupName(endpointOptions.data, event.endpoint_id),
               },
               { label: t("events.receivedAt"), value: formatTime(event.received_at) },
               { label: t("events.contentType"), value: event.content_type || "-" },
@@ -219,7 +219,7 @@ export function EventDetailSheet({ eventId, onClose }: EventDetailSheetProps) {
                       <TableRow>
                         <TableHead>{t("common.name")}</TableHead>
                         <TableHead className="w-24">{t("rules.priority")}</TableHead>
-                        <TableHead>{t("events.destination")}</TableHead>
+                        <TableHead>{t("events.channel")}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -228,8 +228,8 @@ export function EventDetailSheet({ eventId, onClose }: EventDetailSheetProps) {
                           <TableCell className="text-muted-foreground">{rule.name}</TableCell>
                           <TableCell className="tabular-nums text-muted-foreground">{rule.priority}</TableCell>
                           <TableCell className="text-muted-foreground">
-                            {rule.destinations
-                              .map((id) => lookupName(destinationOptions.data, id))
+                            {rule.channels
+                              .map((id) => lookupName(channelOptions.data, id))
                               .join(", ")}
                           </TableCell>
                         </TableRow>
@@ -258,7 +258,7 @@ export function EventDetailSheet({ eventId, onClose }: EventDetailSheetProps) {
                   <TableHeader>
                     <TableRow>
                       <TableHead>{t("common.id")}</TableHead>
-                      <TableHead>{t("events.destination")}</TableHead>
+                      <TableHead>{t("events.channel")}</TableHead>
                       <TableHead>{t("common.status")}</TableHead>
                       <TableHead className="w-24">{t("events.attempts")}</TableHead>
                       <TableHead>{t("events.createdAt")}</TableHead>
@@ -271,7 +271,7 @@ export function EventDetailSheet({ eventId, onClose }: EventDetailSheetProps) {
                           <TruncatedId id={delivery.id} />
                         </TableCell>
                         <TableCell className="text-muted-foreground">
-                          {lookupName(destinationOptions.data, delivery.destination_id)}
+                          {lookupName(channelOptions.data, delivery.channel_id)}
                         </TableCell>
                         <TableCell>
                           <StatusBadge kind="delivery" status={delivery.status} />

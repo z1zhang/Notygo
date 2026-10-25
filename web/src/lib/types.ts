@@ -9,16 +9,16 @@ export interface PaginatedResponse<T> {
   size: number
 }
 
-// ── Source ───────────────────────────────────────────────
+// ── Endpoint ───────────────────────────────────────────────
 
-export interface SourceResponse {
+export interface EndpointResponse {
   id: string
   name: string
   slug: string
   enabled: boolean
   auth_type: string
   /** "configured" | "not_configured" marker from the server — never re-submit */
-  secret_ref?: string | null
+  secret?: string | null
   payload_content_type: string
   max_body_bytes: number
   /** JSON string like {"rate":N,"burst":N} */
@@ -31,7 +31,7 @@ export interface SourceResponse {
 // ── Mapping ──────────────────────────────────────────────
 
 export interface MappingEntry {
-  source_path: string
+  payload_path: string
   target_key: string
   value_type: string
   default_value?: string | null
@@ -77,7 +77,7 @@ export interface RuleResponse {
   priority: number
   conditions: ConditionGroup
   template_id?: string | null
-  destination_ids: string[]
+  channel_ids: string[]
   dedupe_config?: DedupeConfig | null
   revision: number
   created_at?: string
@@ -97,16 +97,16 @@ export interface TemplateResponse {
   updated_at?: string
 }
 
-// ── Destination ──────────────────────────────────────────
+// ── Channel ──────────────────────────────────────────
 
-export interface DestinationResponse {
+export interface ChannelResponse {
   id: string
   name: string
   type: string
   enabled: boolean
   config: Record<string, unknown>
   /** Decrypted plaintext secret from the server */
-  secret_ref?: string | null
+  secret?: string | null
   timeout_ms: number
   max_attempts?: number
   revision: number
@@ -118,8 +118,8 @@ export interface DestinationResponse {
 
 export interface EventResponse {
   id: string
-  source_id: string
-  source_event_id?: string | null
+  endpoint_id: string
+  upstream_event_id?: string | null
   request_id: string
   received_at?: string
   content_type: string
@@ -128,8 +128,6 @@ export interface EventResponse {
   status: string
   error_code?: string | null
   error_summary?: string | null
-  lease_until?: string | null
-  lease_owner?: string | null
 }
 
 export interface RuleSnapshot {
@@ -137,7 +135,7 @@ export interface RuleSnapshot {
   name: string
   priority: number
   conditions: unknown
-  destinations: string[]
+  channels: string[]
 }
 
 export interface EventRunResponse {
@@ -169,14 +167,12 @@ export interface DeliveryResponse {
   event_id: string
   event_run_id: string
   rule_id: string
-  destination_id: string
+  channel_id: string
   idempotency_key: string
   status: string
   attempt_count: number
   max_attempts: number
   next_attempt_at?: string
-  lease_until?: string | null
-  lease_owner?: string | null
   rendered_title?: string | null
   rendered_body?: string | null
   rendered_format?: string | null
@@ -227,7 +223,7 @@ export interface StructureInfo {
 }
 
 export interface SuggestedField {
-  source_path: string
+  payload_path: string
   target_key: string
   value_type: string
   multi_result_mode: string | null
@@ -284,7 +280,7 @@ export interface ApiErrorEnvelope {
 
 export interface FailedEventSummary {
   id: string
-  source_id: string
+  endpoint_id: string
   status: string
   error_code?: string | null
   error_summary?: string | null
@@ -293,7 +289,7 @@ export interface FailedEventSummary {
 
 export interface FailedDeliverySummary {
   id: string
-  destination_id: string
+  channel_id: string
   status: string
   last_error_code?: string | null
   last_error_summary?: string | null
@@ -307,4 +303,41 @@ export interface DashboardStatsResponse {
   failed_deliveries: number
   recent_failed_events: FailedEventSummary[] | null
   recent_failed_deliveries: FailedDeliverySummary[] | null
+}
+
+export interface QueueStatsRow {
+  queue: string
+  state: string
+  count: number
+}
+
+export interface QueueStatsResponse {
+  queues: QueueStatsRow[] | null
+  /** How long finished jobs stay visible before River deletes them (seconds) */
+  retention_seconds?: number
+}
+
+/** Non-sensitive runtime configuration exposed by GET /api/v1/system */
+export interface SystemInfoResponse {
+  name: string
+  version: string
+  queue: {
+    event_concurrency: number
+    delivery_concurrency: number
+    job_retention_seconds: number
+    retry_base_delay_seconds: number
+    retry_max_delay_seconds: number
+    retry_jitter_percent: number
+  }
+  ingest: {
+    max_payload_bytes: number
+    rate_limit: string
+    rate_per_second: number
+    burst: number
+  }
+  login: {
+    max_failures: number
+    lockout_seconds: number
+  }
+  log_level: string
 }

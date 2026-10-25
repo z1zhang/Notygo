@@ -35,11 +35,11 @@ interface NavItem {
 
 const mainNav: NavItem[] = [
   { to: '/dashboard', titleKey: 'nav.dashboard', icon: <Gauge className="size-4.5" /> },
-  { to: '/sources', titleKey: 'nav.sources', icon: <Plug className="size-4.5" /> },
+  { to: '/endpoints', titleKey: 'nav.endpoints', icon: <Plug className="size-4.5" /> },
   { to: '/mappings', titleKey: 'nav.mappings', icon: <Shuffle className="size-4.5" /> },
   { to: '/rules', titleKey: 'nav.rules', icon: <Filter className="size-4.5" /> },
   { to: '/templates', titleKey: 'nav.templates', icon: <FileText className="size-4.5" /> },
-  { to: '/destinations', titleKey: 'nav.destinations', icon: <Send className="size-4.5" /> },
+  { to: '/channels', titleKey: 'nav.channels', icon: <Send className="size-4.5" /> },
 ]
 
 const logsNav: NavItem[] = [
@@ -107,7 +107,7 @@ function SidebarBrand({ collapsed }: { collapsed: boolean }) {
       <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary font-bold text-primary-foreground text-sm">
         z
       </div>
-      {!collapsed && <span className="text-base font-semibold tracking-wide">zPush</span>}
+      {!collapsed && <span className="text-base font-semibold tracking-wide">Notygo</span>}
     </div>
   )
 }
@@ -172,7 +172,7 @@ export function AppShell() {
                   <div className="flex size-7 items-center justify-center rounded-md bg-primary font-bold text-primary-foreground text-sm">
                     z
                   </div>
-                  zPush
+                  Notygo
                 </SheetTitle>
               </div>
               <div className="p-2">
@@ -181,7 +181,7 @@ export function AppShell() {
             </SheetContent>
           </Sheet>
           <h2 className="truncate text-sm font-semibold">
-            {currentTitleKey ? t(currentTitleKey) : 'zPush'}
+            {currentTitleKey ? t(currentTitleKey) : 'Notygo'}
           </h2>
           <div className="ml-auto flex items-center gap-1">
             <LocaleSwitch />

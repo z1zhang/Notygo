@@ -285,12 +285,12 @@ export default function TemplatesPage() {
                 <TableHead>{t('common.name')}</TableHead>
                 <TableHead className="w-28">{t('templates.format')}</TableHead>
                 <TableHead className="w-24">{t('mappings.revision')}</TableHead>
-                <TableHead className="w-24 text-right">{t('common.actions')}</TableHead>
+                <TableHead className="sticky right-0 z-20 w-20 bg-background text-right">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.map((row) => (
-                <TableRow key={row.id}>
+                <TableRow key={row.id} className="group">
                   <TableCell className="text-muted-foreground">{row.name}</TableCell>
                   <TableCell>
                     <Badge variant="secondary">
@@ -298,11 +298,12 @@ export default function TemplatesPage() {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-muted-foreground">{row.revision}</TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="sticky right-0 z-10 bg-background text-right group-hover:bg-muted/50">
                     <div className="flex justify-end gap-1">
                       <Button
                         variant="ghost"
                         size="icon-sm"
+                        className="size-7"
                         onClick={() => openEdit(row)}
                         aria-label={t('common.edit')}
                       >
@@ -311,7 +312,7 @@ export default function TemplatesPage() {
                       <Button
                         variant="ghost"
                         size="icon-sm"
-                        className="text-destructive hover:text-destructive"
+                        className="size-7 text-destructive hover:text-destructive"
                         onClick={() => setDeleteTarget(row)}
                         aria-label={t('common.delete')}
                       >

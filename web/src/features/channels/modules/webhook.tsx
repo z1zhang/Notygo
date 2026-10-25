@@ -39,24 +39,24 @@ function WebhookFields({ form }: { form: AnyForm }) {
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-[minmax(0,1fr)_176px]">
       <div className="space-y-2">
-        <Label htmlFor="destination-webhook-url">{t('destinations.webhookUrl')}</Label>
+        <Label htmlFor="channel-webhook-url">{t('channels.webhookUrl')}</Label>
         <Input
-          id="destination-webhook-url"
+          id="channel-webhook-url"
           placeholder="https://..."
           {...form.register('webhook_url')}
         />
         {errors.webhook_url ? (
-          <p className="text-xs text-destructive">{t('destinations.webhookUrlRequired')}</p>
+          <p className="text-xs text-destructive">{t('channels.webhookUrlRequired')}</p>
         ) : null}
       </div>
       <div className="space-y-2">
-        <Label>{t('destinations.msgType')}</Label>
+        <Label>{t('channels.msgType')}</Label>
         <Select
           value={form.watch('msg_type')}
           onValueChange={(v) => form.setValue('msg_type', v)}
         >
           <SelectTrigger className="w-full">
-            <SelectValue placeholder={t('destinations.msgType')} />
+            <SelectValue placeholder={t('channels.msgType')} />
           </SelectTrigger>
           <SelectContent>
             {options.map((option) => (

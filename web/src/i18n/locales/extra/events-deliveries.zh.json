@@ -10,7 +10,7 @@
   "deliveries": {
     "emptyTitle": "暂无投递",
     "emptyDescription": "事件处理完成后将在这里生成投递记录",
-    "destination": "投递目标",
+    "channel": "投递目标",
     "attemptNo": "序号",
     "bulkRetry": "重试失败投递",
     "bulkRetryUnavailable": "仅失败或等待重试状态的投递可以批量重试",

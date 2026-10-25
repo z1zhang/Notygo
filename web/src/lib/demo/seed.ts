@@ -6,21 +6,21 @@ import type {
   AuditLogResponse,
   DeliveryAttemptResponse,
   DeliveryResponse,
-  DestinationResponse,
+  ChannelResponse,
   EventResponse,
   EventRunResponse,
   MappingResponse,
   RuleResponse,
-  SourceResponse,
+  EndpointResponse,
   TemplateResponse,
 } from '../types'
 
 export interface DemoState {
-  sources: SourceResponse[]
+  endpoints: EndpointResponse[]
   mappings: MappingResponse[]
   rules: RuleResponse[]
   templates: TemplateResponse[]
-  destinations: DestinationResponse[]
+  channels: ChannelResponse[]
   events: EventResponse[]
   eventRuns: EventRunResponse[]
   deliveries: DeliveryResponse[]
@@ -39,15 +39,15 @@ const hash = (seed: string) => {
 }
 
 export function buildSeed(): DemoState {
-  // ── Sources ─────────────────────────────────────────────
-  const sources: SourceResponse[] = [
+  // ── Endpoints ─────────────────────────────────────────────
+  const endpoints: EndpointResponse[] = [
     {
       id: 'src-diun',
       name: 'Diun 镜像监控',
       slug: 'diun',
       enabled: true,
       auth_type: 'hmac',
-      secret_ref: 'demo-hmac-secret',
+      secret: 'demo-hmac-secret',
       payload_content_type: 'application/json',
       max_body_bytes: 1048576,
       rate_limit: '{"rate":60,"burst":10}',
@@ -61,7 +61,7 @@ export function buildSeed(): DemoState {
       slug: 'ci',
       enabled: true,
       auth_type: 'none',
-      secret_ref: null,
+      secret: null,
       payload_content_type: 'application/json',
       max_body_bytes: 1048576,
       rate_limit: null,
@@ -80,12 +80,12 @@ export function buildSeed(): DemoState {
       rule_ids: ['rule-image-update'],
       continue_on_match: false,
       fields: [
-        { source_path: 'image', target_key: 'image', value_type: 'string', required: true },
-        { source_path: 'status', target_key: 'status', value_type: 'string', required: true },
-        { source_path: 'provider', target_key: 'provider', value_type: 'string', default_value: 'file', required: false },
-        { source_path: 'link', target_key: 'link', value_type: 'string', required: false },
-        { source_path: 'manifest.digest', target_key: 'digest', value_type: 'string', required: false },
-        { source_path: 'hostname', target_key: 'hostname', value_type: 'string', required: false },
+        { payload_path: 'image', target_key: 'image', value_type: 'string', required: true },
+        { payload_path: 'status', target_key: 'status', value_type: 'string', required: true },
+        { payload_path: 'provider', target_key: 'provider', value_type: 'string', default_value: 'file', required: false },
+        { payload_path: 'link', target_key: 'link', value_type: 'string', required: false },
+        { payload_path: 'manifest.digest', target_key: 'digest', value_type: 'string', required: false },
+        { payload_path: 'hostname', target_key: 'hostname', value_type: 'string', required: false },
       ],
       created_at: agoIso(60 * 24 * 14),
       updated_at: agoIso(60 * 24 * 6),
@@ -97,12 +97,12 @@ export function buildSeed(): DemoState {
       rule_ids: ['rule-build-fail'],
       continue_on_match: false,
       fields: [
-        { source_path: 'repository', target_key: 'repo', value_type: 'string', required: true },
-        { source_path: 'branch', target_key: 'branch', value_type: 'string', required: false },
-        { source_path: 'status', target_key: 'status', value_type: 'string', required: true },
-        { source_path: 'actor', target_key: 'author', value_type: 'string', required: false },
-        { source_path: 'jobs', target_key: 'job_count', value_type: 'number', multi_result_mode: 'count', required: false },
-        { source_path: 'jobs', target_key: 'jobs', value_type: 'array', multi_result_mode: 'array', required: false },
+        { payload_path: 'repository', target_key: 'repo', value_type: 'string', required: true },
+        { payload_path: 'branch', target_key: 'branch', value_type: 'string', required: false },
+        { payload_path: 'status', target_key: 'status', value_type: 'string', required: true },
+        { payload_path: 'actor', target_key: 'author', value_type: 'string', required: false },
+        { payload_path: 'jobs', target_key: 'job_count', value_type: 'number', multi_result_mode: 'count', required: false },
+        { payload_path: 'jobs', target_key: 'jobs', value_type: 'array', multi_result_mode: 'array', required: false },
       ],
       created_at: agoIso(60 * 24 * 10),
       updated_at: agoIso(60 * 24 * 10),
@@ -121,7 +121,7 @@ export function buildSeed(): DemoState {
         conditions: [{ field: 'status', operator: 'eq', value: 'new' }],
       },
       template_id: 'tmpl-image-update',
-      destination_ids: ['dest-ding-ops', 'dest-feishu-alert'],
+      channel_ids: ['dest-ding-ops', 'dest-feishu-alert'],
       dedupe_config: { window_seconds: 300 },
       revision: 3,
       created_at: agoIso(60 * 24 * 13),
@@ -137,7 +137,7 @@ export function buildSeed(): DemoState {
         conditions: [{ field: 'status', operator: 'eq', value: 'failure' }],
       },
       template_id: 'tmpl-ci-fail',
-      destination_ids: ['dest-mail-ops'],
+      channel_ids: ['dest-mail-ops'],
       dedupe_config: null,
       revision: 1,
       created_at: agoIso(60 * 24 * 9),
@@ -153,7 +153,7 @@ export function buildSeed(): DemoState {
         conditions: [{ field: 'image', operator: 'contains', value: 'postgres' }],
       },
       template_id: 'tmpl-image-update',
-      destination_ids: ['dest-ding-ops'],
+      channel_ids: ['dest-ding-ops'],
       dedupe_config: { window_seconds: 60 },
       revision: 1,
       created_at: agoIso(60 * 24 * 7),
@@ -185,8 +185,8 @@ export function buildSeed(): DemoState {
     },
   ]
 
-  // ── Destinations ────────────────────────────────────────
-  const destinations: DestinationResponse[] = [
+  // ── Channels ────────────────────────────────────────
+  const channels: ChannelResponse[] = [
     {
       id: 'dest-ding-ops',
       name: '钉钉·运维群',
@@ -196,7 +196,7 @@ export function buildSeed(): DemoState {
         webhook_url: 'https://oapi.dingtalk.com/robot/send?access_token=demo-token',
         msg_type: 'markdown',
       },
-      secret_ref: 'SEC-demo-signing-key',
+      secret: 'SEC-demo-signing-key',
       timeout_ms: 10000,
       max_attempts: 5,
       revision: 2,
@@ -212,7 +212,7 @@ export function buildSeed(): DemoState {
         webhook_url: 'https://open.feishu.cn/open-apis/bot/v2/hook/demo-token',
         msg_type: 'interactive',
       },
-      secret_ref: null,
+      secret: null,
       timeout_ms: 10000,
       max_attempts: 3,
       revision: 1,
@@ -228,10 +228,10 @@ export function buildSeed(): DemoState {
         smtp_host: 'smtp.example.com',
         smtp_port: 465,
         use_tls: true,
-        from: 'zpush@example.com',
+        from: 'notygo@example.com',
         to: ['ops@example.com'],
       },
-      secret_ref: 'demo-smtp-password',
+      secret: 'demo-smtp-password',
       timeout_ms: 15000,
       max_attempts: 3,
       revision: 1,
@@ -246,10 +246,10 @@ export function buildSeed(): DemoState {
       config: {
         url: 'https://logs.internal.example.com/hook',
         method: 'POST',
-        headers: { 'X-Source': 'zpush' },
-        body_fields: [{ key: 'title', source: 'title' }, { key: 'body', source: 'body' }],
+        headers: { 'X-Endpoint': 'notygo' },
+        body_fields: [{ key: 'title', value_source: 'title' }, { key: 'body', value_source: 'body' }],
       },
-      secret_ref: null,
+      secret: null,
       timeout_ms: 10000,
       max_attempts: 5,
       revision: 1,
@@ -310,8 +310,8 @@ export function buildSeed(): DemoState {
 
     const event: EventResponse = {
       id: eventId,
-      source_id: 'src-diun',
-      source_event_id: null,
+      endpoint_id: 'src-diun',
+      upstream_event_id: null,
       request_id: reqId(evtNo),
       received_at: agoIso(minsAgo),
       content_type: 'application/json',
@@ -326,8 +326,6 @@ export function buildSeed(): DemoState {
       error_summary: opts.failed
         ? 'required field "image" not found at path "image"'
         : null,
-      lease_until: null,
-      lease_owner: null,
     }
     events.push(event)
     if (opts.deduped) return event
@@ -354,7 +352,7 @@ export function buildSeed(): DemoState {
           name: '镜像有更新',
           priority: 10,
           conditions: { operator: 'and', conditions: [{ field: 'status', operator: 'eq', value: 'new' }] },
-          destinations: ['dest-ding-ops', 'dest-feishu-alert'],
+          channels: ['dest-ding-ops', 'dest-feishu-alert'],
         },
       ],
       parsed_fields: parsed,
@@ -385,7 +383,7 @@ export function buildSeed(): DemoState {
 
   function addDelivery(
     eventId: string,
-    destinationId: string,
+    channelId: string,
     minsAgo: number,
     renderedTitle: string,
     renderedBody: string,
@@ -398,7 +396,7 @@ export function buildSeed(): DemoState {
     const deliveryId = `dly-${dlyNo.toString().padStart(4, '0')}`
     const attemptCount = spec.attempts.length
     const lastAttempt = spec.attempts[spec.attempts.length - 1]
-    const dest = destinations.find((d) => d.id === destinationId)!
+    const dest = channels.find((d) => d.id === channelId)!
     const failed = spec.status === 'failed' || spec.status === 'retry_wait'
 
     deliveries.push({
@@ -406,14 +404,12 @@ export function buildSeed(): DemoState {
       event_id: eventId,
       event_run_id: `run-${evtNo.toString().padStart(4, '0')}`,
       rule_id: 'rule-image-update',
-      destination_id: destinationId,
-      idempotency_key: `${eventId}:${destinationId}`,
+      channel_id: channelId,
+      idempotency_key: `${eventId}:${channelId}`,
       status: spec.status,
       attempt_count: attemptCount,
       max_attempts: dest.max_attempts ?? 5,
       next_attempt_at: spec.status === 'retry_wait' ? aheadIso(2) : undefined,
-      lease_until: null,
-      lease_owner: null,
       rendered_title: renderedTitle,
       rendered_body: renderedBody,
       rendered_format: 'markdown',
@@ -454,7 +450,7 @@ export function buildSeed(): DemoState {
     })
   }
 
-  function destUrl(dest: DestinationResponse): string {
+  function destUrl(dest: ChannelResponse): string {
     const url = (dest.config as Record<string, unknown>).webhook_url
     if (typeof url === 'string') return url.replace(/(access_token|hook)=.*$/, '$1=***')
     return (dest.config as Record<string, unknown>).url as string
@@ -492,9 +488,9 @@ export function buildSeed(): DemoState {
     for (const e of events) {
       if (
         e.status === 'completed' &&
-        e.source_id === 'src-diun' &&
+        e.endpoint_id === 'src-diun' &&
         ![nginxEvent.id, pgEvent.id, redisEvent.id, newestEvent.id].includes(e.id) &&
-        !deliveries.some((d) => d.event_id === e.id && d.destination_id === 'dest-feishu-alert')
+        !deliveries.some((d) => d.event_id === e.id && d.channel_id === 'dest-feishu-alert')
       ) {
         addFeishuDelivery(e, 'delivered', [{ status: 200, durationMs: 250 + (evtNo * 17) % 200 }])
       }
@@ -516,14 +512,12 @@ export function buildSeed(): DemoState {
       event_id: event.id,
       event_run_id: `run-${event.id.slice(4)}`,
       rule_id: 'rule-image-update',
-      destination_id: 'dest-feishu-alert',
+      channel_id: 'dest-feishu-alert',
       idempotency_key: `${event.id}:dest-feishu-alert`,
       status,
       attempt_count: attempts.length,
       max_attempts: 3,
       next_attempt_at: status === 'retry_wait' ? aheadIso(2) : undefined,
-      lease_until: null,
-      lease_owner: null,
       rendered_title: `镜像更新: ${image}`,
       rendered_body: '检测到新版本…',
       rendered_format: 'markdown',
@@ -567,7 +561,7 @@ export function buildSeed(): DemoState {
     const eventId = `evt-${evtNo.toString().padStart(4, '0')}`
     const status = i === 2 ? 'failure' : 'success'
     const payload = JSON.stringify({
-      repository: 'z1zhang/zPush',
+      repository: 'z1zhang/Notygo',
       branch: i % 2 === 0 ? 'dev' : 'master',
       status,
       actor: 'z1zhang',
@@ -579,8 +573,8 @@ export function buildSeed(): DemoState {
     })
     events.push({
       id: eventId,
-      source_id: 'src-ci',
-      source_event_id: null,
+      endpoint_id: 'src-ci',
+      upstream_event_id: null,
       request_id: reqId(evtNo),
       received_at: agoIso(ciTimes[i]),
       content_type: 'application/json',
@@ -589,8 +583,6 @@ export function buildSeed(): DemoState {
       status: 'completed',
       error_code: null,
       error_summary: null,
-      lease_until: null,
-      lease_owner: null,
     })
     eventRuns.push({
       id: `run-${evtNo.toString().padStart(4, '0')}`,
@@ -604,10 +596,10 @@ export function buildSeed(): DemoState {
           name: '构建失败告警',
           priority: 5,
           conditions: { operator: 'and', conditions: [{ field: 'status', operator: 'eq', value: 'failure' }] },
-          destinations: ['dest-mail-ops'],
+          channels: ['dest-mail-ops'],
         },
       ],
-      parsed_fields: { repo: 'z1zhang/zPush', branch: i % 2 === 0 ? 'dev' : 'master', status, author: 'z1zhang', job_count: 2, jobs: [ { name: 'build' }, { name: 'test' } ] },
+      parsed_fields: { repo: 'z1zhang/Notygo', branch: i % 2 === 0 ? 'dev' : 'master', status, author: 'z1zhang', job_count: 2, jobs: [ { name: 'build' }, { name: 'test' } ] },
       validation_result: { valid: true },
       matched_rule_ids: status === 'failure' ? ['rule-build-fail'] : [],
       status: 'completed',
@@ -625,16 +617,14 @@ export function buildSeed(): DemoState {
         event_id: eventId,
         event_run_id: `run-${evtNo.toString().padStart(4, '0')}`,
         rule_id: 'rule-build-fail',
-        destination_id: 'dest-mail-ops',
+        channel_id: 'dest-mail-ops',
         idempotency_key: `${eventId}:dest-mail-ops`,
         status: 'delivered',
         attempt_count: 1,
         max_attempts: 3,
         next_attempt_at: undefined,
-        lease_until: null,
-        lease_owner: null,
-        rendered_title: '构建失败: z1zhang/zPush',
-        rendered_body: '仓库 z1zhang/zPush（master）构建失败\n\n提交者: z1zhang\nJob 数量: 2',
+        rendered_title: '构建失败: z1zhang/Notygo',
+        rendered_body: '仓库 z1zhang/Notygo（master）构建失败\n\n提交者: z1zhang\nJob 数量: 2',
         rendered_format: 'text',
         last_error_code: null,
         last_error_summary: null,
@@ -663,7 +653,7 @@ export function buildSeed(): DemoState {
       id: 'aud-0001',
       operator: 'admin',
       action: 'login',
-      target_type: 'source',
+      target_type: 'endpoint',
       target_id: '-',
       snapshot_before: null,
       summary: 'admin logged in',
@@ -673,20 +663,20 @@ export function buildSeed(): DemoState {
       id: 'aud-0002',
       operator: 'admin',
       action: 'create',
-      target_type: 'source',
+      target_type: 'endpoint',
       target_id: 'src-diun',
       snapshot_before: null,
-      summary: 'created source "Diun 镜像监控"',
+      summary: 'created endpoint "Diun 镜像监控"',
       created_at: agoIso(60 * 24 * 14),
     },
     {
       id: 'aud-0003',
       operator: 'admin',
       action: 'create',
-      target_type: 'destination',
+      target_type: 'channel',
       target_id: 'dest-ding-ops',
       snapshot_before: null,
-      summary: 'created destination "钉钉·运维群"',
+      summary: 'created channel "钉钉·运维群"',
       created_at: agoIso(60 * 24 * 13),
     },
     {
@@ -723,7 +713,7 @@ export function buildSeed(): DemoState {
       id: 'aud-0007',
       operator: 'admin',
       action: 'login',
-      target_type: 'source',
+      target_type: 'endpoint',
       target_id: '-',
       summary: 'admin logged in',
       created_at: agoIso(30),
@@ -734,11 +724,11 @@ export function buildSeed(): DemoState {
   auditLogs.sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))
 
   return {
-    sources,
+    endpoints,
     mappings,
     rules,
     templates,
-    destinations,
+    channels,
     events: events.sort((a, b) => (b.received_at ?? '').localeCompare(a.received_at ?? '')),
     eventRuns,
     deliveries: deliveries.sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? '')),

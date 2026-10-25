@@ -37,17 +37,17 @@ function EmailFields({ form }: { form: AnyForm }) {
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_130px_130px]">
         <div className="space-y-2">
-          <Label htmlFor="destination-smtp-host">{t('destinations.smtpHost')}</Label>
+          <Label htmlFor="channel-smtp-host">{t('channels.smtpHost')}</Label>
           <Input
-            id="destination-smtp-host"
+            id="channel-smtp-host"
             placeholder="smtp.example.com"
             {...form.register('smtp_host')}
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="destination-smtp-port">{t('destinations.smtpPort')}</Label>
+          <Label htmlFor="channel-smtp-port">{t('channels.smtpPort')}</Label>
           <Input
-            id="destination-smtp-port"
+            id="channel-smtp-port"
             type="number"
             min={1}
             max={65535}
@@ -55,10 +55,10 @@ function EmailFields({ form }: { form: AnyForm }) {
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="destination-use-tls">{t('destinations.useTls')}</Label>
+          <Label htmlFor="channel-use-tls">{t('channels.useTls')}</Label>
           <div className="flex h-9 items-center">
             <Switch
-              id="destination-use-tls"
+              id="channel-use-tls"
               checked={form.watch('use_tls')}
               onCheckedChange={(checked) => form.setValue('use_tls', checked)}
             />
@@ -66,28 +66,28 @@ function EmailFields({ form }: { form: AnyForm }) {
         </div>
       </div>
       <div className="space-y-2">
-        <Label htmlFor="destination-from">{t('destinations.fromAddress')}</Label>
+        <Label htmlFor="channel-from">{t('channels.fromAddress')}</Label>
         <Input
-          id="destination-from"
+          id="channel-from"
           placeholder="noreply@example.com"
           {...form.register('from')}
         />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="destination-to">{t('destinations.toAddress')}</Label>
+        <Label htmlFor="channel-to">{t('channels.toAddress')}</Label>
         <Textarea
-          id="destination-to"
+          id="channel-to"
           rows={3}
-          placeholder={t('destinations.toPlaceholder')}
+          placeholder={t('channels.toPlaceholder')}
           {...form.register('to')}
         />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="destination-cc">{t('destinations.ccAddress')}</Label>
+        <Label htmlFor="channel-cc">{t('channels.ccAddress')}</Label>
         <Textarea
-          id="destination-cc"
+          id="channel-cc"
           rows={2}
-          placeholder={t('destinations.ccPlaceholder')}
+          placeholder={t('channels.ccPlaceholder')}
           {...form.register('cc')}
         />
       </div>

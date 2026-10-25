@@ -9,8 +9,8 @@ import eventsDeliveriesEn from './locales/extra/events-deliveries.en.json'
 import eventsDeliveriesZh from './locales/extra/events-deliveries.zh.json'
 import mappingsTemplatesEn from './locales/extra/mappings-templates.en.json'
 import mappingsTemplatesZh from './locales/extra/mappings-templates.zh.json'
-import rulesDestinationsEn from './locales/extra/rules-destinations.en.json'
-import rulesDestinationsZh from './locales/extra/rules-destinations.zh.json'
+import rulesChannelsEn from './locales/extra/rules-channels.en.json'
+import rulesChannelsZh from './locales/extra/rules-channels.zh.json'
 import miscEn from './locales/extra/misc.en.json'
 import miscZh from './locales/extra/misc.zh.json'
 
@@ -32,11 +32,11 @@ function deepMerge(base: Messages, override: Messages): Messages {
   return result
 }
 
-const zhMessages = [eventsDeliveriesZh, mappingsTemplatesZh, rulesDestinationsZh, miscZh].reduce(
+const zhMessages = [eventsDeliveriesZh, mappingsTemplatesZh, rulesChannelsZh, miscZh].reduce(
   (acc, cur) => deepMerge(acc, cur as Messages),
   mainZh as Messages,
 )
-const enMessages = [eventsDeliveriesEn, mappingsTemplatesEn, rulesDestinationsEn, miscEn].reduce(
+const enMessages = [eventsDeliveriesEn, mappingsTemplatesEn, rulesChannelsEn, miscEn].reduce(
   (acc, cur) => deepMerge(acc, cur as Messages),
   mainEn as Messages,
 )
@@ -60,9 +60,9 @@ void i18next
     fallbackLng: 'en',
     detection: {
       // Previously: localStorage only, default zh. Now: browser language on
-      // first visit, persisted under the same zpush-locale key.
+      // first visit, persisted under the same notygo-locale key.
       order: ['localStorage', 'navigator'],
-      lookupLocalStorage: 'zpush-locale',
+      lookupLocalStorage: 'notygo-locale',
       caches: ['localStorage'],
     },
     resources: {
@@ -92,12 +92,12 @@ void (i18next.services?.formatter as { add: (name: string, fc: (lng: string) => 
 type ZhMessages = typeof mainZh &
   typeof eventsDeliveriesZh &
   typeof mappingsTemplatesZh &
-  typeof rulesDestinationsZh &
+  typeof rulesChannelsZh &
   typeof miscZh
 type EnMessages = typeof mainEn &
   typeof eventsDeliveriesEn &
   typeof mappingsTemplatesEn &
-  typeof rulesDestinationsEn &
+  typeof rulesChannelsEn &
   typeof miscEn
 
 declare module 'i18next' {

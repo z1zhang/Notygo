@@ -12,26 +12,28 @@ import type {
   DeliveryAttemptResponse,
   DeliveryResponse,
   EventRunResponse,
+  QueueStatsResponse,
+  QueueStatsRow,
   RuleSnapshot,
 } from '../types'
 
 const API = '/api/v1'
 
 type Entity =
-  | 'sources'
+  | 'endpoints'
   | 'mappings'
   | 'rules'
   | 'templates'
-  | 'destinations'
+  | 'channels'
   | 'events'
   | 'deliveries'
 
 const ID_PREFIX: Record<Entity, string> = {
-  sources: 'src',
+  endpoints: 'src',
   mappings: 'map',
   rules: 'rule',
   templates: 'tmpl',
-  destinations: 'dest',
+  channels: 'dest',
   events: 'evt',
   deliveries: 'dly',
 }
@@ -60,8 +62,22 @@ function dispatch(
   state: DemoState,
 ): unknown {
   if (path === '/healthz' && method === 'GET') return { status: 'ok' }
-  if (path === '/' && method === 'GET') {
-    return { name: 'zPush', version: '0.7.1', status: 'running' }
+  if (path === `${API}/system` && method === 'GET') {
+    return {
+      name: 'Notygo',
+      version: '0.7.1',
+      queue: {
+        event_concurrency: 4,
+        delivery_concurrency: 8,
+        job_retention_seconds: 86400,
+        retry_base_delay_seconds: 30,
+        retry_max_delay_seconds: 3600,
+        retry_jitter_percent: 20,
+      },
+      ingest: { max_payload_bytes: 1048576, rate_limit: '100/200', rate_per_second: 100, burst: 200 },
+      login: { max_failures: 5, lockout_seconds: 900 },
+      log_level: 'info',
+    }
   }
 
   if (!path.startsWith(`${API}/`)) notFound()
@@ -72,6 +88,9 @@ function dispatch(
   }
   if (segs[0] === 'dashboard' && segs[1] === 'stats' && method === 'GET') {
     return dashboardStats(state)
+  }
+  if (segs[0] === 'queue' && segs[1] === 'stats' && method === 'GET') {
+    return queueStats(state)
   }
   if (segs[0] === 'audit' && segs.length === 1 && method === 'GET') {
     return listAudit(params, state)
@@ -102,7 +121,7 @@ function dispatch(
   }
 
   if (segs.length === 3 && method === 'POST') {
-    if (entity === 'destinations' && segs[2] === 'test') return testDestination(id, state)
+    if (entity === 'channels' && segs[2] === 'test') return testChannel(id, state)
     if (entity === 'events' && segs[2] === 'replay') return replayEvent(id, state)
     if (entity === 'deliveries' && segs[2] === 'retry') return retryDelivery(id, state)
   }
@@ -116,7 +135,7 @@ function handleLogin(body: Record<string, unknown>, state: DemoState) {
     throw new DemoHttpError(400, 'AUTH_000', 'username and password are required')
   }
   state.operator = String(body.username)
-  addAudit(state, 'login', 'source', '-', `${state.operator} logged in`)
+  addAudit(state, 'login', 'endpoint', '-', `${state.operator} logged in`)
   return {
     token: `demo-${Date.now().toString(36)}`,
     expires_at: new Date(Date.now() + 7 * 24 * 3600_000).toISOString(),
@@ -135,11 +154,11 @@ function listEntity(entity: Entity, params: Params, state: DemoState) {
   let rows = tableFor(entity, state)
   if (entity === 'events') {
     if (params.status) rows = rows.filter((r) => r.status === params.status)
-    if (params.source_id) rows = rows.filter((r) => r.source_id === params.source_id)
+    if (params.endpoint_id) rows = rows.filter((r) => r.endpoint_id === params.endpoint_id)
   }
   if (entity === 'deliveries') {
     if (params.status) rows = rows.filter((r) => r.status === params.status)
-    if (params.destination_id) rows = rows.filter((r) => r.destination_id === params.destination_id)
+    if (params.channel_id) rows = rows.filter((r) => r.channel_id === params.channel_id)
     if (params.event_id) rows = rows.filter((r) => r.event_id === params.event_id)
   }
   const sorted = [...rows].sort((a, b) =>
@@ -170,7 +189,7 @@ function createEntity(entity: Entity, body: Record<string, unknown>, state: Demo
     updated_at: now,
   }
   // Entity-specific defaults for fields the backend fills server-side
-  if (entity === 'sources') {
+  if (entity === 'endpoints') {
     record.slug = record.slug || randomSlug()
     record.payload_content_type = record.payload_content_type || 'application/json'
     record.max_body_bytes = record.max_body_bytes ?? 1048576
@@ -180,7 +199,7 @@ function createEntity(entity: Entity, body: Record<string, unknown>, state: Demo
     record.rule_ids = []
     record.continue_on_match = record.continue_on_match ?? false
   }
-  if (entity === 'destinations') {
+  if (entity === 'channels') {
     record.timeout_ms = record.timeout_ms ?? 10000
     record.max_attempts = record.max_attempts ?? 5
     record.enabled = record.enabled ?? true
@@ -281,6 +300,23 @@ function listAudit(params: Params, state: DemoState) {
 
 // ── Dashboard ────────────────────────────────────────────
 
+// Mirrors the real endpoint's shape: river_job counts by queue and state.
+// The demo derives a plausible snapshot from the business rows.
+function queueStats(state: DemoState): QueueStatsResponse {
+  const pending = state.deliveries.filter(
+    (d) => d.status === 'pending' || d.status === 'retry_wait',
+  ).length
+  const processing = state.deliveries.filter((d) => d.status === 'processing').length
+  const rows: QueueStatsRow[] = [
+    { queue: 'event_process', state: 'available', count: state.events.filter((e) => e.status === 'received').length },
+    { queue: 'delivery_send', state: 'available', count: pending },
+    { queue: 'delivery_send', state: 'running', count: processing },
+    { queue: 'delivery_send', state: 'completed', count: state.deliveries.filter((d) => d.status === 'delivered').length },
+    { queue: 'maintenance', state: 'completed', count: 1 },
+  ]
+  return { queues: rows, retention_seconds: 86400 }
+}
+
 function dashboardStats(state: DemoState): DashboardStatsResponse {
   const failedEvents = state.events
     .filter((e) => e.status === 'failed')
@@ -297,7 +333,7 @@ function dashboardStats(state: DemoState): DashboardStatsResponse {
     failed_deliveries: failedDeliveries.length,
     recent_failed_events: failedEvents.slice(0, 5).map((e) => ({
       id: e.id,
-      source_id: e.source_id,
+      endpoint_id: e.endpoint_id,
       status: e.status,
       error_code: e.error_code,
       error_summary: e.error_summary,
@@ -305,7 +341,7 @@ function dashboardStats(state: DemoState): DashboardStatsResponse {
     })),
     recent_failed_deliveries: failedDeliveries.slice(0, 5).map((d) => ({
       id: d.id,
-      destination_id: d.destination_id,
+      channel_id: d.channel_id,
       status: d.status,
       last_error_code: d.last_error_code,
       last_error_summary: d.last_error_summary,
@@ -316,8 +352,8 @@ function dashboardStats(state: DemoState): DashboardStatsResponse {
 
 // ── Actions ──────────────────────────────────────────────
 
-function testDestination(id: string, state: DemoState) {
-  const dest = tableFor('destinations', state).find((r) => r.id === id)
+function testChannel(id: string, state: DemoState) {
+  const dest = tableFor('channels', state).find((r) => r.id === id)
   if (!dest) notFound()
   return {
     success: true,
@@ -338,7 +374,7 @@ function replayEvent(id: string, state: DemoState) {
     name: r.name,
     priority: r.priority,
     conditions: r.conditions,
-    destinations: r.destination_ids,
+    channels: r.channel_ids,
   }))
   const run: EventRunResponse = {
     id: nextId('run'),
@@ -371,12 +407,12 @@ function retryDelivery(id: string, state: DemoState) {
 
 function bulkRetry(body: Record<string, unknown>, state: DemoState) {
   const status = typeof body.status === 'string' ? body.status : undefined
-  const destinationId = typeof body.destination_id === 'string' ? body.destination_id : undefined
+  const channelId = typeof body.channel_id === 'string' ? body.channel_id : undefined
   const targets = state.deliveries.filter(
     (d) =>
       (d.status === 'failed' || d.status === 'retry_wait') &&
       (!status || d.status === status) &&
-      (!destinationId || d.destination_id === destinationId),
+      (!channelId || d.channel_id === channelId),
   )
   for (const delivery of targets) {
     simulateDeliverySuccess(delivery, state)
@@ -409,8 +445,6 @@ function simulateDeliverySuccess(delivery: DeliveryResponse, state: DemoState) {
     status: 'delivered',
     attempt_count: attemptNo,
     next_attempt_at: null,
-    lease_until: null,
-    lease_owner: null,
     last_error_code: null,
     last_error_summary: null,
     updated_at: nowIso(),

@@ -23,6 +23,7 @@ import { TableSkeleton } from '@/components/data-display/TableSkeleton'
 import { TruncatedId } from '@/components/data-display/TruncatedId'
 import { EmptyState } from '@/components/feedback/EmptyState'
 import { ErrorState } from '@/components/feedback/ErrorState'
+import { RefreshButton } from '@/components/feedback/RefreshButton'
 
 const ACTION_FILTERS = [
   'create',
@@ -35,11 +36,11 @@ const ACTION_FILTERS = [
 ] as const
 
 const TARGET_TYPE_FILTERS = [
-  'source',
+  'endpoint',
   'mapping',
   'rule',
   'template',
-  'destination',
+  'channel',
   'event',
   'delivery',
 ] as const
@@ -82,9 +83,18 @@ export default function AuditPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader title={t('nav.auditLogs')} />
+      <PageHeader
+        title={t('nav.auditLogs')}
+        actions={
+          <RefreshButton
+            label={t('dashboard.refresh')}
+            onClick={() => void listQuery.refetch()}
+            loading={listQuery.isFetching}
+          />
+        }
+      />
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-3">
         <Select
           value={action || 'all'}
           onValueChange={(v) => {
@@ -92,7 +102,7 @@ export default function AuditPage() {
             setPage(1)
           }}
         >
-          <SelectTrigger className="w-40" aria-label={t('audit.action')}>
+          <SelectTrigger size="sm" className="w-40" aria-label={t('audit.action')}>
             <SelectValue placeholder={t('audit.action')} />
           </SelectTrigger>
           <SelectContent>
@@ -112,7 +122,7 @@ export default function AuditPage() {
             setPage(1)
           }}
         >
-          <SelectTrigger className="w-40" aria-label={t('audit.targetType')}>
+          <SelectTrigger size="sm" className="w-40" aria-label={t('audit.targetType')}>
             <SelectValue placeholder={t('audit.targetType')} />
           </SelectTrigger>
           <SelectContent>
@@ -133,7 +143,7 @@ export default function AuditPage() {
             setPage(1)
           }}
           aria-label={t('audit.startDate')}
-          className="w-40"
+          className="h-8 w-40"
         />
         <span className="text-sm text-muted-foreground">{t('audit.to')}</span>
         <Input
@@ -144,7 +154,7 @@ export default function AuditPage() {
             setPage(1)
           }}
           aria-label={t('audit.endDate')}
-          className="w-40"
+          className="h-8 w-40"
         />
 
         {hasFilters ? (

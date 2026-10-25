@@ -8,14 +8,14 @@ import type { ChannelModule } from './types'
 
 export type { BodyFieldNode } from './types'
 
-export const DEST_TYPES = ['dingtalk', 'feishu', 'wecom', 'email', 'http'] as const
-export type DestType = (typeof DEST_TYPES)[number]
+export const CHANNEL_TYPES = ['dingtalk', 'feishu', 'wecom', 'email', 'http'] as const
+export type ChannelType = (typeof CHANNEL_TYPES)[number]
 
-// ── Registry: one entry per destination type (mirrors the backend sender
+// ── Registry: one entry per channel type (mirrors the backend sender
 // registry in cmd/server/main.go). New channel = one module file + one line.
 const MODULES: ChannelModule[] = [webhookModule, emailModule, httpModule]
 
-const CHANNELS: Record<DestType, ChannelModule> = {
+const CHANNELS: Record<ChannelType, ChannelModule> = {
   dingtalk: webhookModule,
   feishu: webhookModule,
   wecom: webhookModule,
@@ -23,9 +23,9 @@ const CHANNELS: Record<DestType, ChannelModule> = {
   http: httpModule,
 }
 
-/** Module for a destination type; unknown types fall back to http. */
+/** Module for a channel type; unknown types fall back to http. */
 export function channelModule(type: string): ChannelModule {
-  return CHANNELS[type as DestType] ?? httpModule
+  return CHANNELS[type as ChannelType] ?? httpModule
 }
 
 /** Unique modules (webhookModule serves three types). */
@@ -34,10 +34,10 @@ export function uniqueModules(): ChannelModule[] {
 }
 
 // ── Form schema: base fields + every channel module's fields ──────────────
-export const destinationSchema = z
+export const channelSchema = z
   .object({
     name: z.string().min(1),
-    type: z.enum(DEST_TYPES),
+    type: z.enum(CHANNEL_TYPES),
     secret: z.string(),
     timeout_ms: z.number().min(1000),
     max_attempts: z.number().int().min(1).max(100),
@@ -48,9 +48,9 @@ export const destinationSchema = z
     for (const m of uniqueModules()) m.validate?.(data, ctx)
   })
 
-export type DestinationForm = {
+export type ChannelForm = {
   name: string
-  type: DestType
+  type: ChannelType
   secret: string
   timeout_ms: number
   max_attempts: number
@@ -59,7 +59,7 @@ export type DestinationForm = {
   EmailFormFields &
   HttpFormFields
 
-export const defaultForm: DestinationForm = {
+export const defaultForm: ChannelForm = {
   name: '',
   type: 'http',
   secret: '',
@@ -67,7 +67,7 @@ export const defaultForm: DestinationForm = {
   max_attempts: 5,
   enabled: true,
   ...Object.assign({}, ...MODULES.map((m) => m.defaults)),
-} as DestinationForm
+} as ChannelForm
 
 // zod v4's recursive z.lazy degrades inference to unknown[], so pin the resolver type
-export const destinationResolver = zodResolver(destinationSchema) as unknown as Resolver<DestinationForm>
+export const channelResolver = zodResolver(channelSchema) as unknown as Resolver<ChannelForm>

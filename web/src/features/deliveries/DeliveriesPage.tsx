@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next"
 import { bulkRetry, listDeliveries } from "@/lib/api"
 import { getErrorMessage } from "@/lib/api-client"
 import { formatTime } from "@/lib/formatters"
-import { lookupName, useDestinationOptions } from "@/hooks/use-lookup"
+import { lookupName, useChannelOptions } from "@/hooks/use-lookup"
 import { usePagination } from "@/hooks/use-pagination"
 import { PageHeader } from "@/components/layout/PageHeader"
 import { Button } from "@/components/ui/button"
@@ -67,16 +67,16 @@ export default function DeliveriesPage() {
         page,
         size,
         status: statusFilter === ALL ? undefined : statusFilter,
-        destination_id: destFilter === ALL ? undefined : destFilter,
+        channel_id: destFilter === ALL ? undefined : destFilter,
       }),
   })
-  const destinationOptions = useDestinationOptions()
+  const channelOptions = useChannelOptions()
 
   const bulkRetryMutation = useMutation({
     mutationFn: () =>
       bulkRetry({
         status: statusFilter === ALL ? "failed" : statusFilter,
-        destination_id: destFilter === ALL ? undefined : destFilter,
+        channel_id: destFilter === ALL ? undefined : destFilter,
       }),
     onSuccess: (res) => {
       toast.success(t("deliveries.bulkRetryDone", { count: res.reset_count }))
@@ -135,7 +135,7 @@ export default function DeliveriesPage() {
             setPage(1)
           }}
         >
-          <SelectTrigger size="sm" className="w-36" aria-label={t("common.status")}>
+          <SelectTrigger size="sm" className="w-40" aria-label={t("common.status")}>
             <SelectValue placeholder={t("common.status")} />
           </SelectTrigger>
           <SelectContent>
@@ -155,12 +155,12 @@ export default function DeliveriesPage() {
             setPage(1)
           }}
         >
-          <SelectTrigger size="sm" className="w-48" aria-label={t("deliveries.destination")}>
-            <SelectValue placeholder={t("deliveries.destination")} />
+          <SelectTrigger size="sm" className="w-40" aria-label={t("deliveries.channel")}>
+            <SelectValue placeholder={t("deliveries.channel")} />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={ALL}>{t("common.all")}</SelectItem>
-            {(destinationOptions.data ?? []).map((dest) => (
+            {(channelOptions.data ?? []).map((dest) => (
               <SelectItem key={dest.id} value={dest.id}>
                 {dest.name}
               </SelectItem>
@@ -190,7 +190,7 @@ export default function DeliveriesPage() {
               <TableRow>
                 <TableHead>{t("common.id")}</TableHead>
                 <TableHead>{t("deliveries.eventId")}</TableHead>
-                <TableHead>{t("deliveries.destination")}</TableHead>
+                <TableHead>{t("deliveries.channel")}</TableHead>
                 <TableHead>{t("common.status")}</TableHead>
                 <TableHead className="w-24">{t("deliveries.attemptCount")}</TableHead>
                 <TableHead>{t("deliveries.nextAttempt")}</TableHead>
@@ -213,7 +213,7 @@ export default function DeliveriesPage() {
                       <TruncatedId id={row.event_id} />
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {lookupName(destinationOptions.data, row.destination_id)}
+                      {lookupName(channelOptions.data, row.channel_id)}
                     </TableCell>
                     <TableCell>
                       <StatusBadge kind="delivery" status={row.status} />

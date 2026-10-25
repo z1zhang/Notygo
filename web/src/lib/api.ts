@@ -2,7 +2,7 @@ import { apiClient } from './api-client'
 import type {
   AuditLogResponse,
   DashboardStatsResponse,
-  DestinationResponse,
+  ChannelResponse,
   GetDeliveryResponse,
   GetEventResponse,
   LoginResponse,
@@ -14,10 +14,12 @@ import type {
   PreviewParseResponse,
   PreviewTemplateResponse,
   RuleResponse,
-  SourceResponse,
+  SystemInfoResponse,
+  EndpointResponse,
   TemplateResponse,
   DeliveryResponse,
   EventResponse,
+  QueueStatsResponse,
 } from './types'
 
 const BASE = '/api/v1'
@@ -27,20 +29,20 @@ const BASE = '/api/v1'
 export const login = (username: string, password: string) =>
   apiClient.post<LoginResponse>(`${BASE}/auth/login`, { username, password })
 
-// ── Sources ──────────────────────────────────────────────
+// ── Endpoints ──────────────────────────────────────────────
 
-export const listSources = (params?: { page?: number; size?: number }) =>
-  apiClient.get<PaginatedResponse<SourceResponse>>(`${BASE}/sources`, params)
+export const listEndpoints = (params?: { page?: number; size?: number }) =>
+  apiClient.get<PaginatedResponse<EndpointResponse>>(`${BASE}/endpoints`, params)
 
-export const getSource = (id: string) => apiClient.get<SourceResponse>(`${BASE}/sources/${id}`)
+export const getEndpoint = (id: string) => apiClient.get<EndpointResponse>(`${BASE}/endpoints/${id}`)
 
-export const createSource = (data: Record<string, unknown>) =>
-  apiClient.post<SourceResponse>(`${BASE}/sources`, data)
+export const createEndpoint = (data: Record<string, unknown>) =>
+  apiClient.post<EndpointResponse>(`${BASE}/endpoints`, data)
 
-export const updateSource = (id: string, data: Record<string, unknown>) =>
-  apiClient.put<SourceResponse>(`${BASE}/sources/${id}`, data)
+export const updateEndpoint = (id: string, data: Record<string, unknown>) =>
+  apiClient.put<EndpointResponse>(`${BASE}/endpoints/${id}`, data)
 
-export const deleteSource = (id: string) => apiClient.delete<void>(`${BASE}/sources/${id}`)
+export const deleteEndpoint = (id: string) => apiClient.delete<void>(`${BASE}/endpoints/${id}`)
 
 // ── Mappings ─────────────────────────────────────────────
 
@@ -87,25 +89,25 @@ export const updateTemplate = (id: string, data: Record<string, unknown>) =>
 
 export const deleteTemplate = (id: string) => apiClient.delete<void>(`${BASE}/templates/${id}`)
 
-// ── Destinations ─────────────────────────────────────────
+// ── Channels ─────────────────────────────────────────
 
-export const listDestinations = (params?: { page?: number; size?: number }) =>
-  apiClient.get<PaginatedResponse<DestinationResponse>>(`${BASE}/destinations`, params)
+export const listChannels = (params?: { page?: number; size?: number }) =>
+  apiClient.get<PaginatedResponse<ChannelResponse>>(`${BASE}/channels`, params)
 
-export const getDestination = (id: string) =>
-  apiClient.get<DestinationResponse>(`${BASE}/destinations/${id}`)
+export const getChannel = (id: string) =>
+  apiClient.get<ChannelResponse>(`${BASE}/channels/${id}`)
 
-export const createDestination = (data: Record<string, unknown>) =>
-  apiClient.post<DestinationResponse>(`${BASE}/destinations`, data)
+export const createChannel = (data: Record<string, unknown>) =>
+  apiClient.post<ChannelResponse>(`${BASE}/channels`, data)
 
-export const updateDestination = (id: string, data: Record<string, unknown>) =>
-  apiClient.put<DestinationResponse>(`${BASE}/destinations/${id}`, data)
+export const updateChannel = (id: string, data: Record<string, unknown>) =>
+  apiClient.put<ChannelResponse>(`${BASE}/channels/${id}`, data)
 
-export const deleteDestination = (id: string) => apiClient.delete<void>(`${BASE}/destinations/${id}`)
+export const deleteChannel = (id: string) => apiClient.delete<void>(`${BASE}/channels/${id}`)
 
-export const testDestination = (id: string) =>
+export const testChannel = (id: string) =>
   apiClient.post<{ success: boolean; status_code?: number; response_body?: string }>(
-    `${BASE}/destinations/${id}/test`,
+    `${BASE}/channels/${id}/test`,
   )
 
 // ── Events ───────────────────────────────────────────────
@@ -114,7 +116,7 @@ export const listEvents = (params: {
   page?: number
   size?: number
   status?: string
-  source_id?: string
+  endpoint_id?: string
 }) => apiClient.get<PaginatedResponse<EventResponse>>(`${BASE}/events`, params)
 
 export const getEvent = (id: string) => apiClient.get<GetEventResponse>(`${BASE}/events/${id}`)
@@ -128,7 +130,7 @@ export const listDeliveries = (params: {
   page?: number
   size?: number
   status?: string
-  destination_id?: string
+  channel_id?: string
   event_id?: string
 }) => apiClient.get<PaginatedResponse<DeliveryResponse>>(`${BASE}/deliveries`, params)
 
@@ -138,7 +140,7 @@ export const getDelivery = (id: string) =>
 export const retryDelivery = (id: string) =>
   apiClient.post<{ delivery: DeliveryResponse; message: string }>(`${BASE}/deliveries/${id}/retry`)
 
-export const bulkRetry = (filter: { status?: string; destination_id?: string }) =>
+export const bulkRetry = (filter: { status?: string; channel_id?: string }) =>
   apiClient.post<{ reset_count: number; message: string }>(`${BASE}/deliveries/bulk-retry`, filter)
 
 // ── Audit ────────────────────────────────────────────────
@@ -156,6 +158,9 @@ export const listAuditLogs = (params: {
 
 export const getDashboardStats = () =>
   apiClient.get<DashboardStatsResponse>(`${BASE}/dashboard/stats`)
+
+export const getQueueStats = () =>
+  apiClient.get<QueueStatsResponse>(`${BASE}/queue/stats`)
 
 // ── Preview ──────────────────────────────────────────────
 
@@ -194,4 +199,4 @@ export const previewTemplate = (
 
 export const getHealthz = () => apiClient.get<{ status: string }>('/healthz')
 
-export const getRootInfo = () => apiClient.get<{ name: string; version: string; status: string }>('/')
+export const getSystemInfo = () => apiClient.get<SystemInfoResponse>(`${BASE}/system`)

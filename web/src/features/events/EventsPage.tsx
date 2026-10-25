@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 import { Webhook } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { listEvents } from "@/lib/api"
-import { lookupName, useSourceOptions } from "@/hooks/use-lookup"
+import { lookupName, useEndpointOptions } from "@/hooks/use-lookup"
 import { usePagination } from "@/hooks/use-pagination"
 import { PageHeader } from "@/components/layout/PageHeader"
 import {
@@ -44,20 +44,20 @@ export default function EventsPage() {
   const { t } = useTranslation()
   const { page, size, setPage, setSize } = usePagination()
   const [statusFilter, setStatusFilter] = useState<string>(ALL)
-  const [sourceFilter, setSourceFilter] = useState<string>(ALL)
+  const [endpointFilter, setEndpointFilter] = useState<string>(ALL)
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
   const listQuery = useQuery({
-    queryKey: ["events", page, size, statusFilter, sourceFilter],
+    queryKey: ["events", page, size, statusFilter, endpointFilter],
     queryFn: () =>
       listEvents({
         page,
         size,
         status: statusFilter === ALL ? undefined : statusFilter,
-        source_id: sourceFilter === ALL ? undefined : sourceFilter,
+        endpoint_id: endpointFilter === ALL ? undefined : endpointFilter,
       }),
   })
-  const sourceOptions = useSourceOptions()
+  const endpointOptions = useEndpointOptions()
 
   const rows = listQuery.data?.data ?? []
   const total = listQuery.data?.total ?? 0
@@ -83,7 +83,7 @@ export default function EventsPage() {
             setPage(1)
           }}
         >
-          <SelectTrigger size="sm" className="w-36" aria-label={t("common.status")}>
+          <SelectTrigger size="sm" className="w-40" aria-label={t("common.status")}>
             <SelectValue placeholder={t("common.status")} />
           </SelectTrigger>
           <SelectContent>
@@ -97,20 +97,20 @@ export default function EventsPage() {
         </Select>
 
         <Select
-          value={sourceFilter}
+          value={endpointFilter}
           onValueChange={(v) => {
-            setSourceFilter(v)
+            setEndpointFilter(v)
             setPage(1)
           }}
         >
-          <SelectTrigger size="sm" className="w-48" aria-label={t("events.source")}>
-            <SelectValue placeholder={t("events.source")} />
+          <SelectTrigger size="sm" className="w-40" aria-label={t("events.endpoint")}>
+            <SelectValue placeholder={t("events.endpoint")} />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={ALL}>{t("common.all")}</SelectItem>
-            {(sourceOptions.data ?? []).map((source) => (
-              <SelectItem key={source.id} value={source.id}>
-                {source.name}
+            {(endpointOptions.data ?? []).map((endpoint) => (
+              <SelectItem key={endpoint.id} value={endpoint.id}>
+                {endpoint.name}
               </SelectItem>
             ))}
           </SelectContent>
@@ -137,7 +137,7 @@ export default function EventsPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>{t("common.id")}</TableHead>
-                <TableHead>{t("events.source")}</TableHead>
+                <TableHead>{t("events.endpoint")}</TableHead>
                 <TableHead>{t("common.status")}</TableHead>
                 <TableHead>{t("events.receivedAt")}</TableHead>
                 <TableHead>{t("common.error")}</TableHead>
@@ -156,7 +156,7 @@ export default function EventsPage() {
                       <TruncatedId id={row.id} />
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {lookupName(sourceOptions.data, row.source_id)}
+                      {lookupName(endpointOptions.data, row.endpoint_id)}
                     </TableCell>
                     <TableCell>
                       <StatusBadge kind="event" status={row.status} />

@@ -6,10 +6,10 @@ import { z } from 'zod'
 import { toast } from 'sonner'
 import { Loader2, Pencil, Plus, Trash2, Webhook } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { createSource, deleteSource, listSources, updateSource } from '@/lib/api'
+import { createEndpoint, deleteEndpoint, listEndpoints, updateEndpoint } from '@/lib/api'
 import { getErrorMessage } from '@/lib/api-client'
 import { copyToClipboard } from '@/lib/formatters'
-import type { SourceResponse } from '@/lib/types'
+import type { EndpointResponse } from '@/lib/types'
 import { useMappingOptions, lookupName } from '@/hooks/use-lookup'
 import { usePagination } from '@/hooks/use-pagination'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -46,7 +46,7 @@ import { RefreshButton } from '@/components/feedback/RefreshButton'
 
 const AUTH_TYPES = ['none', 'bearer', 'hmac'] as const
 
-const sourceSchema = z.object({
+const endpointSchema = z.object({
   name: z.string().min(1),
   auth_type: z.enum(AUTH_TYPES),
   secret: z.string(),
@@ -57,9 +57,9 @@ const sourceSchema = z.object({
   enabled: z.boolean(),
 })
 
-type SourceForm = z.infer<typeof sourceSchema>
+type EndpointForm = z.infer<typeof endpointSchema>
 
-const defaultForm: SourceForm = {
+const defaultForm: EndpointForm = {
   name: '',
   auth_type: 'none',
   secret: '',
@@ -87,27 +87,27 @@ function generateSecret(): string {
   return Array.from(bytes, (b) => chars[b % chars.length]).join('')
 }
 
-export default function SourcesPage() {
+export default function EndpointsPage() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const { page, size, setPage, setSize } = usePagination()
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [editing, setEditing] = useState<SourceResponse | null>(null)
-  const [deleteTarget, setDeleteTarget] = useState<SourceResponse | null>(null)
+  const [editing, setEditing] = useState<EndpointResponse | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<EndpointResponse | null>(null)
 
   const listQuery = useQuery({
-    queryKey: ['sources', page, size],
-    queryFn: () => listSources({ page, size }),
+    queryKey: ['endpoints', page, size],
+    queryFn: () => listEndpoints({ page, size }),
   })
   const mappingOptions = useMappingOptions()
 
   const invalidate = () => {
-    void queryClient.invalidateQueries({ queryKey: ['sources'] })
-    void queryClient.invalidateQueries({ queryKey: ['lookup', 'sources'] })
+    void queryClient.invalidateQueries({ queryKey: ['endpoints'] })
+    void queryClient.invalidateQueries({ queryKey: ['lookup', 'endpoints'] })
   }
 
   const saveMutation = useMutation({
-    mutationFn: async (data: SourceForm) => {
+    mutationFn: async (data: EndpointForm) => {
       const payload: Record<string, unknown> = {
         name: data.name,
         auth_type: data.auth_type,
@@ -117,55 +117,55 @@ export default function SourcesPage() {
       }
       // Never re-submit the server-side "configured"/"not_configured" marker
       if (data.auth_type !== 'none' && data.secret !== '') {
-        payload.secret_ref = data.secret
+        payload.secret = data.secret
       }
       if (data.rate > 0 || data.burst > 0) {
         payload.rate_limit = JSON.stringify({ rate: data.rate, burst: data.burst })
       }
       if (editing) {
-        return updateSource(editing.id, payload)
+        return updateEndpoint(editing.id, payload)
       }
-      return createSource(payload)
+      return createEndpoint(payload)
     },
     onSuccess: () => {
-      toast.success(editing ? t('sources.sourceUpdated') : t('sources.sourceCreated'))
+      toast.success(editing ? t('endpoints.endpointUpdated') : t('endpoints.endpointCreated'))
       setDialogOpen(false)
       invalidate()
     },
     onError: (e) => {
-      toast.error(getErrorMessage(e, t('sources.failedToSaveSource')))
+      toast.error(getErrorMessage(e, t('endpoints.failedToSaveEndpoint')))
     },
   })
 
   const toggleMutation = useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
       // Only send {enabled} — avoids re-posting the masked secret marker
-      updateSource(id, { enabled }),
+      updateEndpoint(id, { enabled }),
     onSuccess: (_data, variables) => {
       toast.success(
-        variables.enabled ? t('sources.sourceEnabled') : t('sources.sourceDisabled'),
+        variables.enabled ? t('endpoints.endpointEnabled') : t('endpoints.endpointDisabled'),
       )
       invalidate()
     },
     onError: (e) => {
-      toast.error(getErrorMessage(e, t('sources.failedToToggleSource')))
+      toast.error(getErrorMessage(e, t('endpoints.failedToToggleEndpoint')))
     },
   })
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => deleteSource(id),
+    mutationFn: (id: string) => deleteEndpoint(id),
     onSuccess: () => {
-      toast.success(t('sources.sourceDeleted'))
+      toast.success(t('endpoints.endpointDeleted'))
       setDeleteTarget(null)
       invalidate()
     },
     onError: (e) => {
-      toast.error(getErrorMessage(e, t('common.failedToSave', { entity: t('nav.sources') })))
+      toast.error(getErrorMessage(e, t('common.failedToSave', { entity: t('nav.endpoints') })))
     },
   })
 
-  const form = useForm<SourceForm>({
-    resolver: zodResolver(sourceSchema),
+  const form = useForm<EndpointForm>({
+    resolver: zodResolver(endpointSchema),
     defaultValues: defaultForm,
   })
   const authType = form.watch('auth_type')
@@ -176,13 +176,13 @@ export default function SourcesPage() {
     setDialogOpen(true)
   }
 
-  function openEdit(row: SourceResponse) {
+  function openEdit(row: EndpointResponse) {
     setEditing(row)
     form.reset({
       name: row.name,
       auth_type: (AUTH_TYPES.includes(row.auth_type as (typeof AUTH_TYPES)[number])
         ? row.auth_type
-        : 'none') as SourceForm['auth_type'],
+        : 'none') as EndpointForm['auth_type'],
       secret: '', // server sends a marker; keep blank = keep existing
       maxBodyKb: Math.round((row.max_body_bytes ?? 1048576) / 1024),
       ...parseRateLimit(row.rate_limit),
@@ -196,15 +196,15 @@ export default function SourcesPage() {
   const total = listQuery.data?.total ?? 0
 
   const webhookUrl = useMemo(
-    () => (slug: string) => `${window.location.origin}/ingest/${slug}`,
+    () => (slug: string) => `${window.location.origin}/endpoint/${slug}`,
     [],
   )
 
   return (
     <div className="space-y-4">
       <PageHeader
-        title={t('nav.sources')}
-        description={t('sources.description')}
+        title={t('nav.endpoints')}
+        description={t('endpoints.description')}
         actions={
           <>
             <RefreshButton
@@ -214,7 +214,7 @@ export default function SourcesPage() {
             />
             <Button size="sm" onClick={openCreate}>
               <Plus />
-              {t('sources.newSource')}
+              {t('endpoints.newEndpoint')}
             </Button>
           </>
         }
@@ -227,17 +227,17 @@ export default function SourcesPage() {
           <ErrorState
             error={listQuery.error}
             onRetry={() => void listQuery.refetch()}
-            entity={t('nav.sources')}
+            entity={t('nav.endpoints')}
           />
         ) : rows.length === 0 ? (
           <EmptyState
-            title={t('sources.emptyTitle')}
-            description={t('sources.emptyDescription')}
+            title={t('endpoints.emptyTitle')}
+            description={t('endpoints.emptyDescription')}
             icon={<Webhook className="size-5" />}
             action={
               <Button size="sm" variant="outline" onClick={openCreate}>
                 <Plus />
-                {t('sources.newSource')}
+                {t('endpoints.newEndpoint')}
               </Button>
             }
           />
@@ -246,16 +246,16 @@ export default function SourcesPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>{t('common.name')}</TableHead>
-                <TableHead>{t('sources.slug')}</TableHead>
-                <TableHead>{t('sources.authType')}</TableHead>
-                <TableHead>{t('sources.mapping')}</TableHead>
+                <TableHead>{t('endpoints.slug')}</TableHead>
+                <TableHead>{t('endpoints.authType')}</TableHead>
+                <TableHead>{t('endpoints.mapping')}</TableHead>
                 <TableHead>{t('common.enabled')}</TableHead>
-                <TableHead className="w-24 text-right">{t('common.actions')}</TableHead>
+                <TableHead className="sticky right-0 z-20 w-20 bg-background text-right">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.map((row) => (
-                <TableRow key={row.id}>
+                <TableRow key={row.id} className="group">
                   <TableCell className="text-muted-foreground">{row.name}</TableCell>
                   <TableCell>
                     <span className="group/reveal inline-flex items-center gap-1">
@@ -300,11 +300,12 @@ export default function SourcesPage() {
                       aria-label={t('common.enabled')}
                     />
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="sticky right-0 z-10 bg-background text-right group-hover:bg-muted/50">
                     <div className="flex justify-end gap-1">
                       <Button
                         variant="ghost"
                         size="icon-sm"
+                        className="size-7"
                         onClick={() => openEdit(row)}
                         aria-label={t('common.edit')}
                       >
@@ -313,7 +314,7 @@ export default function SourcesPage() {
                       <Button
                         variant="ghost"
                         size="icon-sm"
-                        className="text-destructive hover:text-destructive"
+                        className="size-7 text-destructive hover:text-destructive"
                         onClick={() => setDeleteTarget(row)}
                         aria-label={t('common.delete')}
                       >
@@ -348,10 +349,10 @@ export default function SourcesPage() {
         <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>
-              {editing ? t('sources.editSource') : t('sources.newSource')}
+              {editing ? t('endpoints.editEndpoint') : t('endpoints.newEndpoint')}
             </DialogTitle>
             <DialogDescription className="sr-only">
-              {editing ? t('sources.editSource') : t('sources.newSource')}
+              {editing ? t('endpoints.editEndpoint') : t('endpoints.newEndpoint')}
             </DialogDescription>
           </DialogHeader>
 
@@ -361,21 +362,21 @@ export default function SourcesPage() {
           >
             <div className="grid grid-cols-[1fr_auto] gap-4">
               <div className="space-y-2">
-                <Label htmlFor="source-name">{t('common.name')}</Label>
+                <Label htmlFor="endpoint-name">{t('common.name')}</Label>
                 <Input
-                  id="source-name"
+                  id="endpoint-name"
                   placeholder={t('common.name')}
                   {...form.register('name')}
                 />
                 {form.formState.errors.name ? (
-                  <p className="text-xs text-destructive">{t('sources.nameRequired')}</p>
+                  <p className="text-xs text-destructive">{t('endpoints.nameRequired')}</p>
                 ) : null}
               </div>
               <div className="space-y-2">
-                <Label htmlFor="source-enabled">{t('common.enabled')}</Label>
+                <Label htmlFor="endpoint-enabled">{t('common.enabled')}</Label>
                 <div className="flex h-9 items-center">
                   <Switch
-                    id="source-enabled"
+                    id="endpoint-enabled"
                     checked={form.watch('enabled')}
                     onCheckedChange={(checked) => form.setValue('enabled', checked)}
                   />
@@ -385,13 +386,13 @@ export default function SourcesPage() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>{t('sources.authType')}</Label>
+                <Label>{t('endpoints.authType')}</Label>
                 <Select
                   value={authType}
-                  onValueChange={(v) => form.setValue('auth_type', v as SourceForm['auth_type'])}
+                  onValueChange={(v) => form.setValue('auth_type', v as EndpointForm['auth_type'])}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder={t('sources.selectAuthType')} />
+                    <SelectValue placeholder={t('endpoints.selectAuthType')} />
                   </SelectTrigger>
                   <SelectContent>
                     {AUTH_TYPES.map((type) => (
@@ -404,12 +405,12 @@ export default function SourcesPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="source-max-body">{t('sources.maxBodyBytes')}</Label>
+                <Label htmlFor="endpoint-max-body">{t('endpoints.maxBodyBytes')}</Label>
                 <UnitInput
-                  id="source-max-body"
+                  id="endpoint-max-body"
                   type="number"
                   min={0}
-                  unit={t('sources.maxBodyUnit')}
+                  unit={t('endpoints.maxBodyUnit')}
                   {...form.register('maxBodyKb', { valueAsNumber: true })}
                 />
               </div>
@@ -417,16 +418,16 @@ export default function SourcesPage() {
 
             {authType !== 'none' ? (
               <div className="space-y-2">
-                <Label htmlFor="source-secret">{t('sources.secretToken')}</Label>
+                <Label htmlFor="endpoint-secret">{t('endpoints.secretToken')}</Label>
                 <div className="flex gap-2">
                   <PasswordInput
-                    id="source-secret"
+                    id="endpoint-secret"
                     containerClassName="flex-1"
                     autoComplete="new-password"
                     placeholder={
                       editing
-                        ? t('sources.secretEditPlaceholder')
-                        : t('sources.secretPlaceholder')
+                        ? t('endpoints.secretEditPlaceholder')
+                        : t('endpoints.secretPlaceholder')
                     }
                     {...form.register('secret')}
                   />
@@ -435,51 +436,51 @@ export default function SourcesPage() {
                     variant="outline"
                     onClick={() => form.setValue('secret', generateSecret())}
                   >
-                    {t('sources.generateSecret')}
+                    {t('endpoints.generateSecret')}
                   </Button>
                 </div>
               </div>
             ) : null}
 
             <div className="space-y-2">
-              <Label>{t('sources.rateLimit')}</Label>
+              <Label>{t('endpoints.rateLimit')}</Label>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <Label htmlFor="source-rate" className="text-xs text-muted-foreground">
-                    {t('sources.rateLimitRate')}
+                  <Label htmlFor="endpoint-rate" className="text-xs text-muted-foreground">
+                    {t('endpoints.rateLimitRate')}
                   </Label>
                   <Input
-                    id="source-rate"
+                    id="endpoint-rate"
                     type="number"
                     min={0}
-                    placeholder={t('sources.rateLimitRatePlaceholder')}
+                    placeholder={t('endpoints.rateLimitRatePlaceholder')}
                     {...form.register('rate', { valueAsNumber: true })}
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="source-burst" className="text-xs text-muted-foreground">
-                    {t('sources.rateLimitBurst')}
+                  <Label htmlFor="endpoint-burst" className="text-xs text-muted-foreground">
+                    {t('endpoints.rateLimitBurst')}
                   </Label>
                   <Input
-                    id="source-burst"
+                    id="endpoint-burst"
                     type="number"
                     min={0}
-                    placeholder={t('sources.rateLimitBurstPlaceholder')}
+                    placeholder={t('endpoints.rateLimitBurstPlaceholder')}
                     {...form.register('burst', { valueAsNumber: true })}
                   />
                 </div>
               </div>
-              <p className="text-xs text-muted-foreground">{t('sources.rateLimitHint')}</p>
+              <p className="text-xs text-muted-foreground">{t('endpoints.rateLimitHint')}</p>
             </div>
 
             <div className="space-y-2">
-              <Label>{t('sources.mapping')}</Label>
+              <Label>{t('endpoints.mapping')}</Label>
               <Select
                 value={form.watch('mapping_id') || 'none'}
                 onValueChange={(v) => form.setValue('mapping_id', v === 'none' ? '' : v)}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder={t('sources.selectMapping')} />
+                  <SelectValue placeholder={t('endpoints.selectMapping')} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">-</SelectItem>
@@ -517,7 +518,7 @@ export default function SourcesPage() {
         }}
         title={t('common.confirmDelete')}
         description={t('common.confirmDeleteMsg', {
-          entity: t('nav.sources'),
+          entity: t('nav.endpoints'),
           name: deleteTarget?.name ?? '',
         })}
         confirmLabel={t('common.delete')}

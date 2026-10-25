@@ -44,7 +44,7 @@ function asBodyFieldRows(value: unknown): BodyFieldNode[] {
     const type = o.type === 'array' ? 'array' : o.type === 'object' ? 'object' : ''
     return {
       key: asString(o.key),
-      source: type === '' ? asString(o.source) : '',
+      value_source: type === '' ? asString(o.value_source) : '',
       value: asString(o.value),
       type,
       children: asBodyFieldRows(o.children),
@@ -52,7 +52,7 @@ function asBodyFieldRows(value: unknown): BodyFieldNode[] {
   })
 }
 
-/** Drop incomplete rows (no key / no source / empty group) before submitting. */
+/** Drop incomplete rows (no key / no value_source / empty group) before submitting. */
 function cleanBodyFields(rows: BodyFieldNode[], parentIsArray: boolean): BodyFieldNode[] {
   const out: BodyFieldNode[] = []
   for (const r of rows) {
@@ -63,7 +63,7 @@ function cleanBodyFields(rows: BodyFieldNode[], parentIsArray: boolean): BodyFie
       if (!parentIsArray && r.key.trim() === '') continue
       out.push({ ...r, children })
     } else {
-      if (r.source === '') continue
+      if (r.value_source === '') continue
       if (!parentIsArray && r.key.trim() === '') continue
       out.push(r)
     }
@@ -78,18 +78,18 @@ function cleanBodyFields(rows: BodyFieldNode[], parentIsArray: boolean): BodyFie
 const bodyFieldSchema: z.ZodType<BodyFieldNode> = z.lazy(() =>
   z.object({
     key: z.string(),
-    source: z.string(),
+    value_source: z.string(),
     value: z.string(),
     type: z.string(),
     children: z.array(bodyFieldSchema),
   }),
 )
 
-const BODY_SOURCES = [
-  { value: 'title', key: 'sourceTitle' },
-  { value: 'body', key: 'sourceBody' },
-  { value: 'format', key: 'sourceFormat' },
-  { value: 'literal', key: 'sourceLiteral' },
+const BODY_VALUE_SOURCES = [
+  { value: 'title', key: 'valueTitle' },
+  { value: 'body', key: 'valueBody' },
+  { value: 'format', key: 'valueFormat' },
+  { value: 'literal', key: 'valueLiteral' },
 ] as const
 
 // Radix Select treats an empty-string value as "nothing selected", so the
@@ -123,10 +123,10 @@ function BodyFieldRows({
       type="button"
       variant="outline"
       size="sm"
-      onClick={() => appendRow({ key: '', source: 'body', value: '', type: '', children: [] })}
+      onClick={() => appendRow({ key: '', value_source: 'body', value: '', type: '', children: [] })}
     >
       <Plus />
-      {t('destinations.addField')}
+      {t('channels.addField')}
     </Button>
   )
 
@@ -141,7 +141,7 @@ function BodyFieldRows({
         </div>
       ) : null}
       {fields.length === 0 ? (
-        <p className="text-xs text-muted-foreground">{t('destinations.noBodyFields')}</p>
+        <p className="text-xs text-muted-foreground">{t('channels.noBodyFields')}</p>
       ) : null}
       {fields.map((field, index) => (
         <BodyFieldRow
@@ -175,18 +175,18 @@ function BodyFieldRow({
   const row = useWatch({ control, name: name as never }) as BodyFieldNode | undefined
   const type = row?.type ?? ''
   const isGroup = type === 'object' || type === 'array'
-  const source = row?.source ?? 'body'
+  const valueSource = row?.value_source ?? 'body'
 
-  // Switching row type converts in place: leaf → group drops the source,
-  // group → leaf drops the children and restores a default source.
+  // Switching row type converts in place: leaf → group drops the endpoint,
+  // group → leaf drops the children and restores a default value_source.
   function handleTypeChange(v: string) {
     const nextType = v === 'field' ? '' : v
     setValue(`${name}.type`, nextType)
     if (nextType === '') {
       setValue(`${name}.children`, [])
-      if (!source) setValue(`${name}.source`, 'body')
+      if (!valueSource) setValue(`${name}.value_source`, 'body')
     } else {
-      setValue(`${name}.source`, '')
+      setValue(`${name}.value_source`, '')
     }
   }
 
@@ -195,11 +195,11 @@ function BodyFieldRow({
       <div className="flex items-center gap-2">
         {parentIsArray ? (
           <span className="min-w-14 shrink-0 text-sm text-muted-foreground">
-            {t('destinations.arrayItem')}
+            {t('channels.arrayItem')}
           </span>
         ) : (
           <Input
-            placeholder={t('destinations.fieldKey')}
+            placeholder={t('channels.fieldKey')}
             value={row?.key ?? ''}
             onChange={(e) => setValue(`${name}.key`, e.target.value)}
           />
@@ -211,28 +211,28 @@ function BodyFieldRow({
           <SelectContent>
             {ROW_TYPES.map((rt) => (
               <SelectItem key={rt.value} value={rt.value}>
-                {t(`destinations.${rt.key}`)}
+                {t(`channels.${rt.key}`)}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
         {!isGroup ? (
           <>
-            <Select value={source} onValueChange={(v) => setValue(`${name}.source`, v)}>
+            <Select value={valueSource} onValueChange={(v) => setValue(`${name}.value_source`, v)}>
               <SelectTrigger className="w-32 shrink-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {BODY_SOURCES.map((s) => (
+                {BODY_VALUE_SOURCES.map((s) => (
                   <SelectItem key={s.value} value={s.value}>
-                    {t(`destinations.${s.key}`)}
+                    {t(`channels.${s.key}`)}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            {source === 'literal' ? (
+            {valueSource === 'literal' ? (
               <Input
-                placeholder={t('destinations.fieldValue')}
+                placeholder={t('channels.fieldValue')}
                 value={row?.value ?? ''}
                 onChange={(e) => setValue(`${name}.value`, e.target.value)}
               />
@@ -280,14 +280,14 @@ function HttpWebhookFields({ form }: { form: AnyForm }) {
     <div className="space-y-4">
       <div className="grid grid-cols-[1fr_140px] gap-4">
         <div className="space-y-2">
-          <Label htmlFor="destination-url">{t('destinations.targetUrl')}</Label>
-          <Input id="destination-url" placeholder="https://..." {...form.register('url')} />
+          <Label htmlFor="channel-url">{t('channels.targetUrl')}</Label>
+          <Input id="channel-url" placeholder="https://..." {...form.register('url')} />
           {errors.url ? (
-            <p className="text-xs text-destructive">{t('destinations.urlRequired')}</p>
+            <p className="text-xs text-destructive">{t('channels.urlRequired')}</p>
           ) : null}
         </div>
         <div className="space-y-2">
-          <Label>{t('destinations.httpMethod')}</Label>
+          <Label>{t('channels.httpMethod')}</Label>
           <Select
             value={form.watch('method')}
             onValueChange={(v) => form.setValue('method', v)}
@@ -308,7 +308,7 @@ function HttpWebhookFields({ form }: { form: AnyForm }) {
 
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <Label>{t('destinations.headers')}</Label>
+          <Label>{t('channels.headers')}</Label>
           <Button
             type="button"
             variant="outline"
@@ -316,21 +316,21 @@ function HttpWebhookFields({ form }: { form: AnyForm }) {
             onClick={() => appendHeader({ key: '', value: '' })}
           >
             <Plus />
-            {t('destinations.addHeader')}
+            {t('channels.addHeader')}
           </Button>
         </div>
         {headerFields.length === 0 ? (
-          <p className="text-xs text-muted-foreground">{t('destinations.noHeaders')}</p>
+          <p className="text-xs text-muted-foreground">{t('channels.noHeaders')}</p>
         ) : null}
         <div className="space-y-2">
           {headerFields.map((field, index) => (
             <div key={field.id} className="flex items-center gap-2">
               <Input
-                placeholder={t('destinations.headerKey')}
+                placeholder={t('channels.headerKey')}
                 {...form.register(`headers.${index}.key`)}
               />
               <Input
-                placeholder={t('destinations.headerValue')}
+                placeholder={t('channels.headerValue')}
                 {...form.register(`headers.${index}.value`)}
               />
               <Button
@@ -353,7 +353,7 @@ function HttpWebhookFields({ form }: { form: AnyForm }) {
           name="body_fields"
           parentIsArray={false}
           setValue={setBodyValue}
-          label={t('destinations.bodyFields')}
+          label={t('channels.bodyFields')}
         />
       </div>
     </div>

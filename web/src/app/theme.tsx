@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 
 type Theme = 'light' | 'dark' | 'system'
 
-const STORAGE_KEY = 'zpush-theme'
+const STORAGE_KEY = 'notygo-theme'
 
 interface ThemeContextValue {
   theme: Theme

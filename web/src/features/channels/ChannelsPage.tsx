@@ -4,9 +4,9 @@ import { useForm } from 'react-hook-form'
 import { toast } from 'sonner'
 import { Loader2, Pencil, Plus, Send, Trash2, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { createDestination, deleteDestination, listDestinations, testDestination, updateDestination } from '@/lib/api'
+import { createChannel, deleteChannel, listChannels, testChannel, updateChannel } from '@/lib/api'
 import { getErrorMessage } from '@/lib/api-client'
-import type { DestinationResponse } from '@/lib/types'
+import type { ChannelResponse } from '@/lib/types'
 import { usePagination } from '@/hooks/use-pagination'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Badge } from '@/components/ui/badge'
@@ -39,55 +39,55 @@ import { TableSkeleton } from '@/components/data-display/TableSkeleton'
 import { ConfirmDialog } from '@/components/feedback/ConfirmDialog'
 import { RefreshButton } from '@/components/feedback/RefreshButton'
 import {
-  DEST_TYPES,
+  CHANNEL_TYPES,
   channelModule,
   defaultForm,
-  destinationResolver,
+  channelResolver,
   uniqueModules,
-  type DestinationForm,
-} from './channels'
+  type ChannelForm,
+} from './modules'
 
-export default function DestinationsPage() {
+export default function ChannelsPage() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const { page, size, setPage, setSize } = usePagination()
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [editing, setEditing] = useState<DestinationResponse | null>(null)
-  const [deleteTarget, setDeleteTarget] = useState<DestinationResponse | null>(null)
+  const [editing, setEditing] = useState<ChannelResponse | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<ChannelResponse | null>(null)
   // Server returns the DECRYPTED secret on edit — only re-submit when changed.
   const originalSecretRef = useRef('')
 
   const listQuery = useQuery({
-    queryKey: ['destinations', page, size],
-    queryFn: () => listDestinations({ page, size }),
+    queryKey: ['channels', page, size],
+    queryFn: () => listChannels({ page, size }),
   })
 
   const invalidate = () => {
-    void queryClient.invalidateQueries({ queryKey: ['destinations'] })
-    void queryClient.invalidateQueries({ queryKey: ['lookup', 'destinations'] })
+    void queryClient.invalidateQueries({ queryKey: ['channels'] })
+    void queryClient.invalidateQueries({ queryKey: ['lookup', 'channels'] })
   }
 
-  // Destination update is partial — the toggle can safely send {enabled} only.
+  // Channel update is partial — the toggle can safely send {enabled} only.
   // Revert the switch on error by re-fetching the list.
   const toggleMutation = useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
-      updateDestination(id, { enabled }),
+      updateChannel(id, { enabled }),
     onSuccess: (_data, variables) => {
       toast.success(
         variables.enabled
-          ? t('destinations.destinationEnabled')
-          : t('destinations.destinationDisabled'),
+          ? t('channels.channelEnabled')
+          : t('channels.channelDisabled'),
       )
       invalidate()
     },
     onError: (e) => {
-      toast.error(getErrorMessage(e, t('destinations.failedToToggleDestination')))
-      void queryClient.invalidateQueries({ queryKey: ['destinations'] })
+      toast.error(getErrorMessage(e, t('channels.failedToToggleChannel')))
+      void queryClient.invalidateQueries({ queryKey: ['channels'] })
     },
   })
 
   const saveMutation = useMutation({
-    mutationFn: async (data: DestinationForm) => {
+    mutationFn: async (data: ChannelForm) => {
       const payload: Record<string, unknown> = {
         name: data.name,
         type: data.type,
@@ -97,34 +97,34 @@ export default function DestinationsPage() {
         enabled: data.enabled,
       }
       if (data.secret !== '' && data.secret !== originalSecretRef.current) {
-        payload.secret_ref = data.secret
+        payload.secret = data.secret
       }
       if (editing) {
-        return updateDestination(editing.id, payload)
+        return updateChannel(editing.id, payload)
       }
-      return createDestination(payload)
+      return createChannel(payload)
     },
     onSuccess: () => {
       toast.success(
-        editing ? t('destinations.destinationUpdated') : t('destinations.destinationCreated'),
+        editing ? t('channels.channelUpdated') : t('channels.channelCreated'),
       )
       setDialogOpen(false)
       invalidate()
     },
     onError: (e) => {
-      toast.error(getErrorMessage(e, t('destinations.failedToSaveDestination')))
+      toast.error(getErrorMessage(e, t('channels.failedToSaveChannel')))
     },
   })
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => deleteDestination(id),
+    mutationFn: (id: string) => deleteChannel(id),
     onSuccess: () => {
-      toast.success(t('destinations.destinationDeleted'))
+      toast.success(t('channels.channelDeleted'))
       setDeleteTarget(null)
       invalidate()
     },
     onError: (e) => {
-      toast.error(getErrorMessage(e, t('common.failedToSave', { entity: t('nav.destinations') })))
+      toast.error(getErrorMessage(e, t('common.failedToSave', { entity: t('nav.channels') })))
     },
   })
 
@@ -133,21 +133,21 @@ export default function DestinationsPage() {
   const testMutation = useMutation({
     mutationFn: (id: string) => {
       setTestingId(id)
-      return testDestination(id)
+      return testChannel(id)
     },
     onSuccess: () => {
-      toast.success(t('destinations.testSuccess'))
+      toast.success(t('channels.testSuccess'))
     },
     onError: (e) => {
-      toast.error(getErrorMessage(e, t('destinations.testFailed')))
+      toast.error(getErrorMessage(e, t('channels.testFailed')))
     },
     onSettled: () => {
       setTestingId(null)
     },
   })
 
-  const form = useForm<DestinationForm>({
-    resolver: destinationResolver,
+  const form = useForm<ChannelForm>({
+    resolver: channelResolver,
     defaultValues: defaultForm,
   })
   const type = form.watch('type')
@@ -160,18 +160,18 @@ export default function DestinationsPage() {
     setDialogOpen(true)
   }
 
-  function openEdit(row: DestinationResponse) {
+  function openEdit(row: ChannelResponse) {
     setEditing(row)
-    originalSecretRef.current = row.secret_ref ?? ''
+    originalSecretRef.current = row.secret ?? ''
     const config = (row.config ?? {}) as Record<string, unknown>
-    const rowType = (DEST_TYPES.includes(row.type as (typeof DEST_TYPES)[number])
+    const rowType = (CHANNEL_TYPES.includes(row.type as (typeof CHANNEL_TYPES)[number])
       ? row.type
-      : 'http') as DestinationForm['type']
+      : 'http') as ChannelForm['type']
     const module = channelModule(rowType)
     form.reset({
       name: row.name,
       type: rowType,
-      secret: row.secret_ref ?? '',
+      secret: row.secret ?? '',
       timeout_ms: typeof row.timeout_ms === 'number' && Number.isFinite(row.timeout_ms)
         ? row.timeout_ms
         : 10000,
@@ -197,7 +197,7 @@ export default function DestinationsPage() {
     (form.setValue as (p: string, v: unknown) => void)(path, value)
 
   function handleTypeChange(next: string) {
-    const nextType = next as DestinationForm['type']
+    const nextType = next as ChannelForm['type']
     form.setValue('type', nextType)
     for (const [key, value] of Object.entries(allChannelDefaults())) {
       setAnyValue(key, value)
@@ -214,8 +214,8 @@ export default function DestinationsPage() {
   return (
     <div className="space-y-4">
       <PageHeader
-        title={t('nav.destinations')}
-        description={t('destinations.description')}
+        title={t('nav.channels')}
+        description={t('channels.description')}
         actions={
           <>
             <RefreshButton
@@ -225,7 +225,7 @@ export default function DestinationsPage() {
             />
             <Button size="sm" onClick={openCreate}>
               <Plus />
-              {t('destinations.newDestination')}
+              {t('channels.newChannel')}
             </Button>
           </>
         }
@@ -238,17 +238,17 @@ export default function DestinationsPage() {
           <ErrorState
             error={listQuery.error}
             onRetry={() => void listQuery.refetch()}
-            entity={t('nav.destinations')}
+            entity={t('nav.channels')}
           />
         ) : rows.length === 0 ? (
           <EmptyState
-            title={t('destinations.emptyTitle')}
-            description={t('destinations.emptyDescription')}
+            title={t('channels.emptyTitle')}
+            description={t('channels.emptyDescription')}
             icon={<Send className="size-5" />}
             action={
               <Button size="sm" variant="outline" onClick={openCreate}>
                 <Plus />
-                {t('destinations.newDestination')}
+                {t('channels.newChannel')}
               </Button>
             }
           />
@@ -259,16 +259,16 @@ export default function DestinationsPage() {
                 <TableHead>{t('common.name')}</TableHead>
                 <TableHead className="w-32">{t('common.type')}</TableHead>
                 <TableHead className="w-20">{t('common.enabled')}</TableHead>
-                <TableHead className="w-24 text-right">{t('common.actions')}</TableHead>
+                <TableHead className="sticky right-0 z-20 w-20 bg-background text-right">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.map((row) => (
-                <TableRow key={row.id}>
+                <TableRow key={row.id} className="group">
                   <TableCell className="text-muted-foreground">{row.name}</TableCell>
                   <TableCell>
                     <Badge variant="secondary">
-                      {t(`enums.destType.${row.type}`, { defaultValue: row.type })}
+                      {t(`enums.channelType.${row.type}`, { defaultValue: row.type })}
                     </Badge>
                   </TableCell>
                   <TableCell>
@@ -280,14 +280,15 @@ export default function DestinationsPage() {
                       aria-label={t('common.enabled')}
                     />
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="sticky right-0 z-10 bg-background text-right group-hover:bg-muted/50">
                     <div className="flex justify-end gap-1">
                       <Button
                         variant="ghost"
                         size="icon-sm"
+                        className="size-7"
                         disabled={testMutation.isPending}
                         onClick={() => testMutation.mutate(row.id)}
-                        aria-label={t('destinations.test')}
+                        aria-label={t('channels.test')}
                       >
                         {testingId === row.id ? (
                           <Loader2 className="animate-spin" />
@@ -298,6 +299,7 @@ export default function DestinationsPage() {
                       <Button
                         variant="ghost"
                         size="icon-sm"
+                        className="size-7"
                         onClick={() => openEdit(row)}
                         aria-label={t('common.edit')}
                       >
@@ -306,7 +308,7 @@ export default function DestinationsPage() {
                       <Button
                         variant="ghost"
                         size="icon-sm"
-                        className="text-destructive hover:text-destructive"
+                        className="size-7 text-destructive hover:text-destructive"
                         onClick={() => setDeleteTarget(row)}
                         aria-label={t('common.delete')}
                       >
@@ -341,10 +343,10 @@ export default function DestinationsPage() {
         <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>
-              {editing ? t('destinations.editDestination') : t('destinations.newDestination')}
+              {editing ? t('channels.editChannel') : t('channels.newChannel')}
             </DialogTitle>
             <DialogDescription className="sr-only">
-              {editing ? t('destinations.editDestination') : t('destinations.newDestination')}
+              {editing ? t('channels.editChannel') : t('channels.newChannel')}
             </DialogDescription>
           </DialogHeader>
 
@@ -354,14 +356,14 @@ export default function DestinationsPage() {
           >
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-[minmax(0,1fr)_176px_60px]">
               <div className="space-y-2">
-                <Label htmlFor="destination-name">{t('common.name')}</Label>
+                <Label htmlFor="channel-name">{t('common.name')}</Label>
                 <Input
-                  id="destination-name"
-                  placeholder={t('destinations.destinationName')}
+                  id="channel-name"
+                  placeholder={t('channels.channelName')}
                   {...form.register('name')}
                 />
                 {form.formState.errors.name ? (
-                  <p className="text-xs text-destructive">{t('destinations.nameRequired')}</p>
+                  <p className="text-xs text-destructive">{t('channels.nameRequired')}</p>
                 ) : null}
               </div>
 
@@ -369,12 +371,12 @@ export default function DestinationsPage() {
                 <Label>{t('common.type')}</Label>
                 <Select value={type} onValueChange={handleTypeChange}>
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder={t('destinations.selectType')} />
+                    <SelectValue placeholder={t('channels.selectType')} />
                   </SelectTrigger>
                   <SelectContent>
-                    {DEST_TYPES.map((destType) => (
-                      <SelectItem key={destType} value={destType}>
-                        {t(`enums.destType.${destType}`)}
+                    {CHANNEL_TYPES.map((channelType) => (
+                      <SelectItem key={channelType} value={channelType}>
+                        {t(`enums.channelType.${channelType}`)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -382,10 +384,10 @@ export default function DestinationsPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="destination-enabled">{t('common.enabled')}</Label>
+                <Label htmlFor="channel-enabled">{t('common.enabled')}</Label>
                 <div className="flex h-9 items-center">
                   <Switch
-                    id="destination-enabled"
+                    id="channel-enabled"
                     checked={form.watch('enabled')}
                     onCheckedChange={(checked) => form.setValue('enabled', checked)}
                   />
@@ -399,14 +401,14 @@ export default function DestinationsPage() {
             {/* Common config */}
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="destination-secret">{t('destinations.secret')}</Label>
+                <Label htmlFor="channel-secret">{t('channels.secret')}</Label>
                 <PasswordInput
-                  id="destination-secret"
+                  id="channel-secret"
                   autoComplete="new-password"
                   placeholder={
                     editing
-                      ? t('destinations.secretEditPlaceholder')
-                      : t('destinations.secretPlaceholder')
+                      ? t('channels.secretEditPlaceholder')
+                      : t('channels.secretPlaceholder')
                   }
                   {...form.register('secret')}
                 />
@@ -414,20 +416,20 @@ export default function DestinationsPage() {
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="destination-timeout">{t('destinations.timeoutMs')}</Label>
+                  <Label htmlFor="channel-timeout">{t('channels.timeoutMs')}</Label>
                   <UnitInput
-                    id="destination-timeout"
+                    id="channel-timeout"
                     type="number"
                     min={1000}
                     step={1000}
-                    unit={t('destinations.msUnit')}
+                    unit={t('channels.msUnit')}
                     {...form.register('timeout_ms', { valueAsNumber: true })}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="destination-max-attempts">{t('destinations.maxAttempts')}</Label>
+                  <Label htmlFor="channel-max-attempts">{t('channels.maxAttempts')}</Label>
                   <Input
-                    id="destination-max-attempts"
+                    id="channel-max-attempts"
                     type="number"
                     min={1}
                     max={100}
@@ -462,7 +464,7 @@ export default function DestinationsPage() {
         }}
         title={t('common.confirmDelete')}
         description={t('common.confirmDeleteMsg', {
-          entity: t('nav.destinations'),
+          entity: t('nav.channels'),
           name: deleteTarget?.name ?? '',
         })}
         confirmLabel={t('common.delete')}

@@ -1,11 +1,11 @@
 import { useMemo } from 'react'
 import { useNavigate } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle, Bell, CircleX, LoaderCircle, Send } from 'lucide-react'
+import { AlertTriangle, Bell, CircleX, ListChecks, LoaderCircle, Send } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { getDashboardStats } from '@/lib/api'
+import { getDashboardStats, getQueueStats } from '@/lib/api'
 import { formatTime } from '@/lib/formatters'
-import { lookupName, useDestinationOptions, useSourceOptions } from '@/hooks/use-lookup'
+import { lookupName, useChannelOptions, useEndpointOptions } from '@/hooks/use-lookup'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -16,6 +16,7 @@ import { EmptyState } from '@/components/feedback/EmptyState'
 import { ErrorState } from '@/components/feedback/ErrorState'
 import { RefreshButton } from '@/components/feedback/RefreshButton'
 import { cn } from '@/lib/utils'
+import type { QueueStatsRow } from '@/lib/types'
 
 interface ErrorRow {
   type: 'event' | 'delivery'
@@ -55,8 +56,14 @@ export default function DashboardPage() {
     queryFn: () => getDashboardStats(),
   })
 
-  const sourceOptions = useSourceOptions()
-  const destinationOptions = useDestinationOptions()
+  // River queue health: river_job counts by queue and state
+  const queueQuery = useQuery({
+    queryKey: ['dashboard', 'queue-stats'],
+    queryFn: () => getQueueStats(),
+  })
+
+  const endpointOptions = useEndpointOptions()
+  const channelOptions = useChannelOptions()
 
   const stats = statsQuery.data
   const statsValues = [
@@ -71,7 +78,7 @@ export default function DashboardPage() {
     const eventErrors: ErrorRow[] = (stats?.recent_failed_events ?? []).map((e) => ({
       type: 'event',
       id: e.id,
-      refId: e.source_id,
+      refId: e.endpoint_id,
       status: e.status,
       error: e.error_summary ?? e.error_code ?? '',
       createdAt: e.received_at ?? '',
@@ -79,7 +86,7 @@ export default function DashboardPage() {
     const deliveryErrors: ErrorRow[] = (stats?.recent_failed_deliveries ?? []).map((d) => ({
       type: 'delivery',
       id: d.id,
-      refId: d.destination_id,
+      refId: d.channel_id,
       status: d.status,
       error: d.last_error_summary ?? d.last_error_code ?? '',
       createdAt: d.created_at ?? '',
@@ -91,7 +98,34 @@ export default function DashboardPage() {
 
   function refreshAll() {
     void statsQuery.refetch()
+    void queueQuery.refetch()
   }
+
+  // Group river_job rows by queue for the queue-health card
+  const queueGroups = useMemo(() => {
+    const rows = queueQuery.data?.queues ?? []
+    const byQueue = new Map<string, QueueStatsRow[]>()
+    for (const row of rows) {
+      const list = byQueue.get(row.queue) ?? []
+      list.push(row)
+      byQueue.set(row.queue, list)
+    }
+    return [...byQueue.entries()].map(([queue, states]) => ({
+      queue,
+      states: states.filter((s) => s.count > 0),
+    }))
+  }, [queueQuery.data])
+
+  // Stats scope: terminal-state counts roll off after River's retention
+  // window, so the card is labeled "last 24h" etc.
+  const queueWindow = useMemo(() => {
+    const s = queueQuery.data?.retention_seconds
+    if (!s || s <= 0) return ''
+    if (s < 3600) {
+      return t('dashboard.queueWindowMinutes', { n: Math.max(1, Math.round(s / 60)) })
+    }
+    return t('dashboard.queueWindowHours', { n: Math.max(1, Math.round(s / 3600)) })
+  }, [queueQuery.data?.retention_seconds, t])
 
   const errorsLoading = statsQuery.isPending
   const errorsFailed = statsQuery.isError ? statsQuery : undefined
@@ -126,6 +160,49 @@ export default function DashboardPage() {
         ))}
       </div>
 
+      {/* Queue health (River job counts) */}
+      <div className="rounded-lg border">
+        <div className="flex items-center justify-between border-b px-4 py-3">
+          <h2 className="flex items-center gap-2 text-sm font-semibold">
+            <ListChecks className="size-4 text-muted-foreground" />
+            {t('dashboard.queueStats')}
+            {queueWindow && (
+              <span className="text-xs font-normal text-muted-foreground">{queueWindow}</span>
+            )}
+          </h2>
+          <RefreshButton
+            variant="ghost"
+            label={t('dashboard.refresh')}
+            onClick={() => void queueQuery.refetch()}
+            loading={queueQuery.isFetching}
+          />
+        </div>
+        <div className="space-y-2 px-4 py-3">
+          {queueQuery.isPending ? (
+            <p className="text-sm text-muted-foreground">…</p>
+          ) : queueGroups.length === 0 ? (
+            <p className="text-sm text-muted-foreground">{t('dashboard.queueIdle')}</p>
+          ) : (
+            queueGroups.map(({ queue, states }) => (
+              <div key={queue} className="flex flex-wrap items-center gap-2">
+                <span className="min-w-20 text-sm text-muted-foreground">
+                  {t(`dashboard.queueName.${queue}`, { defaultValue: queue })}
+                </span>
+                {states.map((s) => (
+                  <span
+                    key={s.state}
+                    className="inline-flex items-center gap-1.5 rounded-md bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+                  >
+                    {t(`enums.queueState.${s.state}`, { defaultValue: s.state })}
+                    <span className="text-foreground tabular-nums">{s.count}</span>
+                  </span>
+                ))}
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
       {/* Recent errors */}
       <div className="rounded-lg border">
         <div className="flex items-center justify-between border-b px-4 py-3">
@@ -157,7 +234,7 @@ export default function DashboardPage() {
               <TableRow>
                 <TableHead className="w-20">{t('common.type')}</TableHead>
                 <TableHead className="min-w-40">{t('common.id')}</TableHead>
-                <TableHead className="min-w-32">{t('dashboard.sourceOrTarget')}</TableHead>
+                <TableHead className="min-w-32">{t('dashboard.endpointOrTarget')}</TableHead>
                 <TableHead className="w-28">{t('common.status')}</TableHead>
                 <TableHead className="min-w-48">{t('common.error')}</TableHead>
                 <TableHead className="min-w-36">{t('common.time')}</TableHead>
@@ -187,8 +264,8 @@ export default function DashboardPage() {
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {row.type === 'event'
-                      ? lookupName(sourceOptions.data, row.refId)
-                      : lookupName(destinationOptions.data, row.refId)}
+                      ? lookupName(endpointOptions.data, row.refId)
+                      : lookupName(channelOptions.data, row.refId)}
                   </TableCell>
                   <TableCell>
                     <StatusBadge kind={row.type} status={row.status} />

@@ -25,55 +25,55 @@ const diunPayload = JSON.stringify({
   manifest: { digest: 'sha256:abc' },
 })
 const fields = [
-  { source_path: 'image', target_key: 'image', value_type: 'string', required: true },
-  { source_path: 'manifest.digest', target_key: 'digest', value_type: 'string' },
-  { source_path: 'status', target_key: 'status', value_type: 'string' },
+  { payload_path: 'image', target_key: 'image', value_type: 'string', required: true },
+  { payload_path: 'manifest.digest', target_key: 'digest', value_type: 'string' },
+  { payload_path: 'status', target_key: 'status', value_type: 'string' },
 ]
 const mapped = applyMapping(diunPayload, fields as never)
 check('mapping basic', mapped.parsed_fields, { image: 'nginx:1.27', digest: 'sha256:abc', status: 'new' })
 check('mapping no errors', mapped.validation_errors, [])
 
 const missing = applyMapping(JSON.stringify({ status: 'new' }), [
-  { source_path: 'image', target_key: 'image', value_type: 'string', required: true },
+  { payload_path: 'image', target_key: 'image', value_type: 'string', required: true },
 ] as never)
 check('mapping required error', missing.validation_errors[0]?.code, 'PARSE_002')
 
 const multi = applyMapping(diunPayload, [
-  { source_path: 'status', target_key: 's', value_type: 'string', transform: 'to_upper' },
+  { payload_path: 'status', target_key: 's', value_type: 'string', transform: 'to_upper' },
 ] as never)
 check('transform', multi.parsed_fields.s, 'NEW')
 
 // root array + count + join
 const arrPayload = JSON.stringify([{ name: 'a' }, { name: 'b' }])
 const arrMapped = applyMapping(arrPayload, [
-  { source_path: '#', target_key: 'items', value_type: 'array', multi_result_mode: 'array' },
-  { source_path: '#', target_key: 'count', value_type: 'number', multi_result_mode: 'count' },
-  { source_path: '#.name', target_key: 'names', value_type: 'string', multi_result_mode: 'join(, )' },
+  { payload_path: '#', target_key: 'items', value_type: 'array', multi_result_mode: 'array' },
+  { payload_path: '#', target_key: 'count', value_type: 'number', multi_result_mode: 'count' },
+  { payload_path: '#.name', target_key: 'names', value_type: 'string', multi_result_mode: 'join(, )' },
 ] as never)
 check('root array mapping', arrMapped.parsed_fields, { items: [{ name: 'a' }, { name: 'b' }], count: 2, names: 'a, b' })
 
 // ── analyzePayload ───────────────────────────────────────
 const parsed = analyzePayload(arrPayload)
 check('array structure', parsed.structure, { type: 'array', root_is_array: true, item_count: 2 })
-check('array field paths', parsed.suggested_fields.map((f) => f.source_path), ['#', '#', '#.name'])
+check('array field paths', parsed.suggested_fields.map((f) => f.payload_path), ['#', '#', '#.name'])
 
 const objParsed = analyzePayload(diunPayload)
 check('object structure', objParsed.structure, { type: 'object', root_is_array: false, item_count: 5 })
-check('object suggestions', objParsed.suggested_fields.map((f) => `${f.source_path}:${f.target_key}`), [
+check('object suggestions', objParsed.suggested_fields.map((f) => `${f.payload_path}:${f.target_key}`), [
   'hostname:hostname', 'status:status', 'image:image', 'provider:provider', 'manifest.digest:digests',
 ])
 
 // ── buildSeed consistency ─────────────────────────────────
 const seed = buildSeed()
-check('seed sources', seed.sources.length, 2)
+check('seed endpoints', seed.endpoints.length, 2)
 check('seed events count', seed.events.length, 15)
 // every completed event has a run; every delivery's event exists
 const eventIds = new Set(seed.events.map((e) => e.id))
 check('delivery events exist', seed.deliveries.every((d) => eventIds.has(d.event_id)), true)
-const destIds = new Set(seed.destinations.map((d) => d.id))
-check('delivery dests exist', seed.deliveries.every((d) => destIds.has(d.destination_id)), true)
-// every completed diun event fanned out to both rule destinations
-const completedDiun = seed.events.filter((e) => e.source_id === 'src-diun' && e.status === 'completed')
+const destIds = new Set(seed.channels.map((d) => d.id))
+check('delivery dests exist', seed.deliveries.every((d) => destIds.has(d.channel_id)), true)
+// every completed diun event fanned out to both rule channels
+const completedDiun = seed.events.filter((e) => e.endpoint_id === 'src-diun' && e.status === 'completed')
 check('fanout coverage', completedDiun.every(
   (e) => seed.deliveries.filter((d) => d.event_id === e.id).length === 2,
 ), true)
@@ -92,7 +92,7 @@ check('status mix', [
 
 // template from seed renders against its own parsed fields
 const tmpl = seed.templates[0]
-const run = seed.eventRuns.find((r) => r.event_id === seed.events.find((e) => e.source_id === 'src-diun' && e.status === 'completed')!.id)!
+const run = seed.eventRuns.find((r) => r.event_id === seed.events.find((e) => e.endpoint_id === 'src-diun' && e.status === 'completed')!.id)!
 const title = renderTemplate(tmpl.title_template, run.parsed_fields)
 check('seed template renders', title.startsWith('镜像更新: '), true)
 console.log('  sample:', title)
@@ -112,7 +112,7 @@ const { demoRequest } = await import('../src/lib/demo/handler.ts')
 const login = await demoRequest<{ token: string }>('POST', '/api/v1/auth/login', { username: 'demo', password: 'x' })
 check('login token', typeof login.token === 'string' && login.token.startsWith('demo-'), true)
 
-const list = await demoRequest<{ data: unknown[]; total: number }>('GET', '/api/v1/destinations', undefined, { page: 1, size: 20 })
+const list = await demoRequest<{ data: unknown[]; total: number }>('GET', '/api/v1/channels', undefined, { page: 1, size: 20 })
 check('dest list', [list.total, list.data.length], [4, 4])
 
 const evtDetail = await demoRequest<{ event: { id: string }; latest_run: { matched_rule_ids: string[] } }>('GET', '/api/v1/events/evt-0001', undefined, {})
@@ -124,16 +124,16 @@ check('delivery filter', dlyList.total, 1)
 const stats = await demoRequest<{ total_events: number; failed_deliveries: number }>('GET', '/api/v1/dashboard/stats')
 check('dashboard', [stats.total_events, stats.failed_deliveries], [15, 1])
 
-const created = await demoRequest<{ id: string; slug: string; revision: number }>('POST', '/api/v1/sources', {
-  name: 'test source', auth_type: 'none', mapping_id: null, enabled: true,
+const created = await demoRequest<{ id: string; slug: string; revision: number }>('POST', '/api/v1/endpoints', {
+  name: 'test endpoint', auth_type: 'none', mapping_id: null, enabled: true,
 })
-check('create source', [created.slug.length, created.revision], [32, 1])
+check('create endpoint', [created.slug.length, created.revision], [32, 1])
 
-const updated = await demoRequest<{ enabled: boolean; revision: number }>('PUT', `/api/v1/sources/${created.id}`, { enabled: false })
-check('update source', [updated.enabled, updated.revision], [false, 2])
+const updated = await demoRequest<{ enabled: boolean; revision: number }>('PUT', `/api/v1/endpoints/${created.id}`, { enabled: false })
+check('update endpoint', [updated.enabled, updated.revision], [false, 2])
 
-const removed = await demoRequest<void>('DELETE', `/api/v1/sources/${created.id}`)
-check('delete source', removed, undefined)
+const removed = await demoRequest<void>('DELETE', `/api/v1/endpoints/${created.id}`)
+check('delete endpoint', removed, undefined)
 
 const failedList = await demoRequest<{ data: Array<{ id: string }> }>('GET', '/api/v1/deliveries', undefined, { status: 'failed' })
 const retried = await demoRequest<{ delivery: { status: string }; message: string }>('POST', `/api/v1/deliveries/${failedList.data[0].id}/retry`)

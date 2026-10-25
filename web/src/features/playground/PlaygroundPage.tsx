@@ -43,7 +43,7 @@ const MULTI_MODES = ['first', 'join(, )', 'array', 'count'] as const
 const FORMATS = ['text', 'markdown', 'html'] as const
 
 interface FieldRow {
-  source_path: string
+  payload_path: string
   target_key: string
   value_type: string
   multi_result_mode: string | null
@@ -58,7 +58,7 @@ interface TemplateForm {
 }
 
 const emptyField: FieldRow = {
-  source_path: '',
+  payload_path: '',
   target_key: '',
   value_type: 'string',
   multi_result_mode: null,
@@ -69,7 +69,7 @@ const emptyField: FieldRow = {
 /** Same key logic as the mappings smart-import list ('first' is the default mode). */
 function suggestionKey(sf: SuggestedField): string {
   const mode = sf.multi_result_mode && sf.multi_result_mode !== 'first' ? sf.multi_result_mode : ''
-  return sf.source_path + mode
+  return sf.payload_path + mode
 }
 
 function valueTypeBadgeVariant(valueType: string): 'secondary' | 'outline' | 'default' | 'destructive' {
@@ -124,21 +124,21 @@ export default function PlaygroundPage() {
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false)
   const [templateName, setTemplateName] = useState('')
 
-  // Track which source_path+mode combos are already added
+  // Track which payload_path+mode combos are already added
   const addedKeys = useMemo(() => {
     const s = new Set<string>()
     for (const f of mappingFields) {
       const mode = f.multi_result_mode && f.multi_result_mode !== 'first' ? f.multi_result_mode : ''
-      s.add(f.source_path + mode)
+      s.add(f.payload_path + mode)
     }
     return s
   }, [mappingFields])
 
   function buildMappingEntries(): MappingEntry[] {
     return mappingFields
-      .filter((f) => f.source_path !== '' || f.target_key !== '')
+      .filter((f) => f.payload_path !== '' || f.target_key !== '')
       .map((f) => ({
-        source_path: f.source_path,
+        payload_path: f.payload_path,
         target_key: f.target_key,
         value_type: f.value_type || 'string',
         multi_result_mode: f.multi_result_mode || null,
@@ -308,7 +308,7 @@ export default function PlaygroundPage() {
     setMappingFields((prev) => [
       ...prev,
       {
-        source_path: sf.source_path,
+        payload_path: sf.payload_path,
         target_key: sf.target_key,
         value_type: sf.value_type || 'string',
         multi_result_mode: sf.multi_result_mode || null,
@@ -401,11 +401,11 @@ export default function PlaygroundPage() {
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <span className="w-40 shrink-0 truncate font-medium text-primary">
-                            {sf.source_path}
+                            {sf.payload_path}
                           </span>
                         </TooltipTrigger>
                         <TooltipContent className="max-w-md">
-                          <p className="break-all">{sf.source_path}</p>
+                          <p className="break-all">{sf.payload_path}</p>
                         </TooltipContent>
                       </Tooltip>
                       <Badge variant={valueTypeBadgeVariant(sf.value_type)}>
@@ -476,14 +476,14 @@ export default function PlaygroundPage() {
 
                     <div className="grid gap-3 sm:grid-cols-2">
                       <div className="space-y-1.5">
-                        <Label htmlFor={`field-source-${index}`} className="text-xs">
-                          {t('playground.sourcePath')}
+                        <Label htmlFor={`field-endpoint-${index}`} className="text-xs">
+                          {t('playground.payloadPath')}
                         </Label>
                         <Input
-                          id={`field-source-${index}`}
-                          value={field.source_path}
-                          onChange={(e) => updateField(index, { source_path: e.target.value })}
-                          placeholder={t('mappings.sourcePathPlaceholder')}
+                          id={`field-endpoint-${index}`}
+                          value={field.payload_path}
+                          onChange={(e) => updateField(index, { payload_path: e.target.value })}
+                          placeholder={t('mappings.payloadPathPlaceholder')}
                           className="font-mono text-xs"
                         />
                       </div>

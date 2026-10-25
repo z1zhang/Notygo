@@ -40,6 +40,7 @@ import { Pagination } from '@/components/data-display/Pagination'
 import { EmptyState } from '@/components/feedback/EmptyState'
 import { ErrorState } from '@/components/feedback/ErrorState'
 import { TableSkeleton } from '@/components/data-display/TableSkeleton'
+import { OverflowBadges } from '@/components/data-display/OverflowBadges'
 import { ConfirmDialog } from '@/components/feedback/ConfirmDialog'
 import { RefreshButton } from '@/components/feedback/RefreshButton'
 import { MultiSelect } from '@/components/form/MultiSelect'
@@ -65,7 +66,7 @@ const mappingSchema = z.object({
 type MappingForm = z.infer<typeof mappingSchema>
 
 interface FieldRow {
-  source_path: string
+  payload_path: string
   target_key: string
   value_type: string
   default_value: string
@@ -75,11 +76,11 @@ interface FieldRow {
   description: string
 }
 
-type FieldErrors = Record<number, { source_path?: boolean; target_key?: boolean }>
+type FieldErrors = Record<number, { payload_path?: boolean; target_key?: boolean }>
 
 function createEmptyField(): FieldRow {
   return {
-    source_path: '',
+    payload_path: '',
     target_key: '',
     value_type: 'string',
     default_value: '',
@@ -93,7 +94,7 @@ function createEmptyField(): FieldRow {
 /** 'first' is the default multi-result mode — equivalent to null/empty. */
 function suggestionKey(sf: SuggestedField): string {
   const mode = sf.multi_result_mode && sf.multi_result_mode !== 'first' ? sf.multi_result_mode : ''
-  return sf.source_path + mode
+  return sf.payload_path + mode
 }
 
 function valueTypeBadgeVariant(valueType: string): 'secondary' | 'outline' | 'default' | 'destructive' {
@@ -148,9 +149,9 @@ export default function MappingsPage() {
 
   function buildPayloadFields() {
     return fields
-      .filter((f) => f.source_path || f.target_key)
+      .filter((f) => f.payload_path || f.target_key)
       .map((f) => ({
-        source_path: f.source_path,
+        payload_path: f.payload_path,
         target_key: f.target_key,
         value_type: f.value_type || 'string',
         default_value: f.default_value || null,
@@ -233,7 +234,7 @@ export default function MappingsPage() {
     setRuleIds((row.rule_ids ?? []) as string[])
     setFields(
       (row.fields ?? []).map((f) => ({
-        source_path: f.source_path,
+        payload_path: f.payload_path,
         target_key: f.target_key,
         value_type: normalizeValueType(f.value_type),
         default_value: f.default_value ?? '',
@@ -253,11 +254,11 @@ export default function MappingsPage() {
     setFieldErrors((prev) => {
       if (!prev[index]) return prev
       const next = { ...prev }
-      if (patch.source_path !== undefined || patch.target_key !== undefined) {
+      if (patch.payload_path !== undefined || patch.target_key !== undefined) {
         const entry = { ...next[index] }
-        if (patch.source_path !== undefined) delete entry.source_path
+        if (patch.payload_path !== undefined) delete entry.payload_path
         if (patch.target_key !== undefined) delete entry.target_key
-        if (entry.source_path || entry.target_key) {
+        if (entry.payload_path || entry.target_key) {
           next[index] = entry
         } else {
           delete next[index]
@@ -288,7 +289,7 @@ export default function MappingsPage() {
     setFields((prev) => [
       ...prev,
       {
-        source_path: sf.source_path,
+        payload_path: sf.payload_path,
         target_key: sf.target_key,
         value_type: normalizeValueType(sf.value_type),
         default_value: '',
@@ -303,14 +304,14 @@ export default function MappingsPage() {
   function addAllSuggestions() {
     const existing = new Set(fields.map((f) => {
       const mode = f.multi_result_mode && f.multi_result_mode !== 'first' ? f.multi_result_mode : ''
-      return f.source_path + mode
+      return f.payload_path + mode
     }))
     const toAdd = suggestions.filter((sf) => !existing.has(suggestionKey(sf)))
     if (toAdd.length === 0) return
     setFields((prev) => [
       ...prev,
       ...toAdd.map((sf) => ({
-        source_path: sf.source_path,
+        payload_path: sf.payload_path,
         target_key: sf.target_key,
         value_type: normalizeValueType(sf.value_type),
         default_value: '',
@@ -338,10 +339,10 @@ export default function MappingsPage() {
     // Rows that are partially filled must be completed before saving
     const errs: FieldErrors = {}
     fields.forEach((f, i) => {
-      const hasSource = f.source_path.trim() !== ''
+      const hasEndpoint = f.payload_path.trim() !== ''
       const hasTarget = f.target_key.trim() !== ''
-      if ((hasSource || hasTarget) && (!hasSource || !hasTarget)) {
-        errs[i] = { source_path: !hasSource || undefined, target_key: !hasTarget || undefined }
+      if ((hasEndpoint || hasTarget) && (!hasEndpoint || !hasTarget)) {
+        errs[i] = { payload_path: !hasEndpoint || undefined, target_key: !hasTarget || undefined }
       }
     })
     if (Object.keys(errs).length > 0) {
@@ -352,12 +353,12 @@ export default function MappingsPage() {
     saveMutation.mutate(values)
   }
 
-  // Track which source_path+mode combos are already added as fields
+  // Track which payload_path+mode combos are already added as fields
   const addedKeys = useMemo(() => {
     const s = new Set<string>()
     for (const f of fields) {
       const mode = f.multi_result_mode && f.multi_result_mode !== 'first' ? f.multi_result_mode : ''
-      s.add(f.source_path + mode)
+      s.add(f.payload_path + mode)
     }
     return s
   }, [fields])
@@ -413,15 +414,15 @@ export default function MappingsPage() {
                 <TableHead>{t('common.name')}</TableHead>
                 <TableHead className="w-24">{t('mappings.revision')}</TableHead>
                 <TableHead className="w-24">{t('mappings.fieldsCount')}</TableHead>
-                <TableHead className="min-w-40">{t('mappings.rules')}</TableHead>
-                <TableHead className="w-24 text-right">{t('common.actions')}</TableHead>
+                <TableHead className="w-full min-w-24">{t('mappings.rules')}</TableHead>
+                <TableHead className="sticky right-0 z-20 w-20 bg-background text-right">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.map((row) => {
                 const ruleIdList = (row.rule_ids ?? []) as string[]
                 return (
-                  <TableRow key={row.id}>
+                  <TableRow key={row.id} className="group">
                     <TableCell className="text-muted-foreground">{row.name}</TableCell>
                     <TableCell className="text-muted-foreground">{row.revision}</TableCell>
                     <TableCell>
@@ -429,25 +430,20 @@ export default function MappingsPage() {
                     </TableCell>
                     <TableCell>
                       {ruleIdList.length > 0 ? (
-                        <span className="inline-flex flex-wrap items-center gap-1">
-                          {ruleIdList.slice(0, 3).map((rId) => (
-                            <Badge key={rId} variant="secondary" className="max-w-40">
-                              <span className="truncate">{lookupName(ruleOptions.data, rId)}</span>
-                            </Badge>
-                          ))}
-                          {ruleIdList.length > 3 ? (
-                            <Badge variant="secondary">+{ruleIdList.length - 3}</Badge>
-                          ) : null}
-                        </span>
+                        <OverflowBadges
+                          items={ruleIdList}
+                          nameOf={(id) => lookupName(ruleOptions.data, id)}
+                        />
                       ) : (
                         <span className="text-muted-foreground">-</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="sticky right-0 z-10 bg-background text-right group-hover:bg-muted/50">
                       <div className="flex justify-end gap-1">
                         <Button
                           variant="ghost"
                           size="icon-sm"
+                          className="size-7"
                           onClick={() => openEdit(row)}
                           aria-label={t('common.edit')}
                         >
@@ -456,7 +452,7 @@ export default function MappingsPage() {
                         <Button
                           variant="ghost"
                           size="icon-sm"
-                          className="text-destructive hover:text-destructive"
+                          className="size-7 text-destructive hover:text-destructive"
                           onClick={() => setDeleteTarget(row)}
                           aria-label={t('common.delete')}
                         >
@@ -617,7 +613,7 @@ export default function MappingsPage() {
                           const added = addedKeys.has(suggestionKey(sf))
                           return (
                             <div
-                              key={sf.source_path + (sf.multi_result_mode || '')}
+                              key={sf.payload_path + (sf.multi_result_mode || '')}
                               className={cn(
                                 'flex items-center gap-2 border-b px-2.5 py-1.5 text-sm last:border-b-0',
                                 added && 'opacity-50',
@@ -626,11 +622,11 @@ export default function MappingsPage() {
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   <span className="w-40 shrink-0 truncate font-medium text-primary">
-                                    {sf.source_path}
+                                    {sf.payload_path}
                                   </span>
                                 </TooltipTrigger>
                                 <TooltipContent className="max-w-md">
-                                  <p className="break-all">{sf.source_path}</p>
+                                  <p className="break-all">{sf.payload_path}</p>
                                 </TooltipContent>
                               </Tooltip>
                               <Badge variant={valueTypeBadgeVariant(sf.value_type)}>
@@ -710,7 +706,7 @@ export default function MappingsPage() {
                         type="button"
                         variant="ghost"
                         size="sm"
-                        className="text-destructive hover:text-destructive"
+                        className="size-7 text-destructive hover:text-destructive"
                         onClick={() => removeField(index)}
                       >
                         <Trash2 />
@@ -721,16 +717,16 @@ export default function MappingsPage() {
 
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div className="space-y-2">
-                      <Label htmlFor={`field-source-${index}`}>{t('mappings.sourcePath')}</Label>
+                      <Label htmlFor={`field-endpoint-${index}`}>{t('mappings.payloadPath')}</Label>
                       <Input
-                        id={`field-source-${index}`}
-                        placeholder={t('mappings.sourcePathPlaceholder')}
-                        aria-invalid={errors?.source_path === true}
-                        value={field.source_path}
-                        onChange={(e) => updateField(index, { source_path: e.target.value })}
+                        id={`field-endpoint-${index}`}
+                        placeholder={t('mappings.payloadPathPlaceholder')}
+                        aria-invalid={errors?.payload_path === true}
+                        value={field.payload_path}
+                        onChange={(e) => updateField(index, { payload_path: e.target.value })}
                       />
-                      {errors?.source_path ? (
-                        <p className="text-xs text-destructive">{t('mappings.sourcePathRequired')}</p>
+                      {errors?.payload_path ? (
+                        <p className="text-xs text-destructive">{t('mappings.payloadPathRequired')}</p>
                       ) : null}
                     </div>
                     <div className="space-y-2">

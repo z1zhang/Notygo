@@ -7,7 +7,7 @@ import { getDelivery, retryDelivery } from "@/lib/api"
 import { getErrorMessage } from "@/lib/api-client"
 import { formatTime } from "@/lib/formatters"
 import type { DeliveryAttemptResponse } from "@/lib/types"
-import { lookupName, useDestinationOptions } from "@/hooks/use-lookup"
+import { lookupName, useChannelOptions } from "@/hooks/use-lookup"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { DetailList, DetailSection } from "@/components/data-display/DetailList"
@@ -111,7 +111,7 @@ function AttemptRow({
 export function DeliveryDetailSheet({ deliveryId, onClose }: DeliveryDetailSheetProps) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const destinationOptions = useDestinationOptions()
+  const channelOptions = useChannelOptions()
   const [confirmRetry, setConfirmRetry] = useState(false)
   const [expandedAttemptId, setExpandedAttemptId] = useState<string | null>(null)
 
@@ -189,8 +189,8 @@ export function DeliveryDetailSheet({ deliveryId, onClose }: DeliveryDetailSheet
                   value: <StatusBadge kind="delivery" status={delivery.status} />,
                 },
                 {
-                  label: t("deliveries.destination"),
-                  value: lookupName(destinationOptions.data, delivery.destination_id),
+                  label: t("deliveries.channel"),
+                  value: lookupName(channelOptions.data, delivery.channel_id),
                 },
                 {
                   label: t("deliveries.eventId"),

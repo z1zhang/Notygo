@@ -15,7 +15,7 @@ import type {
 // ── Path lookup (gjson subset) ───────────────────────────
 
 /**
- * Resolve a source_path against a parsed payload. Supported: plain dot paths
+ * Resolve a payload_path against a parsed payload. Supported: plain dot paths
  * ("a.b.c"), numeric array indexes ("a.0.b"), "#" (root array) and
  * "#.field" (collect the field from every array element).
  */
@@ -55,7 +55,7 @@ function walk(node: unknown, segments: string[]): unknown {
 // ── POST /preview/mapping ────────────────────────────────
 
 export interface DemoMappingEntry {
-  source_path: string
+  payload_path: string
   target_key: string
   value_type?: string | null
   default_value?: string | null
@@ -87,7 +87,7 @@ export function applyMapping(
 
 function applyEntry(entry: DemoMappingEntry, root: unknown): EntryOutcome {
   const errors: ValidationErrorItem[] = []
-  const { exists, value } = getPath(root, entry.source_path ?? '')
+  const { exists, value } = getPath(root, entry.payload_path ?? '')
 
   // Missing or null → default value, or required error
   if (!exists || value === null) {
@@ -98,7 +98,7 @@ function applyEntry(entry: DemoMappingEntry, root: unknown): EntryOutcome {
       errors.push({
         field: entry.target_key,
         code: 'PARSE_002',
-        detail: `required field "${entry.target_key}" not found at path "${entry.source_path}"`,
+        detail: `required field "${entry.target_key}" not found at path "${entry.payload_path}"`,
       })
     }
     return { val: undefined, errors }
@@ -230,14 +230,14 @@ export function analyzePayload(payloadRaw: string): PreviewParseResponse {
   if (Array.isArray(root)) {
     const fields = [
       {
-        source_path: '#',
+        payload_path: '#',
         target_key: 'items',
         value_type: 'array',
         multi_result_mode: 'array',
         sample_value: `[${root.length} items]`,
       },
       {
-        source_path: '#',
+        payload_path: '#',
         target_key: 'item_count',
         value_type: 'number',
         multi_result_mode: 'count',
@@ -285,7 +285,7 @@ function walkArrayObject(
     }
     if (Array.isArray(val)) {
       fields.push({
-        source_path: fieldPath,
+        payload_path: fieldPath,
         target_key: autoTargetKey(fieldPath),
         value_type: 'array',
         multi_result_mode: 'array',
@@ -301,7 +301,7 @@ function walkArrayObject(
       .filter((v) => v !== undefined)
     if (vt === 'string') {
       fields.push({
-        source_path: fieldPath,
+        payload_path: fieldPath,
         target_key: autoTargetKey(fieldPath),
         value_type: 'string',
         multi_result_mode: 'join(, )',
@@ -309,7 +309,7 @@ function walkArrayObject(
       })
     } else {
       fields.push({
-        source_path: fieldPath,
+        payload_path: fieldPath,
         target_key: autoTargetKey(fieldPath),
         value_type: 'array',
         multi_result_mode: 'array',
@@ -336,7 +336,7 @@ function analyzeObject(
       // Scalar arrays suggest join (string); object arrays stay array
       if (val.length > 0 && !isPlainObject(val[0]) && !Array.isArray(val[0])) {
         fields.push({
-          source_path: fieldPath,
+          payload_path: fieldPath,
           target_key: autoTargetKey(fieldPath),
           value_type: 'string',
           multi_result_mode: 'join(, )',
@@ -344,7 +344,7 @@ function analyzeObject(
         })
       } else {
         fields.push({
-          source_path: fieldPath,
+          payload_path: fieldPath,
           target_key: autoTargetKey(fieldPath),
           value_type: 'array',
           multi_result_mode: 'array',
@@ -354,7 +354,7 @@ function analyzeObject(
       continue
     }
     fields.push({
-      source_path: fieldPath,
+      payload_path: fieldPath,
       target_key: autoTargetKey(fieldPath),
       value_type: inferType(val),
       multi_result_mode: null,
@@ -374,8 +374,8 @@ function inferType(val: unknown): string {
 }
 
 // "image.name" → "image_name", "#.name" → "names" (mirror of autoTargetKey)
-function autoTargetKey(sourcePath: string): string {
-  const s = sourcePath.replace(/^#/, '').replace(/^\./, '')
+function autoTargetKey(payloadPath: string): string {
+  const s = payloadPath.replace(/^#/, '').replace(/^\./, '')
   if (s === '') return 'value'
   const parts = s.split('.')
   if (parts.length === 1) return parts[0]
@@ -388,7 +388,7 @@ function autoTargetKey(sourcePath: string): string {
   } else {
     leaf += 's'
   }
-  if (sourcePath.startsWith('#')) {
+  if (payloadPath.startsWith('#')) {
     return `${parts[parts.length - 2]}_${leaf}`
   }
   return leaf
@@ -402,19 +402,19 @@ type Node =
   | { type: 'range'; pipeline: string; body: Node[] }
 
 /** Render a Go text/template subset: {{ .field }}, funcs, {{ range }}/{{ end }}, trim markers. */
-export function renderTemplate(source: string, data: Record<string, unknown>): string {
-  const nodes = parseTemplate(source)
+export function renderTemplate(template: string, data: Record<string, unknown>): string {
+  const nodes = parseTemplate(template)
   return execNodes(nodes, data, data)
 }
 
-function parseTemplate(source: string): Node[] {
+function parseTemplate(template: string): Node[] {
   const re = /\{\{(-?)\s*([\s\S]*?)\s*(-?)\}\}/g
   const parts: { text?: string; action?: string }[] = []
   let last = 0
   let trimNext = false
   let m: RegExpExecArray | null
-  while ((m = re.exec(source)) !== null) {
-    let text = source.slice(last, m.index)
+  while ((m = re.exec(template)) !== null) {
+    let text = template.slice(last, m.index)
     if (m[1] === '-') text = text.replace(/\s+$/, '')
     if (trimNext) text = text.replace(/^\s+/, '')
     if (text !== '') parts.push({ text })
@@ -422,7 +422,7 @@ function parseTemplate(source: string): Node[] {
     parts.push({ action: m[2] })
     last = re.lastIndex
   }
-  let tail = source.slice(last)
+  let tail = template.slice(last)
   if (trimNext) tail = tail.replace(/^\s+/, '')
   if (tail !== '') parts.push({ text: tail })
 
