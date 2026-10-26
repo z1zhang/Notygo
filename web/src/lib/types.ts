@@ -17,7 +17,8 @@ export interface EndpointResponse {
   slug: string
   enabled: boolean
   auth_type: string
-  /** "configured" | "not_configured" marker from the server — never re-submit */
+  /** Decrypted secret from the server; "configured"/"not_configured" markers
+   *  only appear as fallbacks (decryption failure / nothing configured) */
   secret?: string | null
   payload_content_type: string
   max_body_bytes: number

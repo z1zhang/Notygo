@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -94,6 +94,8 @@ export default function EndpointsPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<EndpointResponse | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<EndpointResponse | null>(null)
+  // Server returns the DECRYPTED secret on edit — only re-submit when changed.
+  const originalSecretRef = useRef('')
 
   const listQuery = useQuery({
     queryKey: ['endpoints', page, size],
@@ -115,8 +117,8 @@ export default function EndpointsPage() {
         enabled: data.enabled,
         mapping_id: data.mapping_id || null,
       }
-      // Never re-submit the server-side "configured"/"not_configured" marker
-      if (data.auth_type !== 'none' && data.secret !== '') {
+      // Only re-submit the secret when it actually changed (blank = keep existing)
+      if (data.auth_type !== 'none' && data.secret !== '' && data.secret !== originalSecretRef.current) {
         payload.secret = data.secret
       }
       if (data.rate > 0 || data.burst > 0) {
@@ -139,7 +141,7 @@ export default function EndpointsPage() {
 
   const toggleMutation = useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
-      // Only send {enabled} — avoids re-posting the masked secret marker
+      // Only send {enabled} — minimal patch, keeps the secret untouched
       updateEndpoint(id, { enabled }),
     onSuccess: (_data, variables) => {
       toast.success(
@@ -172,18 +174,24 @@ export default function EndpointsPage() {
 
   function openCreate() {
     setEditing(null)
+    originalSecretRef.current = ''
     form.reset(defaultForm)
     setDialogOpen(true)
   }
 
   function openEdit(row: EndpointResponse) {
     setEditing(row)
+    // Server returns the decrypted secret; "configured"/"not_configured" are
+    // fallback markers (decryption failure / nothing configured) — not values.
+    const secret =
+      row.secret === 'configured' || row.secret === 'not_configured' ? '' : (row.secret ?? '')
+    originalSecretRef.current = secret
     form.reset({
       name: row.name,
       auth_type: (AUTH_TYPES.includes(row.auth_type as (typeof AUTH_TYPES)[number])
         ? row.auth_type
         : 'none') as EndpointForm['auth_type'],
-      secret: '', // server sends a marker; keep blank = keep existing
+      secret,
       maxBodyKb: Math.round((row.max_body_bytes ?? 1048576) / 1024),
       ...parseRateLimit(row.rate_limit),
       mapping_id: row.mapping_id ?? '',

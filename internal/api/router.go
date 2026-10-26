@@ -88,10 +88,10 @@ func NewRouter(
 
 			// Configuration CRUD
 			r.Route("/endpoints", func(r chi.Router) {
-				r.Get("/", ListEndpoints(db))
+				r.Get("/", ListEndpoints(db, secretSvc))
 				r.Post("/", CreateEndpoint(db, secretSvc, auditRepo))
 				r.Route("/{id}", func(r chi.Router) {
-					r.Get("/", GetEndpoint(db))
+					r.Get("/", GetEndpoint(db, secretSvc))
 					r.Put("/", UpdateEndpoint(db, secretSvc, auditRepo))
 					r.Delete("/", DeleteEndpoint(db, auditRepo))
 				})

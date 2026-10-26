@@ -2,9 +2,11 @@ package ingest
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -79,15 +81,7 @@ func (h *Ingester) HandleIngest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 4. Validate auth
-	if src.AuthType == "bearer" {
-		if err := h.validateBearerAuth(ctx, src, r); err != nil {
-			writeIngestError(w, http.StatusUnauthorized, "INGEST_001", "authentication failed")
-			return
-		}
-	}
-
-	// 5. Check rate limit
+	// 4. Check rate limit
 	endpointRateLimit := ""
 	if src.RateLimit != nil {
 		endpointRateLimit = *src.RateLimit
@@ -97,7 +91,7 @@ func (h *Ingester) HandleIngest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 6. Read body with size limit
+	// 5. Read body with size limit (must precede auth: HMAC signs the raw body)
 	maxBytes := h.maxBodyBytes
 	if src.MaxBodyBytes > 0 && src.MaxBodyBytes < maxBytes {
 		maxBytes = src.MaxBodyBytes
@@ -112,6 +106,20 @@ func (h *Ingester) HandleIngest(w http.ResponseWriter, r *http.Request) {
 		writeIngestError(w, http.StatusRequestEntityTooLarge, "INGEST_002",
 			fmt.Sprintf("payload exceeds maximum size of %d bytes", maxBytes))
 		return
+	}
+
+	// 6. Validate auth
+	switch src.AuthType {
+	case "bearer":
+		if err := h.validateBearerAuth(ctx, src, r); err != nil {
+			writeIngestError(w, http.StatusUnauthorized, "INGEST_001", "authentication failed")
+			return
+		}
+	case "hmac":
+		if err := h.validateHMACAuth(ctx, src, r, body); err != nil {
+			writeIngestError(w, http.StatusUnauthorized, "INGEST_001", "authentication failed")
+			return
+		}
 	}
 
 	// 7. Validate JSON
@@ -219,6 +227,39 @@ func (h *Ingester) validateBearerAuth(ctx context.Context, src *endpoint.Endpoin
 	// Constant-time comparison prevents leaking the secret via timing
 	if subtle.ConstantTimeCompare([]byte(token), []byte(decrypted)) != 1 {
 		return fmt.Errorf("invalid bearer token")
+	}
+
+	return nil
+}
+
+// validateHMACAuth checks the X-Signature header against an HMAC-SHA256 of the
+// raw request body, keyed by the endpoint's decrypted secret. The signature is
+// hex-encoded and may carry a "sha256=" prefix (GitHub webhook style).
+func (h *Ingester) validateHMACAuth(ctx context.Context, src *endpoint.Endpoint, r *http.Request, body []byte) error {
+	if src.EncryptedSecret == nil {
+		return fmt.Errorf("hmac auth required but no secret configured")
+	}
+
+	// Decrypt the stored secret
+	decrypted, err := h.secretSvc.Decrypt(*src.EncryptedSecret)
+	if err != nil {
+		return fmt.Errorf("failed to decrypt endpoint secret: %w", err)
+	}
+
+	sig := strings.TrimPrefix(r.Header.Get("X-Signature"), "sha256=")
+	if sig == "" {
+		return fmt.Errorf("missing X-Signature header")
+	}
+	given, err := hex.DecodeString(sig)
+	if err != nil {
+		return fmt.Errorf("invalid signature encoding")
+	}
+
+	// hmac.Equal is constant-time, preventing the secret from leaking via timing
+	mac := hmac.New(sha256.New, []byte(decrypted))
+	mac.Write(body)
+	if !hmac.Equal(mac.Sum(nil), given) {
+		return fmt.Errorf("invalid signature")
 	}
 
 	return nil

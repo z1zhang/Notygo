@@ -10,7 +10,7 @@
 --   run_type (both)      0=initial 1=replay
 --   notygo_deliveries.status    0=pending 1=retry_wait 2=processing 3=delivered 4=failed 5=skipped
 --   format (both)        0=text 1=markdown 2=html
---   notygo_endpoints.auth_type    0=none 1=bearer
+--   notygo_endpoints.auth_type    0=none 1=bearer 2=hmac
 -- The API and Go models keep the string names; conversion happens only at the
 -- repository layer.
 --

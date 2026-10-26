@@ -289,7 +289,7 @@ func truncateResponse(body string) string {
 
 // toChannelResponse converts a Channel to a ChannelResponse, masking the secret.
 func toChannelResponse(d *channel.Channel, secretSvc *secret.Service) channel.ChannelResponse {
-	maskedSecret := maskChannelSecret(d.EncryptedSecret, secretSvc)
+	maskedSecret := secretForDisplay(d.EncryptedSecret, secretSvc)
 	return channel.ChannelResponse{
 		ID:          d.ID,
 		Name:        d.Name,
@@ -305,11 +305,11 @@ func toChannelResponse(d *channel.Channel, secretSvc *secret.Service) channel.Ch
 	}
 }
 
-// maskChannelSecret returns the decrypted secret for display.
-// The frontend uses type="password" to mask it visually; the user can click
-// the eye icon to reveal the full value. Falls back to a status label if
-// decryption fails.
-func maskChannelSecret(ref *string, secretSvc *secret.Service) *string {
+// secretForDisplay returns the decrypted secret for display (channels and
+// endpoints share this). The frontend uses type="password" to mask it
+// visually; the user can click the eye icon to reveal the full value. Falls
+// back to a status label if decryption fails.
+func secretForDisplay(ref *string, secretSvc *secret.Service) *string {
 	if ref == nil || *ref == "" {
 		s := "not_configured"
 		return &s
