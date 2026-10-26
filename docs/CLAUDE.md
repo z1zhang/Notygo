@@ -102,7 +102,7 @@ deploy/              — docker-compose.yml
 
 - **API 契约**：类型与请求全部在 `src/lib/api.ts` / `types.ts`，页面不得直接 fetch
 - **认证**：Bearer token 存 localStorage（`token`/`expiresAt`），401 全局清除并跳转 /login
-- **密钥语义**：endpoints 返回 `secret_ref` 为 "configured"/"not_configured" 标记（绝不回传）；channels 返回解密明文（仅变更时提交）；启停开关 endpoints/channels 只发 `{enabled}`
+- **密钥语义**：endpoints 与 channels 均返回解密明文（前端用 `originalSecretRef` 记原值、仅变更时提交，留空 = 保持不变；"configured"/"not_configured" 标记仅作解密失败/未配置时的回退，前端要过滤）；启停开关 endpoints/channels 只发 `{enabled}`
 - **规则更新**：PUT /rules/{id} 校验 name，启停开关必须回传完整规则对象
 - **状态枚举**：event: received/processing/completed/deduped/failed；delivery: pending/processing/delivered/retry_wait/failed/dead_letter（dead_letter 不可重试）
 - **Markdown/HTML 渲染**：一律 DOMPurify.sanitize 后再 dangerouslySetInnerHTML
@@ -166,6 +166,18 @@ cd web && npx tsc -p tsconfig.app.json --noEmit  # 前端类型检查
 cd web && npm run build         # 前端生产构建（含 tsc -b）
 docker build -t Notygo .              # Docker 构建（web/ → web/dist）
 ```
+
+## UI e2e（web/scripts/ui-e2e/）
+
+Chrome-CDP 驱动真实页面的功能测试（endpoints/mappings/rules/templates 四脚本，endpoints 含数据面用例）。前置：Chrome 开 `--remote-debugging-port=9222`、服务跑在 :9003：
+
+```bash
+cd web && node scripts/ui-e2e/endpoints.mjs --pass <管理员密码>   # 其余参数 --base --user --cdp 可选
+```
+
+- 选择器锚定 zh 文案与 radix 结构；**ConfirmDialog 是 AlertDialog（role=alertdialog）**，编辑表单才是 role=dialog
+- 失败截图存 `scripts/ui-e2e/artifacts/`——**不要把截图读进上下文**（当前模型不支持图片输入），调试用 `locator.ariaSnapshot()` 输出文本
+- `npm run build` 后正在开的旧标签页要 F5；脚本自身已通过 CDP 禁用缓存免疫此问题
 
 ## 压测工具（test/load）
 

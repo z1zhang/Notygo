@@ -193,7 +193,14 @@ func serveFrontend(r chi.Router) {
 
 	// Serve static assets
 	fileServer := http.FileServer(http.Dir(distDir))
-	r.Handle("/assets/*", http.StripPrefix("/", fileServer))
+	// Assets are content-hashed (change → new filename), so they can be
+	// cached immutably. index.html must always revalidate: after a redeploy
+	// it references new chunk hashes, and a stale copy makes every lazy
+	// route fail with "Failed to fetch dynamically imported module".
+	r.Handle("/assets/*", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		http.StripPrefix("/", fileServer).ServeHTTP(w, req)
+	}))
 
 	indexPath := filepath.Join(distDir, "index.html")
 
@@ -204,6 +211,7 @@ func serveFrontend(r chi.Router) {
 			WriteError(w, http.StatusNotFound, "CONFIG_001", "endpoint not found")
 			return
 		}
+		w.Header().Set("Cache-Control", "no-cache")
 		// path.Clean anchored at "/" collapses "..", so rel never escapes distDir
 		rel := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
 		if rel != "" && isRegularFile(filepath.Join(distDir, filepath.FromSlash(rel))) {

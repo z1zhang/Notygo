@@ -690,7 +690,7 @@ export default function MappingsPage() {
                     <span className="text-sm font-medium">
                       {t('mappings.fieldNo', { n: index + 1 })}
                     </span>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-5">
                       <Label
                         htmlFor={`field-required-${index}`}
                         className="flex items-center gap-2 font-normal text-muted-foreground"
@@ -706,7 +706,7 @@ export default function MappingsPage() {
                         type="button"
                         variant="ghost"
                         size="sm"
-                        className="size-7 text-destructive hover:text-destructive"
+                        className="h-7 text-destructive hover:text-destructive"
                         onClick={() => removeField(index)}
                       >
                         <Trash2 />

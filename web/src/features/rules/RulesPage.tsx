@@ -92,7 +92,9 @@ const ruleSchema = z.object({
   mode: z.enum(['and', 'or']),
   conditions: z.array(
     z.object({
-      field: z.string(),
+      // A condition row with an empty field never matches anything — block it
+      // at submit (same semantics as mappings' partial-row check).
+      field: z.string().min(1),
       operator: z.string(),
       value: z.string(),
     }),
@@ -510,7 +512,7 @@ export default function RulesPage() {
                         type="button"
                         variant="ghost"
                         size="sm"
-                        className="size-7 text-destructive hover:text-destructive"
+                        className="h-7 text-destructive hover:text-destructive"
                         onClick={() => remove(index)}
                       >
                         {t('common.remove')}
@@ -527,6 +529,9 @@ export default function RulesPage() {
                           placeholder={t('rules.fieldPlaceholder')}
                           {...form.register(`conditions.${index}.field`)}
                         />
+                        {form.formState.errors.conditions?.[index]?.field ? (
+                          <p className="text-xs text-destructive">{t('rules.fieldRequired')}</p>
+                        ) : null}
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-xs">{t('rules.operator')}</Label>
