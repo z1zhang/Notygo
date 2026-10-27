@@ -15,6 +15,7 @@ import { ResizableSheet } from "@/components/data-display/ResizableSheet"
 import { StatusBadge } from "@/components/data-display/StatusBadge"
 import { TableSkeleton } from "@/components/data-display/TableSkeleton"
 import { CopyButton } from "@/components/data-display/CopyButton"
+import { OverflowBadges } from "@/components/data-display/OverflowBadges"
 import { TruncatedId } from "@/components/data-display/TruncatedId"
 import { EmptyState } from "@/components/feedback/EmptyState"
 import { ErrorState } from "@/components/feedback/ErrorState"
@@ -227,10 +228,11 @@ export function EventDetailSheet({ eventId, onClose }: EventDetailSheetProps) {
                         <TableRow key={rule.id}>
                           <TableCell className="text-muted-foreground">{rule.name}</TableCell>
                           <TableCell className="tabular-nums text-muted-foreground">{rule.priority}</TableCell>
-                          <TableCell className="text-muted-foreground">
-                            {rule.channels
-                              .map((id) => lookupName(channelOptions.data, id))
-                              .join(", ")}
+                          <TableCell>
+                            <OverflowBadges
+                              items={rule.channels}
+                              nameOf={(id) => lookupName(channelOptions.data, id)}
+                            />
                           </TableCell>
                         </TableRow>
                       ))}
