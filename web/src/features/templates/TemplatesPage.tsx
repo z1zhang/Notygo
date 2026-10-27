@@ -279,26 +279,26 @@ export default function TemplatesPage() {
             }
           />
         ) : (
-          <Table>
+          <Table className="min-w-[440px]">
             <TableHeader>
-              <TableRow>
-                <TableHead>{t('common.name')}</TableHead>
-                <TableHead className="w-28">{t('templates.format')}</TableHead>
+              <TableRow className="group">
+                <TableHead className="sticky left-0 z-20 bg-background group-hover:bg-[color-mix(in_oklab,var(--color-muted)_50%,var(--color-background))]">{t('common.name')}</TableHead>
+                <TableHead className="w-full min-w-28">{t('templates.format')}</TableHead>
                 <TableHead className="w-24">{t('mappings.revision')}</TableHead>
-                <TableHead className="sticky right-0 z-20 w-20 bg-background text-right">{t('common.actions')}</TableHead>
+                <TableHead className="sticky right-0 z-20 min-w-[108px] bg-background text-right group-hover:bg-[color-mix(in_oklab,var(--color-muted)_50%,var(--color-background))]">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.map((row) => (
                 <TableRow key={row.id} className="group">
-                  <TableCell className="text-muted-foreground">{row.name}</TableCell>
+                  <TableCell className="sticky left-0 z-10 bg-background text-muted-foreground group-hover:bg-[color-mix(in_oklab,var(--color-muted)_50%,var(--color-background))]">{row.name}</TableCell>
                   <TableCell>
                     <Badge variant="secondary">
                       {t(`enums.templateFormat.${row.format}`, { defaultValue: row.format })}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-muted-foreground">{row.revision}</TableCell>
-                  <TableCell className="sticky right-0 z-10 bg-background text-right group-hover:bg-muted/50">
+                  <TableCell className="sticky right-0 z-10 min-w-[108px] bg-background text-right group-hover:bg-[color-mix(in_oklab,var(--color-muted)_50%,var(--color-background))]">
                     <div className="flex justify-end gap-1">
                       <Button
                         variant="ghost"

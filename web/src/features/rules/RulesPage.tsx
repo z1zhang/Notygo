@@ -313,15 +313,15 @@ export default function RulesPage() {
             }
           />
         ) : (
-          <Table>
+          <Table className="min-w-[560px]">
             <TableHeader>
-              <TableRow>
-                <TableHead>{t('common.name')}</TableHead>
+              <TableRow className="group">
+                <TableHead className="sticky left-0 z-20 bg-background group-hover:bg-[color-mix(in_oklab,var(--color-muted)_50%,var(--color-background))]">{t('common.name')}</TableHead>
                 <TableHead className="w-20">{t('rules.priority')}</TableHead>
-                <TableHead className="w-20">{t('common.enabled')}</TableHead>
                 <TableHead>{t('rules.template')}</TableHead>
                 <TableHead className="w-full min-w-24">{t('rules.channels')}</TableHead>
-                <TableHead className="sticky right-0 z-20 w-20 bg-background text-right">{t('common.actions')}</TableHead>
+                <TableHead className="w-20">{t('common.enabled')}</TableHead>
+                <TableHead className="sticky right-0 z-20 min-w-[108px] bg-background text-right group-hover:bg-[color-mix(in_oklab,var(--color-muted)_50%,var(--color-background))]">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -329,17 +329,8 @@ export default function RulesPage() {
                 const destIds = row.channel_ids ?? []
                 return (
                   <TableRow key={row.id} className="group">
-                    <TableCell className="text-muted-foreground">{row.name}</TableCell>
+                    <TableCell className="sticky left-0 z-10 bg-background text-muted-foreground group-hover:bg-[color-mix(in_oklab,var(--color-muted)_50%,var(--color-background))]">{row.name}</TableCell>
                     <TableCell className="text-muted-foreground">{row.priority}</TableCell>
-                    <TableCell>
-                      <Switch
-                        checked={row.enabled}
-                        onCheckedChange={(checked) =>
-                          toggleMutation.mutate({ row, enabled: checked })
-                        }
-                        aria-label={t('common.enabled')}
-                      />
-                    </TableCell>
                     <TableCell className="text-muted-foreground">
                       {lookupName(templateOptions.data, row.template_id)}
                     </TableCell>
@@ -353,7 +344,16 @@ export default function RulesPage() {
                         />
                       )}
                     </TableCell>
-                    <TableCell className="sticky right-0 z-10 bg-background text-right group-hover:bg-muted/50">
+                    <TableCell>
+                      <Switch
+                        checked={row.enabled}
+                        onCheckedChange={(checked) =>
+                          toggleMutation.mutate({ row, enabled: checked })
+                        }
+                        aria-label={t('common.enabled')}
+                      />
+                    </TableCell>
+                    <TableCell className="sticky right-0 z-10 min-w-[108px] bg-background text-right group-hover:bg-[color-mix(in_oklab,var(--color-muted)_50%,var(--color-background))]">
                       <div className="flex justify-end gap-1">
                         <Button
                           variant="ghost"

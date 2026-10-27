@@ -1,7 +1,7 @@
-// Throwaway smoke test for the demo-mode logic (run with:
-//   node --experimental-strip-types scripts/demo-smoke.mts )
-import { renderTemplate, applyMapping, analyzePayload } from '../src/lib/demo/preview.ts'
-import { buildSeed } from '../src/lib/demo/seed.ts'
+// Throwaway smoke test for the demo-mode logic.
+// 运行:npm run test:demo
+import { renderTemplate, applyMapping, analyzePayload } from '../../src/lib/demo/preview.ts'
+import { buildSeed } from '../../src/lib/demo/seed.ts'
 
 let failed = 0
 function check(name: string, actual: unknown, expected: unknown) {
@@ -107,7 +107,7 @@ const mem = new Map<string, string>()
   key: () => null,
   length: 0,
 } as Storage
-const { demoRequest } = await import('../src/lib/demo/handler.ts')
+const { demoRequest } = await import('../../src/lib/demo/handler.ts')
 
 const login = await demoRequest<{ token: string }>('POST', '/api/v1/auth/login', { username: 'demo', password: 'x' })
 check('login token', typeof login.token === 'string' && login.token.startsWith('demo-'), true)

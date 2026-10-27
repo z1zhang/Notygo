@@ -2,6 +2,7 @@
 // 无值操作符(存在)表单联动、必填校验。
 //
 // 运行:node scripts/ui-e2e/rules.mjs --base http://127.0.0.1:9003 --user admin --pass <密码>
+// 或整套跑:npm run test:ui -- --pass <密码>(参数透传,前置条件相同)
 
 import { openApp, login, gotoNav, expectToast, expectRow, expectNoRow,
   openCreate, saveDialog, editRow, deleteRow, selectOption, runCases, finish } from './helpers.mjs'

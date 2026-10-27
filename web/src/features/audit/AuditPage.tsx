@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { format } from 'date-fns'
 import { ScrollText, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { listAuditLogs } from '@/lib/api'
@@ -7,7 +8,6 @@ import { formatTime } from '@/lib/formatters'
 import { usePagination } from '@/hooks/use-pagination'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { DateRangePicker, type DateRangeValue } from '@/components/data-display/DateRangePicker'
 import { Pagination } from '@/components/data-display/Pagination'
 import { StatusBadge } from '@/components/data-display/StatusBadge'
 import { TableSkeleton } from '@/components/data-display/TableSkeleton'
@@ -50,21 +51,23 @@ export default function AuditPage() {
   const { page, size, setPage, setSize } = usePagination()
   const [action, setAction] = useState('')
   const [targetType, setTargetType] = useState('')
-  const [startDate, setStartDate] = useState('')
-  const [endDate, setEndDate] = useState('')
+  const [dateRange, setDateRange] = useState<DateRangeValue>({ from: null, to: null })
 
   // Times are sent only when both ends are set (parity with the old UI)
-  const hasDateRange = startDate !== '' && endDate !== ''
+  const { from: rangeFrom, to: rangeTo } = dateRange
+  const hasDateRange = rangeFrom !== null && rangeTo !== null
+  const startTime = hasDateRange ? format(rangeFrom, 'yyyy-MM-dd') : ''
+  const endTime = hasDateRange ? format(rangeTo, 'yyyy-MM-dd') : ''
 
   const listQuery = useQuery({
-    queryKey: ['audit', page, size, action, targetType, hasDateRange ? startDate : '', hasDateRange ? endDate : ''],
+    queryKey: ['audit', page, size, action, targetType, startTime, endTime],
     queryFn: () =>
       listAuditLogs({
         page,
         size,
         ...(action ? { action } : {}),
         ...(targetType ? { target_type: targetType } : {}),
-        ...(hasDateRange ? { start_time: startDate, end_time: endDate } : {}),
+        ...(hasDateRange ? { start_time: startTime, end_time: endTime } : {}),
       }),
     placeholderData: keepPreviousData,
   })
@@ -72,14 +75,13 @@ export default function AuditPage() {
   function clearFilters() {
     setAction('')
     setTargetType('')
-    setStartDate('')
-    setEndDate('')
+    setDateRange({ from: null, to: null })
     setPage(1)
   }
 
   const rows = listQuery.data?.data ?? []
   const total = listQuery.data?.total ?? 0
-  const hasFilters = action !== '' || targetType !== '' || startDate !== '' || endDate !== ''
+  const hasFilters = action !== '' || targetType !== '' || dateRange.from !== null
 
   return (
     <div className="space-y-4">
@@ -135,26 +137,12 @@ export default function AuditPage() {
           </SelectContent>
         </Select>
 
-        <Input
-          type="date"
-          value={startDate}
-          onChange={(e) => {
-            setStartDate(e.target.value)
+        <DateRangePicker
+          value={dateRange}
+          onChange={(range) => {
+            setDateRange(range)
             setPage(1)
           }}
-          aria-label={t('audit.startDate')}
-          className="h-8 w-40"
-        />
-        <span className="text-sm text-muted-foreground">{t('audit.to')}</span>
-        <Input
-          type="date"
-          value={endDate}
-          onChange={(e) => {
-            setEndDate(e.target.value)
-            setPage(1)
-          }}
-          aria-label={t('audit.endDate')}
-          className="h-8 w-40"
         />
 
         {hasFilters ? (
@@ -181,10 +169,10 @@ export default function AuditPage() {
             icon={<ScrollText className="size-5" />}
           />
         ) : (
-          <Table>
+          <Table className="min-w-[600px]">
             <TableHeader>
-              <TableRow>
-                <TableHead className="min-w-36">{t('common.time')}</TableHead>
+              <TableRow className="group">
+                <TableHead className="sticky left-0 z-20 min-w-36 bg-background group-hover:bg-[color-mix(in_oklab,var(--color-muted)_50%,var(--color-background))]">{t('common.time')}</TableHead>
                 <TableHead className="w-28">{t('audit.operator')}</TableHead>
                 <TableHead className="w-28">{t('audit.action')}</TableHead>
                 <TableHead className="w-28">{t('audit.targetType')}</TableHead>
@@ -194,8 +182,8 @@ export default function AuditPage() {
             </TableHeader>
             <TableBody>
               {rows.map((row) => (
-                <TableRow key={row.id}>
-                  <TableCell className="text-muted-foreground">
+                <TableRow key={row.id} className="group">
+                  <TableCell className="sticky left-0 z-10 bg-background text-muted-foreground group-hover:bg-[color-mix(in_oklab,var(--color-muted)_50%,var(--color-background))]">
                     {formatTime(row.created_at)}
                   </TableCell>
                   <TableCell className="text-muted-foreground">{row.operator}</TableCell>

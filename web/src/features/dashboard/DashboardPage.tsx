@@ -229,10 +229,10 @@ export default function DashboardPage() {
             icon={<AlertTriangle className="size-5" />}
           />
         ) : (
-          <Table>
+          <Table className="min-w-[560px]">
             <TableHeader>
-              <TableRow>
-                <TableHead className="w-20">{t('common.type')}</TableHead>
+              <TableRow className="group">
+                <TableHead className="sticky left-0 z-20 w-20 bg-background group-hover:bg-[color-mix(in_oklab,var(--color-muted)_50%,var(--color-background))]">{t('common.type')}</TableHead>
                 <TableHead className="min-w-40">{t('common.id')}</TableHead>
                 <TableHead className="min-w-32">{t('dashboard.endpointOrTarget')}</TableHead>
                 <TableHead className="w-28">{t('common.status')}</TableHead>
@@ -244,10 +244,10 @@ export default function DashboardPage() {
               {errorRows.map((row) => (
                 <TableRow
                   key={`${row.type}-${row.id}`}
-                  className="cursor-pointer"
+                  className="group cursor-pointer"
                   onClick={() => navigate(row.type === 'event' ? '/events' : '/deliveries')}
                 >
-                  <TableCell>
+                  <TableCell className="sticky left-0 z-10 bg-background group-hover:bg-[color-mix(in_oklab,var(--color-muted)_50%,var(--color-background))]">
                     <span
                       className={cn(
                         'inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium',

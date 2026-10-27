@@ -2,6 +2,7 @@
 // 标题/内容模板回填、必填校验。
 //
 // 运行:node scripts/ui-e2e/templates.mjs --base http://127.0.0.1:9003 --user admin --pass <密码>
+// 或整套跑:npm run test:ui -- --pass <密码>(参数透传,前置条件相同)
 
 import { openApp, login, gotoNav, expectToast, expectRow, expectNoRow,
   openCreate, saveDialog, editRow, deleteRow, selectOption, runCases, finish } from './helpers.mjs'

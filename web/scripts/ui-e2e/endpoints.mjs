@@ -4,6 +4,7 @@
 //
 // 前置:Chrome --remote-debugging-port=9222;被测服务已运行且指向目标库。
 // 运行:node scripts/ui-e2e/endpoints.mjs --base http://127.0.0.1:9003 --user admin --pass <密码>
+// 或整套跑:npm run test:ui -- --pass <密码>(参数透传,前置条件相同)
 
 import { createHmac } from 'node:crypto'
 import { openApp, login, gotoNav, expectToast, expectRow, expectNoRow,

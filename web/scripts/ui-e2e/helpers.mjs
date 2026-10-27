@@ -3,6 +3,7 @@
 // Usage contract: Chrome must be running with --remote-debugging-port=9222
 // (see docs/functional-test-plan.md §2). All scripts take:
 //   node scripts/ui-e2e/<entity>.mjs --base http://127.0.0.1:9003 --user admin --pass <密码>
+// 或整套跑:npm run test:ui -- --pass <密码>(参数透传,前置条件相同)
 //
 // Selectors are grounded in the zh locale labels (src/i18n/locales/zh.json)
 // and the shadcn/ui structure (radix roles, [data-sonner-toast]).
