@@ -412,9 +412,9 @@ export default function MappingsPage() {
             <TableHeader>
               <TableRow className="group">
                 <TableHead className="sticky left-0 z-20 bg-background group-hover:bg-[color-mix(in_oklab,var(--color-muted)_50%,var(--color-background))]">{t('common.name')}</TableHead>
-                <TableHead className="w-24">{t('mappings.revision')}</TableHead>
                 <TableHead className="w-24">{t('mappings.fieldsCount')}</TableHead>
                 <TableHead className="w-full min-w-24">{t('mappings.rules')}</TableHead>
+                <TableHead className="w-24">{t('mappings.revision')}</TableHead>
                 <TableHead className="sticky right-0 z-20 min-w-[108px] bg-background text-right group-hover:bg-[color-mix(in_oklab,var(--color-muted)_50%,var(--color-background))]">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
@@ -424,7 +424,6 @@ export default function MappingsPage() {
                 return (
                   <TableRow key={row.id} className="group">
                     <TableCell className="sticky left-0 z-10 bg-background text-muted-foreground group-hover:bg-[color-mix(in_oklab,var(--color-muted)_50%,var(--color-background))]">{row.name}</TableCell>
-                    <TableCell className="text-muted-foreground">{row.revision}</TableCell>
                     <TableCell>
                       <Badge variant="secondary">{row.fields?.length ?? 0}</Badge>
                     </TableCell>
@@ -438,6 +437,7 @@ export default function MappingsPage() {
                         <span className="text-muted-foreground">-</span>
                       )}
                     </TableCell>
+                    <TableCell className="text-muted-foreground">{row.revision}</TableCell>
                     <TableCell className="sticky right-0 z-10 min-w-[108px] bg-background text-right group-hover:bg-[color-mix(in_oklab,var(--color-muted)_50%,var(--color-background))]">
                       <div className="flex justify-end gap-1">
                         <Button
