@@ -27,18 +27,18 @@ const (
 
 // Event represents an incoming webhook event.
 type Event struct {
-	ID              string     `json:"id"`
-	EndpointID      string     `json:"endpoint_id"`
-	UpstreamEventID *string    `json:"upstream_event_id,omitempty"`
-	RequestID       string     `json:"request_id"`
-	ReceivedAt      time.Time  `json:"received_at,omitempty"`
-	ContentType     string     `json:"content_type"`
-	PayloadRaw      string     `json:"payload_raw"`
-	PayloadHash     string     `json:"payload_hash"`
-	Status          string     `json:"status"`
-	RunType         string     `json:"run_type"`
-	ErrorCode       *string    `json:"error_code,omitempty"`
-	ErrorSummary    *string    `json:"error_summary,omitempty"`
+	ID              string    `json:"id"`
+	EndpointID      string    `json:"endpoint_id"`
+	UpstreamEventID *string   `json:"upstream_event_id,omitempty"`
+	RequestID       string    `json:"request_id"`
+	ReceivedAt      time.Time `json:"received_at,omitzero"`
+	ContentType     string    `json:"content_type"`
+	PayloadRaw      string    `json:"payload_raw"`
+	PayloadHash     string    `json:"payload_hash"`
+	Status          string    `json:"status"`
+	RunType         string    `json:"run_type"`
+	ErrorCode       *string   `json:"error_code,omitempty"`
+	ErrorSummary    *string   `json:"error_summary,omitempty"`
 }
 
 // EventRun represents a single processing run of an event.
@@ -53,8 +53,8 @@ type EventRun struct {
 	ValidationResult map[string]any `json:"validation_result"`
 	MatchedRuleIDs   []string       `json:"matched_rule_ids"`
 	Status           string         `json:"status"`
-	StartedAt        time.Time      `json:"started_at,omitempty"`
-	FinishedAt       *time.Time     `json:"finished_at,omitempty"`
+	StartedAt        time.Time      `json:"started_at,omitzero"`
+	FinishedAt       *time.Time     `json:"finished_at,omitzero"`
 	ErrorCode        *string        `json:"error_code,omitempty"`
 	ErrorSummary     *string        `json:"error_summary,omitempty"`
 }

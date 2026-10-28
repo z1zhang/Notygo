@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"notygo/internal/errcode"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -19,7 +20,7 @@ func ListMappings(db *pgxpool.Pool) http.HandlerFunc {
 		page, size := ParsePagination(r)
 		mappings, total, err := repo.List(r.Context(), page, size)
 		if err != nil {
-			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to list mappings")
+			WriteError(w, http.StatusInternalServerError, errcode.SystemInternal, "failed to list mappings")
 			return
 		}
 		WriteJSON(w, http.StatusOK, PaginatedResponse[mapping.Mapping]{
@@ -42,12 +43,12 @@ func CreateMapping(db *pgxpool.Pool, auditRepo *audit.Repository) http.HandlerFu
 			Fields          []mapping.MappingEntry `json:"fields"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "invalid request body")
+			WriteError(w, http.StatusBadRequest, errcode.ConfigValidation, "invalid request body")
 			return
 		}
 
 		if req.Name == "" {
-			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "name is required")
+			WriteError(w, http.StatusBadRequest, errcode.ConfigValidation, "name is required")
 			return
 		}
 
@@ -60,7 +61,7 @@ func CreateMapping(db *pgxpool.Pool, auditRepo *audit.Repository) http.HandlerFu
 
 		created, err := repo.Create(r.Context(), req.Name, req.RuleIDs, req.ContinueOnMatch, req.Fields)
 		if err != nil {
-			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to create mapping")
+			WriteError(w, http.StatusInternalServerError, errcode.SystemInternal, "failed to create mapping")
 			return
 		}
 
@@ -70,7 +71,7 @@ func CreateMapping(db *pgxpool.Pool, auditRepo *audit.Repository) http.HandlerFu
 			Action:     "create",
 			TargetType: "mapping",
 			TargetID:   created.ID,
-			Summary:    stringPtr(fmt.Sprintf("created mapping %q", created.Name)),
+			Summary:    new(fmt.Sprintf("created mapping %q", created.Name)),
 		}); auditErr != nil {
 			slog.Error("audit log insert failed", "action", "create", "target_type", "mapping", "error", auditErr)
 		}
@@ -86,7 +87,7 @@ func GetMapping(db *pgxpool.Pool) http.HandlerFunc {
 		id := chi.URLParam(r, "id")
 		m, err := repo.GetByID(r.Context(), id)
 		if err != nil {
-			WriteError(w, http.StatusNotFound, ErrConfigValidation, "mapping not found")
+			WriteError(w, http.StatusNotFound, errcode.ConfigValidation, "mapping not found")
 			return
 		}
 		WriteJSON(w, http.StatusOK, m)
@@ -105,7 +106,7 @@ func UpdateMapping(db *pgxpool.Pool, auditRepo *audit.Repository) http.HandlerFu
 			Fields          *[]mapping.MappingEntry `json:"fields,omitempty"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "invalid request body")
+			WriteError(w, http.StatusBadRequest, errcode.ConfigValidation, "invalid request body")
 			return
 		}
 
@@ -114,7 +115,7 @@ func UpdateMapping(db *pgxpool.Pool, auditRepo *audit.Repository) http.HandlerFu
 
 		updated, err := repo.Update(r.Context(), id, req.Name, req.RuleIDs, req.ContinueOnMatch, req.Fields)
 		if err != nil {
-			WriteError(w, http.StatusNotFound, ErrConfigValidation, "mapping not found")
+			WriteError(w, http.StatusNotFound, errcode.ConfigValidation, "mapping not found")
 			return
 		}
 
@@ -125,7 +126,7 @@ func UpdateMapping(db *pgxpool.Pool, auditRepo *audit.Repository) http.HandlerFu
 			TargetType:     "mapping",
 			TargetID:       id,
 			SnapshotBefore: marshalSnapshot(oldMapping),
-			Summary:        stringPtr(fmt.Sprintf("updated mapping %q", updated.Name)),
+			Summary:        new(fmt.Sprintf("updated mapping %q", updated.Name)),
 		}); auditErr != nil {
 			slog.Error("audit log insert failed", "action", "update", "target_type", "mapping", "error", auditErr)
 		}
@@ -144,7 +145,7 @@ func DeleteMapping(db *pgxpool.Pool, auditRepo *audit.Repository) http.HandlerFu
 		oldMapping, _ := repo.GetByID(r.Context(), id)
 
 		if err := repo.Delete(r.Context(), id); err != nil {
-			WriteError(w, http.StatusNotFound, ErrConfigValidation, "mapping not found")
+			WriteError(w, http.StatusNotFound, errcode.ConfigValidation, "mapping not found")
 			return
 		}
 
@@ -155,7 +156,7 @@ func DeleteMapping(db *pgxpool.Pool, auditRepo *audit.Repository) http.HandlerFu
 			TargetType:     "mapping",
 			TargetID:       id,
 			SnapshotBefore: marshalSnapshot(oldMapping),
-			Summary:        stringPtr(fmt.Sprintf("deleted mapping %q", oldMapping.Name)),
+			Summary:        new(fmt.Sprintf("deleted mapping %q", oldMapping.Name)),
 		}); auditErr != nil {
 			slog.Error("audit log insert failed", "action", "delete", "target_type", "mapping", "error", auditErr)
 		}

@@ -44,11 +44,11 @@ import (
 	"notygo/internal/mapping"
 	"notygo/internal/processor"
 	"notygo/internal/queue"
-	"notygo/internal/rules"
+	"notygo/internal/rule"
 	"notygo/internal/secret"
 	"notygo/internal/sender"
 	"notygo/internal/storage"
-	"notygo/internal/templates"
+	"notygo/internal/template"
 )
 
 const (
@@ -217,6 +217,56 @@ func TestE2E(t *testing.T) {
 		})
 	})
 
+	t.Run("RuleOperatorsUnifiedEngine", func(t *testing.T) {
+		// Rules stored via the API with operators the processor-side
+		// evaluator silently dropped (empty, ne) must actually match in the
+		// production path now that it evaluates via rule.Evaluate.
+		var rule2 struct{ ID string }
+		s.mustJSON(t, "POST", "/api/v1/rules", &rule2,
+			fmt.Sprintf(`{"name":"e2e-rule-ops","enabled":true,"priority":50,"conditions":{"operator":"and","conditions":[{"field":"note","operator":"empty"},{"field":"status","operator":"ne","value":"skip"}]},"template_id":"%s","channel_ids":["%s"]}`, tplID, chID), 201)
+
+		var mp2 struct{ ID string }
+		s.mustJSON(t, "POST", "/api/v1/mappings", &mp2,
+			fmt.Sprintf(`{"name":"e2e-map-ops","rule_ids":["%s"],"continue_on_match":false,"fields":[{"payload_path":"title","target_key":"title","value_type":"string","required":true},{"payload_path":"body","target_key":"body","value_type":"string","required":true}]}`, rule2.ID), 201)
+
+		var ep2 struct{ Slug string }
+		s.mustJSON(t, "POST", "/api/v1/endpoints", &ep2,
+			fmt.Sprintf(`{"name":"e2e-ep-ops","slug":"e2e-ep-ops","enabled":true,"mapping_id":"%s"}`, mp2.ID), 201)
+
+		// note and status are absent from the payload (and unmapped):
+		// empty → true, ne "skip" → true, so the rule must match.
+		s.mustDo(t, "POST", "/endpoint/"+ep2.Slug,
+			`{"title":"ops","body":"unified engine"}`, http.StatusAccepted)
+
+		var opsEventID string
+		s.poll(t, "ops event completed", 15*time.Second, func() bool {
+			var page struct {
+				Data []struct {
+					ID     string
+					Status string
+				}
+			}
+			s.mustJSON(t, "GET", "/api/v1/events?page=1&size=10", &page, "", 200)
+			for _, e := range page.Data {
+				if e.ID != eventID && e.Status == "completed" {
+					opsEventID = e.ID
+					return true
+				}
+			}
+			return false
+		})
+
+		var detail struct {
+			LatestRun struct {
+				MatchedRuleIDs []string `json:"matched_rule_ids"`
+			} `json:"latest_run"`
+		}
+		s.mustJSON(t, "GET", "/api/v1/events/"+opsEventID, &detail, "", 200)
+		if len(detail.LatestRun.MatchedRuleIDs) == 0 {
+			t.Fatalf("expected empty/ne rule to match via unified engine, matched_rule_ids is empty")
+		}
+	})
+
 	t.Run("ListsFiltersPagination", func(t *testing.T) {
 		// Status filter on events (dynamic WHERE path).
 		var evs struct {
@@ -264,7 +314,7 @@ func TestE2E(t *testing.T) {
 		// Queue stats (river_job counts) respond, with the retention window
 		// so the dashboard can label the stats' scope.
 		var qs struct {
-			Queues           []struct {
+			Queues []struct {
 				Queue string
 				State string
 				Count int64
@@ -345,7 +395,7 @@ func newTestStack(t *testing.T) *testStack {
 	// Seed the admin user directly (cmd/server does this via env var).
 	hash, _ := bcrypt.GenerateFromPassword([]byte(adminPassword), bcrypt.MinCost)
 	if _, err := pool.Exec(ctx,
-		`INSERT INTO notygo_users (id, username, password) VALUES ($1, $2, $3)`,
+		`INSERT INTO notygo_user (id, username, password) VALUES ($1, $2, $3)`,
 		ulid.Make().String(), adminUser, string(hash),
 	); err != nil {
 		t.Fatalf("seed admin: %v", err)
@@ -354,8 +404,8 @@ func newTestStack(t *testing.T) *testStack {
 	// Repos and services.
 	endpointRepo := endpoint.NewRepository(pool)
 	mappingRepo := mapping.NewRepository(pool)
-	ruleRepo := rules.NewRepository(pool)
-	templateRepo := templates.NewRepository(pool)
+	ruleRepo := rule.NewRepository(pool)
+	templateRepo := template.NewRepository(pool)
 	destRepo := channel.NewRepository(pool)
 	eventRepo := event.NewRepository(pool)
 	deliveryRepo := delivery.NewRepository(pool)

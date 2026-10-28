@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"notygo/internal/errcode"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -23,7 +24,7 @@ func ListChannels(db *pgxpool.Pool, secretSvc *secret.Service) http.HandlerFunc 
 		result, total, err := repo.List(r.Context(), page, size)
 		if err != nil {
 			slog.Error("list channels failed", "error", err)
-			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to list channels")
+			WriteError(w, http.StatusInternalServerError, errcode.SystemInternal, "failed to list channels")
 			return
 		}
 
@@ -48,20 +49,20 @@ func CreateChannel(db *pgxpool.Pool, secretSvc *secret.Service, auditRepo *audit
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req channel.CreateChannelRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "invalid request body")
+			WriteError(w, http.StatusBadRequest, errcode.ConfigValidation, "invalid request body")
 			return
 		}
 
 		if req.Name == nil || *req.Name == "" {
-			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "name is required")
+			WriteError(w, http.StatusBadRequest, errcode.ConfigValidation, "name is required")
 			return
 		}
 		if req.Type == nil || *req.Type == "" {
-			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "type is required")
+			WriteError(w, http.StatusBadRequest, errcode.ConfigValidation, "type is required")
 			return
 		}
 		if req.MaxAttempts != nil && (*req.MaxAttempts < 1 || *req.MaxAttempts > 100) {
-			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "max_attempts must be between 1 and 100")
+			WriteError(w, http.StatusBadRequest, errcode.ConfigValidation, "max_attempts must be between 1 and 100")
 			return
 		}
 
@@ -69,7 +70,7 @@ func CreateChannel(db *pgxpool.Pool, secretSvc *secret.Service, auditRepo *audit
 		if req.Secret != nil && *req.Secret != "" && secretSvc != nil {
 			encrypted, err := secretSvc.Encrypt(*req.Secret)
 			if err != nil {
-				WriteError(w, http.StatusInternalServerError, ErrSystemKeyInvalid, "failed to encrypt secret")
+				WriteError(w, http.StatusInternalServerError, errcode.SystemKeyInvalid, "failed to encrypt secret")
 				return
 			}
 			req.Secret = &encrypted
@@ -78,7 +79,7 @@ func CreateChannel(db *pgxpool.Pool, secretSvc *secret.Service, auditRepo *audit
 		created, err := repo.Create(r.Context(), req)
 		if err != nil {
 			slog.Error("create channel failed", "error", err)
-			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to create channel")
+			WriteError(w, http.StatusInternalServerError, errcode.SystemInternal, "failed to create channel")
 			return
 		}
 
@@ -91,7 +92,7 @@ func CreateChannel(db *pgxpool.Pool, secretSvc *secret.Service, auditRepo *audit
 			Action:     "create",
 			TargetType: "channel",
 			TargetID:   created.ID,
-			Summary:    stringPtr(fmt.Sprintf("created channel %q", created.Name)),
+			Summary:    new(fmt.Sprintf("created channel %q", created.Name)),
 		}); auditErr != nil {
 			slog.Error("audit log insert failed", "action", "create", "target_type", "channel", "error", auditErr)
 		}
@@ -105,7 +106,7 @@ func GetChannel(db *pgxpool.Pool, secretSvc *secret.Service) http.HandlerFunc {
 		id := chi.URLParam(r, "id")
 		d, err := repo.GetByID(r.Context(), id)
 		if err != nil {
-			WriteError(w, http.StatusNotFound, ErrConfigValidation, "channel not found")
+			WriteError(w, http.StatusNotFound, errcode.ConfigValidation, "channel not found")
 			return
 		}
 
@@ -122,11 +123,11 @@ func UpdateChannel(db *pgxpool.Pool, secretSvc *secret.Service, auditRepo *audit
 		id := chi.URLParam(r, "id")
 		var req channel.UpdateChannelRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "invalid request body")
+			WriteError(w, http.StatusBadRequest, errcode.ConfigValidation, "invalid request body")
 			return
 		}
 		if req.MaxAttempts != nil && (*req.MaxAttempts < 1 || *req.MaxAttempts > 100) {
-			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "max_attempts must be between 1 and 100")
+			WriteError(w, http.StatusBadRequest, errcode.ConfigValidation, "max_attempts must be between 1 and 100")
 			return
 		}
 
@@ -134,7 +135,7 @@ func UpdateChannel(db *pgxpool.Pool, secretSvc *secret.Service, auditRepo *audit
 		if req.Secret != nil && *req.Secret != "" && secretSvc != nil {
 			encrypted, err := secretSvc.Encrypt(*req.Secret)
 			if err != nil {
-				WriteError(w, http.StatusInternalServerError, ErrSystemKeyInvalid, "failed to encrypt secret")
+				WriteError(w, http.StatusInternalServerError, errcode.SystemKeyInvalid, "failed to encrypt secret")
 				return
 			}
 			req.Secret = &encrypted
@@ -145,7 +146,7 @@ func UpdateChannel(db *pgxpool.Pool, secretSvc *secret.Service, auditRepo *audit
 
 		updated, err := repo.Update(r.Context(), id, req)
 		if err != nil {
-			WriteError(w, http.StatusNotFound, ErrConfigValidation, "channel not found")
+			WriteError(w, http.StatusNotFound, errcode.ConfigValidation, "channel not found")
 			return
 		}
 
@@ -159,7 +160,7 @@ func UpdateChannel(db *pgxpool.Pool, secretSvc *secret.Service, auditRepo *audit
 			TargetType:     "channel",
 			TargetID:       id,
 			SnapshotBefore: marshalSnapshot(oldDest),
-			Summary:        stringPtr(fmt.Sprintf("updated channel %q", updated.Name)),
+			Summary:        new(fmt.Sprintf("updated channel %q", updated.Name)),
 		}); auditErr != nil {
 			slog.Error("audit log insert failed", "action", "update", "target_type", "channel", "error", auditErr)
 		}
@@ -176,7 +177,7 @@ func DeleteChannel(db *pgxpool.Pool, auditRepo *audit.Repository) http.HandlerFu
 		oldDest, _ := repo.GetByID(r.Context(), id)
 
 		if err := repo.Delete(r.Context(), id); err != nil {
-			WriteError(w, http.StatusNotFound, ErrConfigValidation, "channel not found")
+			WriteError(w, http.StatusNotFound, errcode.ConfigValidation, "channel not found")
 			return
 		}
 		WriteJSON(w, http.StatusNoContent, nil)
@@ -188,7 +189,7 @@ func DeleteChannel(db *pgxpool.Pool, auditRepo *audit.Repository) http.HandlerFu
 			TargetType:     "channel",
 			TargetID:       id,
 			SnapshotBefore: marshalSnapshot(oldDest),
-			Summary:        stringPtr(fmt.Sprintf("deleted channel %s", id)),
+			Summary:        new(fmt.Sprintf("deleted channel %s", id)),
 		}); auditErr != nil {
 			slog.Error("audit log insert failed", "action", "delete", "target_type", "channel", "error", auditErr)
 		}
@@ -204,18 +205,18 @@ func TestChannel(db *pgxpool.Pool, secretSvc *secret.Service, senderRegistry *se
 		id := chi.URLParam(r, "id")
 		dest, err := repo.GetByID(r.Context(), id)
 		if err != nil {
-			WriteError(w, http.StatusNotFound, ErrConfigValidation, "channel not found")
+			WriteError(w, http.StatusNotFound, errcode.ConfigValidation, "channel not found")
 			return
 		}
 
 		s, err := senderRegistry.Get(string(dest.Type))
 		if err != nil {
-			WriteError(w, http.StatusBadRequest, ErrConfigValidation, err.Error())
+			WriteError(w, http.StatusBadRequest, errcode.ConfigValidation, err.Error())
 			return
 		}
 
 		// Build the exact config a real delivery would use
-		cfg := channel.BuildSenderConfig(dest, secretSvc)
+		cfg := sender.BuildChannelConfig(dest, secretSvc)
 		if cfg.Timeout <= 0 {
 			cfg.Timeout = 10 * time.Second
 		}
@@ -231,7 +232,7 @@ func TestChannel(db *pgxpool.Pool, secretSvc *secret.Service, senderRegistry *se
 		// Transport-level failure
 		if err != nil {
 			auditChannelTest(r, auditRepo, dest, "failed", err.Error())
-			WriteError(w, http.StatusBadGateway, "DELIVER_001", err.Error())
+			WriteError(w, http.StatusBadGateway, errcode.DeliverConnectFailed, err.Error())
 			return
 		}
 
@@ -256,7 +257,7 @@ func TestChannel(db *pgxpool.Pool, secretSvc *secret.Service, senderRegistry *se
 			detail += ": " + snippet
 		}
 		auditChannelTest(r, auditRepo, dest, "failed", detail)
-		WriteError(w, http.StatusBadGateway, "DELIVER_004", "test send failed ("+detail+")")
+		WriteError(w, http.StatusBadGateway, errcode.DeliverBusinessError, "test send failed ("+detail+")")
 	}
 }
 

@@ -4,10 +4,12 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"notygo/internal/errcode"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"notygo/internal/observability"
 	"notygo/internal/storage"
 )
 
@@ -33,7 +35,7 @@ func RecoveryMiddleware(next http.Handler) http.Handler {
 		defer func() {
 			if err := recover(); err != nil {
 				slog.Error("panic recovered", "error", err, "path", r.URL.Path)
-				WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "internal server error")
+				WriteError(w, http.StatusInternalServerError, errcode.SystemInternal, "internal server error")
 			}
 		}()
 		next.ServeHTTP(w, r)
@@ -52,7 +54,11 @@ func LoggingMiddleware(next http.Handler) http.Handler {
 			"path", r.URL.Path,
 			"status", sw.status,
 			"duration_ms", time.Since(start).Milliseconds(),
-			"request_id", r.Header.Get("X-Request-ID"),
+			// From context, not r.Header: RequestIDMiddleware stores the
+			// generated ID only in the context, so reading the request header
+			// would log an empty ID whenever the client did not send one.
+			"request_id", observability.GetRequestID(r.Context()),
+			"remote_ip", r.RemoteAddr,
 		)
 	})
 }
@@ -74,26 +80,26 @@ func AdminAuthMiddleware(db *pgxpool.Pool) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			token := extractBearerToken(r)
 			if token == "" {
-				WriteError(w, http.StatusUnauthorized, ErrIngestAuthFailed, "missing authorization token")
+				WriteError(w, http.StatusUnauthorized, errcode.IngestAuthFailed, "missing authorization token")
 				return
 			}
 
 			nowExpr := storage.NowExpr()
 			var userID string
 			err := db.QueryRow(r.Context(),
-				"SELECT user_id FROM notygo_sessions WHERE token_hash = $1 AND expires_at > "+nowExpr,
+				"SELECT user_id FROM notygo_session WHERE token_hash = $1 AND expires_at > "+nowExpr,
 				hashToken(token),
 			).Scan(&userID)
 
 			if err != nil {
-				WriteError(w, http.StatusUnauthorized, ErrIngestAuthFailed, "invalid or expired session")
+				WriteError(w, http.StatusUnauthorized, errcode.IngestAuthFailed, "invalid or expired session")
 				return
 			}
 
 			// Lookup username for audit logging
 			var username string
 			_ = db.QueryRow(r.Context(),
-				"SELECT username FROM notygo_users WHERE id = $1", userID,
+				"SELECT username FROM notygo_user WHERE id = $1", userID,
 			).Scan(&username)
 
 			ctx := context.WithValue(r.Context(), userIDKey, userID)

@@ -21,10 +21,12 @@ type Config struct {
 	Log      LogConfig
 }
 
+// ServerConfig holds HTTP listen settings.
 type ServerConfig struct {
 	ListenAddr string
 }
 
+// DatabaseConfig holds PostgreSQL connection parts, assembled into DSN.
 type DatabaseConfig struct {
 	DSN      string // resolved PostgreSQL DSN, assembled from the parts below
 	Host     string
@@ -35,6 +37,7 @@ type DatabaseConfig struct {
 	SSLMode  string
 }
 
+// SecretConfig holds Encryption master key source.
 type SecretConfig struct {
 	MasterKeyEnv string // raw ENCRYPTION_MASTER_KEY value
 }
@@ -49,11 +52,13 @@ type QueueConfig struct {
 	JobRetention        time.Duration // completed/cancelled River job retention
 }
 
+// IngestConfig holds Data-plane ingest limits.
 type IngestConfig struct {
 	MaxPayloadBytes int
 	GlobalRateLimit string
 }
 
+// AdminConfig holds Bootstrap admin and login lockout policy.
 type AdminConfig struct {
 	InitialUsername     string
 	InitialPassword     string
@@ -61,6 +66,7 @@ type AdminConfig struct {
 	LoginLockoutSeconds int
 }
 
+// LogConfig holds Logging settings.
 type LogConfig struct {
 	Level string
 }

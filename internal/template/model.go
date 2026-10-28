@@ -1,4 +1,4 @@
-package templates
+package template
 
 import "time"
 
@@ -10,6 +10,6 @@ type Template struct {
 	TitleTemplate string    `json:"title_template"`
 	BodyTemplate  string    `json:"body_template"`
 	Revision      int       `json:"revision"`
-	CreatedAt     time.Time `json:"created_at,omitempty"`
-	UpdatedAt     time.Time `json:"updated_at,omitempty"`
+	CreatedAt     time.Time `json:"created_at,omitzero"`
+	UpdatedAt     time.Time `json:"updated_at,omitzero"`
 }

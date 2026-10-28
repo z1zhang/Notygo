@@ -1,4 +1,4 @@
-package rules
+package rule
 
 import "time"
 
@@ -13,8 +13,8 @@ type Rule struct {
 	ChannelIDs   []string       `json:"channel_ids"`
 	DedupeConfig *DedupeConfig  `json:"dedupe_config,omitempty"`
 	Revision     int            `json:"revision"`
-	CreatedAt    time.Time      `json:"created_at,omitempty"`
-	UpdatedAt    time.Time      `json:"updated_at,omitempty"`
+	CreatedAt    time.Time      `json:"created_at,omitzero"`
+	UpdatedAt    time.Time      `json:"updated_at,omitzero"`
 }
 
 // ConditionGroup is the top-level container for rule conditions.

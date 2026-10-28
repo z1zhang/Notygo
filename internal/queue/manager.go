@@ -7,6 +7,7 @@ package queue
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -124,7 +125,7 @@ func (m *Manager) Migrate(ctx context.Context) error {
 	}
 	if len(res.Versions) > 0 {
 		for _, v := range res.Versions {
-			fmt.Printf("river migration applied: %d\n", v.Version)
+			slog.Info("river migration applied", "version", v.Version)
 		}
 	}
 	return nil

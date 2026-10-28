@@ -39,7 +39,7 @@ func (r *Repository) Create(ctx context.Context, req CreateChannelRequest) (*Cha
 	if req.Name != nil {
 		name = *req.Name
 	}
-	channelType := ChannelType("http")
+	channelType := ChannelTypeHTTP
 	if req.Type != nil {
 		channelType = *req.Type
 	}
@@ -63,7 +63,7 @@ func (r *Repository) Create(ctx context.Context, req CreateChannelRequest) (*Cha
 	}
 
 	_, err = r.db.Exec(ctx,
-		`INSERT INTO notygo_channels (id, name, type, enabled, config, encrypted_secret, timeout_ms, max_attempts, revision, created_at, updated_at)
+		`INSERT INTO notygo_channel (id, name, type, enabled, config, encrypted_secret, timeout_ms, max_attempts, revision, created_at, updated_at)
 		 VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, 1, $9, $10)`,
 		id, name, string(channelType), enabled,
 		string(configJSON), req.Secret, timeoutMs, maxAttempts,
@@ -80,14 +80,14 @@ func (r *Repository) Create(ctx context.Context, req CreateChannelRequest) (*Cha
 func (r *Repository) GetByID(ctx context.Context, id string) (*Channel, error) {
 	row := r.db.QueryRow(ctx,
 		`SELECT id, name, type, enabled, config, encrypted_secret, timeout_ms, max_attempts, revision, created_at, updated_at
-		 FROM notygo_channels WHERE id = $1`, id)
+		 FROM notygo_channel WHERE id = $1`, id)
 	return scanChannel(row)
 }
 
 // List returns a paginated list of channels and the total count.
 func (r *Repository) List(ctx context.Context, page, size int) ([]Channel, int64, error) {
 	var total int64
-	err := r.db.QueryRow(ctx, `SELECT COUNT(*) FROM notygo_channels`).Scan(&total)
+	err := r.db.QueryRow(ctx, `SELECT COUNT(*) FROM notygo_channel`).Scan(&total)
 	if err != nil {
 		return nil, 0, fmt.Errorf("count channels: %w", err)
 	}
@@ -98,7 +98,7 @@ func (r *Repository) List(ctx context.Context, page, size int) ([]Channel, int64
 	offset := (page - 1) * size
 	rows, err := r.db.Query(ctx,
 		`SELECT id, name, type, enabled, config, encrypted_secret, timeout_ms, max_attempts, revision, created_at, updated_at
-		 FROM notygo_channels ORDER BY created_at DESC LIMIT $1 OFFSET $2`, size, offset)
+		 FROM notygo_channel ORDER BY created_at DESC LIMIT $1 OFFSET $2`, size, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list channels: %w", err)
 	}
@@ -164,7 +164,7 @@ func (r *Repository) Update(ctx context.Context, id string, req UpdateChannelReq
 	newRevision := existing.Revision + 1
 	now := time.Now().UTC()
 	_, err = r.db.Exec(ctx,
-		`UPDATE notygo_channels SET name=$1, type=$2, enabled=$3, config=$4::jsonb, encrypted_secret=$5, timeout_ms=$6, max_attempts=$7, revision=$8, updated_at=$9
+		`UPDATE notygo_channel SET name=$1, type=$2, enabled=$3, config=$4::jsonb, encrypted_secret=$5, timeout_ms=$6, max_attempts=$7, revision=$8, updated_at=$9
 		 WHERE id=$10`,
 		name, string(channelType), enabled,
 		string(configJSON), secretRef, timeoutMs, maxAttempts,
@@ -179,7 +179,7 @@ func (r *Repository) Update(ctx context.Context, id string, req UpdateChannelReq
 
 // Delete removes a channel by ID.
 func (r *Repository) Delete(ctx context.Context, id string) error {
-	res, err := r.db.Exec(ctx, `DELETE FROM notygo_channels WHERE id = $1`, id)
+	res, err := r.db.Exec(ctx, `DELETE FROM notygo_channel WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("delete channel: %w", err)
 	}

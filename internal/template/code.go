@@ -1,8 +1,8 @@
-package templates
+package template
 
 import "fmt"
 
-// SMALLINT storage codes for templates.format (0=text 1=markdown 2=html),
+// SMALLINT storage codes for template.format (0=text 1=markdown 2=html),
 // mirroring deliveries.rendered_format. The string values remain the endpoint
 // of truth for the API; conversion happens only at the storage boundary.
 // Keep in sync with the CHECK constraints in migrations/postgres/001_init.sql.

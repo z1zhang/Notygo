@@ -8,7 +8,8 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"strings"
+	"net/url"
+	"syscall"
 	"time"
 )
 
@@ -34,6 +35,52 @@ type BodyField struct {
 
 func (f BodyField) isGroup() bool {
 	return f.Type == "object" || f.Type == "array"
+}
+
+// webhookClient is the dedicated client for outbound webhook deliveries.
+// SSRF defense in depth (checkSSRF validates the configured URL up front):
+//   - CheckRedirect re-validates every redirect hop, so a public URL that
+//     30x-redirects to 127.0.0.1 or the cloud metadata endpoint is rejected
+//   - the dialer's Control hook re-checks the IP actually connected to,
+//     closing the DNS-rebinding TOCTOU (check-time resolution can differ
+//     from dial-time resolution when the target's DNS is attacker-influenced)
+var webhookClient = newWebhookHTTPClient()
+
+func newWebhookHTTPClient() *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	dialer := &net.Dialer{
+		Timeout:   30 * time.Second,
+		KeepAlive: 30 * time.Second,
+		Control:   controlBlockedIP,
+	}
+	transport.DialContext = dialer.DialContext
+	return &http.Client{
+		Transport: transport,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if err := checkSSRF(req.URL.String()); err != nil {
+				return fmt.Errorf("redirect to %q rejected: %w", req.URL.Host, err)
+			}
+			return nil
+		},
+	}
+}
+
+// controlBlockedIP is the net.Dialer Control hook: it sees the resolved
+// address right before the connection is established and rejects blocked
+// ranges, so the guard cannot be bypassed by rebinding or redirects.
+func controlBlockedIP(network, address string, _ syscall.RawConn) error {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return fmt.Errorf("ssrf dial check %q: %w", address, err)
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return fmt.Errorf("ssrf dial check: cannot parse host %q", host)
+	}
+	if isBlockedIP(ip) {
+		return fmt.Errorf("ssrf dial check: target IP %s is blocked (private/internal/reserved)", host)
+	}
+	return nil
 }
 
 // HTTPSender sends messages via generic HTTP webhooks with SSRF protection.
@@ -119,7 +166,7 @@ func (s *HTTPSender) Send(ctx context.Context, destConfig ChannelConfig, msg Ren
 		req.Header.Set(k, v)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := webhookClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("webhook request failed: %w", err)
 	}
@@ -267,34 +314,16 @@ func checkSSRF(rawURL string) error {
 	return nil
 }
 
-// extractHost extracts the hostname from a URL string.
+// extractHost extracts the hostname from a URL string. It fails closed:
+// an unparseable URL yields "" and checkSSRF rejects it.
 func extractHost(rawURL string) string {
-	// Simple extraction: handle scheme://host:port/path
-	s := rawURL
-
-	// Remove scheme
-	if idx := strings.Index(s, "://"); idx != -1 {
-		s = s[idx+3:]
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
 	}
-
-	// Remove path
-	if idx := strings.Index(s, "/"); idx != -1 {
-		s = s[:idx]
-	}
-
-	// Remove port
-	if idx := strings.LastIndex(s, ":"); idx != -1 {
-		// Make sure it's not an IPv6 address bracket
-		if s[idx-1:len(s)] != "]" {
-			s = s[:idx]
-		}
-	}
-
-	// Remove brackets for IPv6
-	s = strings.TrimPrefix(s, "[")
-	s = strings.TrimSuffix(s, "]")
-
-	return s
+	// Hostname strips the port and IPv6 brackets; a scheme-less URL has no
+	// host, so it also fails closed here.
+	return u.Hostname()
 }
 
 // isBlockedIP returns true if the IP address is in a blocked range.

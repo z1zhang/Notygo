@@ -26,7 +26,7 @@ var deliveryStatusCodes = map[string]int16{
 	DeliveryStatusSkipped:    deliveryStatusCodeSkipped,
 }
 
-// renderedFormatCodes mirrors templates.format (0=text 1=markdown 2=html);
+// renderedFormatCodes mirrors template.format (0=text 1=markdown 2=html);
 // both columns share the same value space.
 var renderedFormatCodes = map[string]int16{
 	"text":     0,

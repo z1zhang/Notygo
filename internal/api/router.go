@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"notygo/internal/errcode"
 	"os"
 	"path"
 	"path/filepath"
@@ -12,8 +13,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"notygo/internal/audit"
-	"notygo/internal/config"
 	"notygo/internal/channel"
+	"notygo/internal/config"
 	"notygo/internal/delivery"
 	"notygo/internal/endpoint"
 	"notygo/internal/event"
@@ -21,10 +22,10 @@ import (
 	"notygo/internal/mapping"
 	"notygo/internal/observability"
 	"notygo/internal/queue"
-	"notygo/internal/rules"
+	"notygo/internal/rule"
 	"notygo/internal/secret"
 	"notygo/internal/sender"
-	"notygo/internal/templates"
+	"notygo/internal/template"
 )
 
 // NewRouter creates the main HTTP router with all routes and middleware.
@@ -34,8 +35,8 @@ func NewRouter(
 	secretSvc *secret.Service,
 	endpointRepo *endpoint.Repository,
 	mappingRepo *mapping.Repository,
-	ruleRepo *rules.Repository,
-	templateRepo *templates.Repository,
+	ruleRepo *rule.Repository,
+	templateRepo *template.Repository,
 	destRepo *channel.Repository,
 	eventRepo *event.Repository,
 	deliveryRepo *delivery.Repository,
@@ -48,7 +49,14 @@ func NewRouter(
 	r := chi.NewRouter()
 
 	// Global middleware
-	r.Use(chimw.RealIP)
+	//
+	// RealIP (SA1019, deprecated for IP spoofing): kept deliberately —
+	// notygo is deployed behind a reverse proxy that overwrites
+	// X-Forwarded-For, which is the deployment shape this targets. Without
+	// it every client shares the proxy's IP and login lockout / audit lose
+	// all per-client signal. Direct exposure without a proxy is not a
+	// supported topology; a trusted-proxy CIDR config is the future fix.
+	r.Use(chimw.RealIP) //nolint:staticcheck // SA1019: deliberate, see comment
 	r.Use(observability.RequestIDMiddleware)
 	r.Use(RecoveryMiddleware)
 	r.Use(LoggingMiddleware)
@@ -208,7 +216,7 @@ func serveFrontend(r chi.Router) {
 	// when one exists (favicon.svg etc.), otherwise index.html.
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/endpoint/") {
-			WriteError(w, http.StatusNotFound, "CONFIG_001", "endpoint not found")
+			WriteError(w, http.StatusNotFound, errcode.ConfigValidation, "endpoint not found")
 			return
 		}
 		w.Header().Set("Cache-Control", "no-cache")

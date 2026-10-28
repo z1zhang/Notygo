@@ -1,9 +1,19 @@
-package templates
+package template
 
 import (
 	"strings"
 	"testing"
+
+	"go.uber.org/goleak"
 )
+
+// TestMain verifies no goroutine leaks: Render spawns a render goroutine per
+// call, and its result path sends-then-exits, so every test must leave zero
+// stragglers. (The timeout path deliberately abandons a still-rendering
+// goroutine — bounded by template execution — but no test exercises it.)
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
+}
 
 func TestRender_BasicFields(t *testing.T) {
 	tmpl := &Template{
@@ -254,12 +264,7 @@ func TestRender_NoUnsafeFunctions(t *testing.T) {
 
 		// These should either fail at parse or not execute dangerous operations
 		// The key point is that our FuncMap does NOT expose os/exec, file, or network funcs
-		_, err := Render(tmpl, data)
-		// call would fail because .fn doesn't exist as a callable
-		if err == nil {
-			// If no error, at least verify the output isn't doing anything harmful
-			// This is acceptable since our safeFuncMap doesn't expose dangerous functions
-		}
+		_, _ = Render(tmpl, data)
 	}
 }
 
@@ -319,4 +324,33 @@ func TestRender_MultipleFieldsInBody(t *testing.T) {
 	if !strings.Contains(result.Body, "CRITICAL") {
 		t.Errorf("body missing upper status: %q", result.Body)
 	}
+}
+
+// FuzzRender throws arbitrary template strings at the restricted FuncMap.
+// The contract: no panic, and never a nil message without an error.
+func FuzzRender(f *testing.F) {
+	f.Add("{{.title}}", "{{.Event.ID}}")
+	f.Add("{{upper .title}}", "{{range .items}}{{.}}{{end}}")
+	f.Add("{{.missing}}", "{{default \"-\" .missing}}")
+	f.Add("{{", "}}")
+	f.Add("{{template \"x\"}}", "{{.body}}")
+	f.Add("{{len .items}}", "{{trim .title}}")
+
+	f.Fuzz(func(t *testing.T, titleTmpl, bodyTmpl string) {
+		tmpl := &Template{Format: "text", TitleTemplate: titleTmpl, BodyTemplate: bodyTmpl}
+		data := map[string]any{
+			"title": "t", "body": "b",
+			"Event": map[string]any{"ID": "e1"},
+			"items": []any{"a", "b"},
+		}
+		msg, err := Render(tmpl, data)
+		if err == nil && msg == nil {
+			t.Error("Render returned nil message without error")
+		}
+		// Fuzzing generates unbounded distinct templates; the parse cache
+		// exists for the (finite) template table, so drain it here to keep
+		// long fuzz runs flat on memory. sync.Map operations are race-safe
+		// against a lingering timed-out render goroutine.
+		templateCache.Range(func(k, v any) bool { templateCache.Delete(k); return true })
+	})
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -63,7 +62,7 @@ func (r *Repository) Create(ctx context.Context, d *Delivery) (*Delivery, error)
 	}
 
 	result, err := r.db.Exec(ctx,
-		`INSERT INTO notygo_deliveries (id, event_id, event_run_id, rule_id, channel_id, idempotency_key, status, attempt_count, max_attempts, next_attempt_at, rendered_title, rendered_body, rendered_format, created_at, updated_at)
+		`INSERT INTO notygo_delivery (id, event_id, event_run_id, rule_id, channel_id, idempotency_key, status, attempt_count, max_attempts, next_attempt_at, rendered_title, rendered_body, rendered_format, created_at, updated_at)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 		 ON CONFLICT DO NOTHING`,
 		d.ID, d.EventID, d.EventRunID, d.RuleID, d.ChannelID,
@@ -93,7 +92,7 @@ func (r *Repository) Create(ctx context.Context, d *Delivery) (*Delivery, error)
 func (r *Repository) GetByID(ctx context.Context, id string) (*Delivery, error) {
 	row := r.db.QueryRow(ctx,
 		`SELECT id, event_id, event_run_id, rule_id, channel_id, idempotency_key, status, attempt_count, max_attempts, next_attempt_at, rendered_title, rendered_body, rendered_format, last_error_code, last_error_summary, created_at, updated_at
-		 FROM notygo_deliveries WHERE id = $1`, id)
+		 FROM notygo_delivery WHERE id = $1`, id)
 	return scanDelivery(row)
 }
 
@@ -101,7 +100,7 @@ func (r *Repository) GetByID(ctx context.Context, id string) (*Delivery, error) 
 func (r *Repository) GetByIdempotencyKey(ctx context.Context, key string) (*Delivery, error) {
 	row := r.db.QueryRow(ctx,
 		`SELECT id, event_id, event_run_id, rule_id, channel_id, idempotency_key, status, attempt_count, max_attempts, next_attempt_at, rendered_title, rendered_body, rendered_format, last_error_code, last_error_summary, created_at, updated_at
-		 FROM notygo_deliveries WHERE idempotency_key = $1`, key)
+		 FROM notygo_delivery WHERE idempotency_key = $1`, key)
 	return scanDelivery(row)
 }
 
@@ -111,9 +110,9 @@ func (r *Repository) List(ctx context.Context, page, size int, statusFilter, des
 	var total int64
 	var args []any
 
-	countQuery := `SELECT COUNT(*) FROM notygo_deliveries WHERE 1=1`
+	countQuery := `SELECT COUNT(*) FROM notygo_delivery WHERE 1=1`
 	listQuery := `SELECT id, event_id, event_run_id, rule_id, channel_id, idempotency_key, status, attempt_count, max_attempts, next_attempt_at, rendered_title, rendered_body, rendered_format, last_error_code, last_error_summary, created_at, updated_at
-		 FROM notygo_deliveries WHERE 1=1`
+		 FROM notygo_delivery WHERE 1=1`
 
 	if statusFilter != "" {
 		code, cerr := statusToCode(statusFilter)
@@ -177,7 +176,7 @@ func (r *Repository) List(ctx context.Context, page, size int, statusFilter, des
 func (r *Repository) MarkAttemptInProgress(ctx context.Context, id string, attemptNo int) (bool, error) {
 	nowExpr := storage.NowExpr()
 	result, err := r.db.Exec(ctx,
-		"UPDATE notygo_deliveries SET status = $1, attempt_count = $2, updated_at = "+nowExpr+
+		"UPDATE notygo_delivery SET status = $1, attempt_count = $2, updated_at = "+nowExpr+
 			" WHERE id = $3 AND status IN (0, 1)", // 0=pending 1=retry_wait
 		deliveryStatusCodeProcessing, attemptNo, id,
 	)
@@ -191,7 +190,7 @@ func (r *Repository) MarkAttemptInProgress(ctx context.Context, id string, attem
 func (r *Repository) MarkDelivered(ctx context.Context, id string) error {
 	nowExpr := storage.NowExpr()
 	_, err := r.db.Exec(ctx,
-		"UPDATE notygo_deliveries SET status = $1, updated_at = "+nowExpr+" WHERE id = $2",
+		"UPDATE notygo_delivery SET status = $1, updated_at = "+nowExpr+" WHERE id = $2",
 		deliveryStatusCodeDelivered, id,
 	)
 	if err != nil {
@@ -206,7 +205,7 @@ func (r *Repository) MarkDelivered(ctx context.Context, id string) error {
 func (r *Repository) MarkRetryWait(ctx context.Context, id string, nextAttemptAt time.Time, errorCode, errorSummary string) error {
 	nowExpr := storage.NowExpr()
 	_, err := r.db.Exec(ctx,
-		"UPDATE notygo_deliveries SET status = $1, next_attempt_at = $2, last_error_code = $3, last_error_summary = $4, updated_at = "+nowExpr+" WHERE id = $5",
+		"UPDATE notygo_delivery SET status = $1, next_attempt_at = $2, last_error_code = $3, last_error_summary = $4, updated_at = "+nowExpr+" WHERE id = $5",
 		deliveryStatusCodeRetryWait, nextAttemptAt, errorCode, errorSummary, id,
 	)
 	if err != nil {
@@ -220,7 +219,7 @@ func (r *Repository) MarkRetryWait(ctx context.Context, id string, nextAttemptAt
 func (r *Repository) MarkFailed(ctx context.Context, id string, errorCode, errorSummary string) error {
 	nowExpr := storage.NowExpr()
 	_, err := r.db.Exec(ctx,
-		"UPDATE notygo_deliveries SET status = $1, last_error_code = $2, last_error_summary = $3, updated_at = "+nowExpr+" WHERE id = $4",
+		"UPDATE notygo_delivery SET status = $1, last_error_code = $2, last_error_summary = $3, updated_at = "+nowExpr+" WHERE id = $4",
 		deliveryStatusCodeFailed, errorCode, errorSummary, id,
 	)
 	if err != nil {
@@ -233,7 +232,7 @@ func (r *Repository) MarkFailed(ctx context.Context, id string, errorCode, error
 func (r *Repository) UpdateError(ctx context.Context, id string, errorCode, errorSummary string) error {
 	nowExpr := storage.NowExpr()
 	_, err := r.db.Exec(ctx,
-		"UPDATE notygo_deliveries SET last_error_code = $1, last_error_summary = $2, updated_at = "+nowExpr+" WHERE id = $3",
+		"UPDATE notygo_delivery SET last_error_code = $1, last_error_summary = $2, updated_at = "+nowExpr+" WHERE id = $3",
 		errorCode, errorSummary, id,
 	)
 	if err != nil {
@@ -248,7 +247,7 @@ func (r *Repository) UpdateError(ctx context.Context, id string, errorCode, erro
 func (r *Repository) ResetForRetry(ctx context.Context, id string) (bool, error) {
 	nowExpr := storage.NowExpr()
 	result, err := r.db.Exec(ctx,
-		"UPDATE notygo_deliveries SET status = $1, attempt_count = 0, last_error_code = NULL, last_error_summary = NULL, next_attempt_at = "+nowExpr+", updated_at = "+nowExpr+
+		"UPDATE notygo_delivery SET status = $1, attempt_count = 0, last_error_code = NULL, last_error_summary = NULL, next_attempt_at = "+nowExpr+", updated_at = "+nowExpr+
 			" WHERE id = $2 AND status IN (4, 1)", // 4=failed 1=retry_wait
 		deliveryStatusCodePending, id,
 	)
@@ -268,7 +267,7 @@ func (r *Repository) RecordDeliveryAttempt(ctx context.Context, attempt *Deliver
 	}
 
 	_, err := r.db.Exec(ctx,
-		`INSERT INTO notygo_delivery_attempts (id, delivery_id, attempt_no, started_at, finished_at, request_summary, response_status, response_summary, error_code, error_summary, duration_ms)
+		`INSERT INTO notygo_delivery_attempt (id, delivery_id, attempt_no, started_at, finished_at, request_summary, response_status, response_summary, error_code, error_summary, duration_ms)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
 		attempt.ID, attempt.DeliveryID, attempt.AttemptNo,
 		attempt.StartedAt,
@@ -287,7 +286,7 @@ func (r *Repository) RecordDeliveryAttempt(ctx context.Context, attempt *Deliver
 func (r *Repository) ListDeliveryAttempts(ctx context.Context, deliveryID string) ([]DeliveryAttempt, error) {
 	rows, err := r.db.Query(ctx,
 		`SELECT id, delivery_id, attempt_no, started_at, finished_at, request_summary, response_status, response_summary, error_code, error_summary, duration_ms
-		 FROM notygo_delivery_attempts WHERE delivery_id = $1 ORDER BY attempt_no ASC`, deliveryID)
+		 FROM notygo_delivery_attempt WHERE delivery_id = $1 ORDER BY attempt_no ASC`, deliveryID)
 	if err != nil {
 		return nil, fmt.Errorf("list delivery_attempts: %w", err)
 	}
@@ -332,7 +331,7 @@ type ResetItem struct {
 func (r *Repository) BulkResetForRetry(ctx context.Context, statusFilter, destIDFilter string) ([]ResetItem, error) {
 	nowExpr := storage.NowExpr()
 	// Retry is limited to failed(4)/retry_wait(1) — other statuses are never reset
-	query := "UPDATE notygo_deliveries SET status = 0, attempt_count = 0, last_error_code = NULL, last_error_summary = NULL, next_attempt_at = " + nowExpr + ", updated_at = " + nowExpr +
+	query := "UPDATE notygo_delivery SET status = 0, attempt_count = 0, last_error_code = NULL, last_error_summary = NULL, next_attempt_at = " + nowExpr + ", updated_at = " + nowExpr +
 		" WHERE status IN (4, 1)"
 	var args []any
 
@@ -424,39 +423,44 @@ type DedupeCheckResult struct {
 }
 
 // CheckAndInsertDedupeKey checks whether a dedupe key already exists within its
-// time window for the given rule. If not found, it atomically inserts a new record
-// and returns IsDuplicate=false. If found (still within window), it returns
-// IsDuplicate=true. Expired records are ignored.
+// time window for the given rule, recording it otherwise — one INSERT ...
+// ON CONFLICT statement, so the old two-step race (two workers both seeing
+// "not found" and both sending the notification) is arbitrated by the unique
+// index uq_dedupe_keys_rule_hash instead of an application-level gap.
 //
-// Two queries without transaction: under MySQL autocommit, each statement is
-// individually atomic. A rare race where two workers both see "not found" and
-// both INSERT is acceptable — it just means an extra dedupe record; the second
-// delivery is still created, which is safer than accidentally blocking it.
+// Window semantics, identical to the previous two-step version:
+//   - duplicate = a record with expires_at > now exists. The DO UPDATE arm
+//     carries a WHERE that only lets it fire on an expired row, so an
+//     unexpired hit performs no write at all — the fixed window (from the
+//     first hit) is structural, not reconstructed from timestamps;
+//   - first hit (no record, or the record expired) → the window is armed
+//     (or re-armed) for windowSeconds from now.
+//
+// Discriminator: a row comes back only on the insert and re-arm paths;
+// a suppressed (unexpired) hit returns zero rows, which pgx surfaces as
+// pgx.ErrNoRows. Under READ COMMITTED, a concurrent insert into the same
+// key makes the conflicting statement wait for it, then re-evaluate the
+// WHERE against the committed row — so exactly one caller ever gets first
+// hit, even when both race in the same instant.
 func (r *Repository) CheckAndInsertDedupeKey(ctx context.Context, ruleID, dedupeHash string, windowSeconds int, now time.Time) (*DedupeCheckResult, error) {
-	// Step 1: Check if an unexpired dedupe key exists
-	var existingID string
-	err := r.db.QueryRow(ctx,
-		`SELECT id FROM notygo_dedupe_keys WHERE rule_id = $1 AND dedupe_hash = $2 AND expires_at > $3 LIMIT 1`,
-		ruleID, dedupeHash, now,
-	).Scan(&existingID)
-	if err == nil {
-		// Key found within window — this is a duplicate
-		return &DedupeCheckResult{IsDuplicate: true}, nil
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
-		return nil, fmt.Errorf("check dedupe key: %w", err)
-	}
-
-	// Step 2: No unexpired key found — insert a new record
-	id := newID()
 	expiresAt := now.Add(time.Duration(windowSeconds) * time.Second)
 
-	_, err = r.db.Exec(ctx,
-		`INSERT INTO notygo_dedupe_keys (id, rule_id, dedupe_hash, expires_at, created_at) VALUES ($1, $2, $3, $4, $5)`,
-		id, ruleID, dedupeHash, expiresAt, now,
-	)
+	var reArmed bool
+	err := r.db.QueryRow(ctx,
+		`INSERT INTO notygo_dedupe_key (id, rule_id, dedupe_hash, expires_at, created_at)
+		 VALUES ($1, $2, $3, $4, $5)
+		 ON CONFLICT (rule_id, dedupe_hash)
+		 DO UPDATE SET expires_at = EXCLUDED.expires_at,
+		               created_at = EXCLUDED.created_at
+		 WHERE notygo_dedupe_key.expires_at <= $6  -- re-arm only once the old window is gone
+		 RETURNING TRUE`,
+		newID(), ruleID, dedupeHash, expiresAt, now, now,
+	).Scan(&reArmed)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return &DedupeCheckResult{IsDuplicate: true}, nil
+	}
 	if err != nil {
-		return nil, fmt.Errorf("insert dedupe key: %w", err)
+		return nil, fmt.Errorf("upsert dedupe key: %w", err)
 	}
 
 	return &DedupeCheckResult{IsDuplicate: false}, nil
@@ -469,8 +473,8 @@ func (r *Repository) CheckAndInsertDedupeKey(ctx context.Context, ruleID, dedupe
 // cleanup pass cheap on large tables.
 func (r *Repository) CleanExpiredDedupeKeys(ctx context.Context) (int64, error) {
 	result, err := r.db.Exec(ctx,
-		`DELETE FROM notygo_dedupe_keys WHERE id IN (
-			SELECT id FROM notygo_dedupe_keys WHERE expires_at < now() ORDER BY expires_at LIMIT 1000
+		`DELETE FROM notygo_dedupe_key WHERE id IN (
+			SELECT id FROM notygo_dedupe_key WHERE expires_at < now() ORDER BY expires_at LIMIT 1000
 		)`,
 	)
 	if err != nil {
@@ -478,13 +482,4 @@ func (r *Repository) CleanExpiredDedupeKeys(ctx context.Context) (int64, error) 
 	}
 	n := result.RowsAffected()
 	return n, nil
-}
-
-// marshalJSON helper
-func marshalJSON(v any) string {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return "{}"
-	}
-	return string(b)
 }

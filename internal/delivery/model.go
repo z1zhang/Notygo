@@ -14,26 +14,26 @@ const (
 
 // Delivery represents a single delivery attempt pipeline for a channel.
 type Delivery struct {
-	ID             string   `json:"id"`
-	EventID        string   `json:"event_id"`
-	EventRunID     string   `json:"event_run_id"`
-	RuleID         string   `json:"rule_id"`
-	ChannelID      string   `json:"channel_id"`
-	IdempotencyKey string   `json:"idempotency_key"`
-	Status         string   `json:"status"`
-	AttemptCount   int      `json:"attempt_count"`
-	MaxAttempts    int      `json:"max_attempts"`
+	ID             string `json:"id"`
+	EventID        string `json:"event_id"`
+	EventRunID     string `json:"event_run_id"`
+	RuleID         string `json:"rule_id"`
+	ChannelID      string `json:"channel_id"`
+	IdempotencyKey string `json:"idempotency_key"`
+	Status         string `json:"status"`
+	AttemptCount   int    `json:"attempt_count"`
+	MaxAttempts    int    `json:"max_attempts"`
 	// NextAttemptAt is display-only: the queue (River) owns the actual
 	// schedule; this is the worker's prediction, shown in the UI for
 	// retry_wait deliveries.
-	NextAttemptAt    time.Time `json:"next_attempt_at,omitempty"`
+	NextAttemptAt    time.Time `json:"next_attempt_at,omitzero"`
 	RenderedTitle    *string   `json:"rendered_title,omitempty"`
 	RenderedBody     *string   `json:"rendered_body,omitempty"`
 	RenderedFormat   *string   `json:"rendered_format,omitempty"`
 	LastErrorCode    *string   `json:"last_error_code,omitempty"`
 	LastErrorSummary *string   `json:"last_error_summary,omitempty"`
-	CreatedAt        time.Time `json:"created_at,omitempty"`
-	UpdatedAt        time.Time `json:"updated_at,omitempty"`
+	CreatedAt        time.Time `json:"created_at,omitzero"`
+	UpdatedAt        time.Time `json:"updated_at,omitzero"`
 }
 
 // DeliveryAttempt represents a single HTTP delivery attempt.
@@ -41,8 +41,8 @@ type DeliveryAttempt struct {
 	ID              string     `json:"id"`
 	DeliveryID      string     `json:"delivery_id"`
 	AttemptNo       int        `json:"attempt_no"`
-	StartedAt       time.Time  `json:"started_at,omitempty"`
-	FinishedAt      *time.Time `json:"finished_at,omitempty"`
+	StartedAt       time.Time  `json:"started_at,omitzero"`
+	FinishedAt      *time.Time `json:"finished_at,omitzero"`
 	RequestSummary  *string    `json:"request_summary,omitempty"`
 	ResponseStatus  *int       `json:"response_status,omitempty"`
 	ResponseSummary *string    `json:"response_summary,omitempty"`

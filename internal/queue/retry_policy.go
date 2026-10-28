@@ -21,10 +21,7 @@ type RetryPolicy struct {
 
 // NextRetry implements river.ClientRetryPolicy.
 func (p *RetryPolicy) NextRetry(job *rivertype.JobRow) time.Time {
-	attempt := job.Attempt
-	if attempt < 1 {
-		attempt = 1
-	}
+	attempt := max(job.Attempt, 1)
 	delay := backoff.Delay(attempt, p.Config)
 
 	// Base the next attempt on when the job was attempted, but never in the past.

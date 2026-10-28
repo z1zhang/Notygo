@@ -56,7 +56,7 @@ func (r *Repository) Create(ctx context.Context, req CreateEndpointRequest) (*En
 	}
 
 	_, err = r.db.Exec(ctx,
-		`INSERT INTO notygo_endpoints (id, name, slug, enabled, auth_type, encrypted_secret, payload_content_type, max_body_bytes, rate_limit, mapping_id, created_at, updated_at)
+		`INSERT INTO notygo_endpoint (id, name, slug, enabled, auth_type, encrypted_secret, payload_content_type, max_body_bytes, rate_limit, mapping_id, created_at, updated_at)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
 		id, req.Name, req.Slug, enabled, authTypeCode, req.Secret, payloadContentType, maxBodyBytes, req.RateLimit, req.MappingID, now, now,
 	)
@@ -71,7 +71,7 @@ func (r *Repository) Create(ctx context.Context, req CreateEndpointRequest) (*En
 func (r *Repository) GetByID(ctx context.Context, id string) (*Endpoint, error) {
 	row := r.db.QueryRow(ctx,
 		`SELECT id, name, slug, enabled, auth_type, encrypted_secret, payload_content_type, max_body_bytes, rate_limit, mapping_id, created_at, updated_at
-		 FROM notygo_endpoints WHERE id = $1`, id)
+		 FROM notygo_endpoint WHERE id = $1`, id)
 	return scanEndpoint(row)
 }
 
@@ -79,7 +79,7 @@ func (r *Repository) GetByID(ctx context.Context, id string) (*Endpoint, error) 
 func (r *Repository) GetBySlug(ctx context.Context, slug string) (*Endpoint, error) {
 	row := r.db.QueryRow(ctx,
 		`SELECT id, name, slug, enabled, auth_type, encrypted_secret, payload_content_type, max_body_bytes, rate_limit, mapping_id, created_at, updated_at
-		 FROM notygo_endpoints WHERE slug = $1`, slug)
+		 FROM notygo_endpoint WHERE slug = $1`, slug)
 	return scanEndpoint(row)
 }
 
@@ -132,7 +132,7 @@ func (r *Repository) Update(ctx context.Context, id string, req UpdateEndpointRe
 		return nil, fmt.Errorf("update endpoint: %w", err)
 	}
 	_, err = r.db.Exec(ctx,
-		`UPDATE notygo_endpoints SET name=$1, slug=$2, enabled=$3, auth_type=$4, encrypted_secret=$5, payload_content_type=$6, max_body_bytes=$7, rate_limit=$8, mapping_id=$9, updated_at=$10
+		`UPDATE notygo_endpoint SET name=$1, slug=$2, enabled=$3, auth_type=$4, encrypted_secret=$5, payload_content_type=$6, max_body_bytes=$7, rate_limit=$8, mapping_id=$9, updated_at=$10
 		 WHERE id=$11`,
 		name, slug, enabled, authTypeCode, secretRef, payloadContentType, maxBodyBytes, rateLimit, mappingID, now, id,
 	)
@@ -145,7 +145,7 @@ func (r *Repository) Update(ctx context.Context, id string, req UpdateEndpointRe
 
 // Delete removes a endpoint by ID.
 func (r *Repository) Delete(ctx context.Context, id string) error {
-	res, err := r.db.Exec(ctx, `DELETE FROM notygo_endpoints WHERE id = $1`, id)
+	res, err := r.db.Exec(ctx, `DELETE FROM notygo_endpoint WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("delete endpoint: %w", err)
 	}
@@ -159,7 +159,7 @@ func (r *Repository) Delete(ctx context.Context, id string) error {
 // List returns a paginated list of endpoints and the total count.
 func (r *Repository) List(ctx context.Context, page, size int) ([]Endpoint, int64, error) {
 	var total int64
-	err := r.db.QueryRow(ctx, `SELECT COUNT(*) FROM notygo_endpoints`).Scan(&total)
+	err := r.db.QueryRow(ctx, `SELECT COUNT(*) FROM notygo_endpoint`).Scan(&total)
 	if err != nil {
 		return nil, 0, fmt.Errorf("count endpoints: %w", err)
 	}
@@ -170,7 +170,7 @@ func (r *Repository) List(ctx context.Context, page, size int) ([]Endpoint, int6
 	offset := (page - 1) * size
 	rows, err := r.db.Query(ctx,
 		`SELECT id, name, slug, enabled, auth_type, encrypted_secret, payload_content_type, max_body_bytes, rate_limit, mapping_id, created_at, updated_at
-		 FROM notygo_endpoints ORDER BY created_at DESC LIMIT $1 OFFSET $2`, size, offset)
+		 FROM notygo_endpoint ORDER BY created_at DESC LIMIT $1 OFFSET $2`, size, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list endpoints: %w", err)
 	}
@@ -193,10 +193,10 @@ func (r *Repository) List(ctx context.Context, page, size int) ([]Endpoint, int6
 
 // CheckDuplicateUpstreamEventID returns true if an event with the given endpoint_id + upstream_event_id exists.
 func (r *Repository) CheckDuplicateUpstreamEventID(ctx context.Context, endpointID, upstreamEventID string) (bool, error) {
-	const q = `SELECT 1 FROM notygo_events WHERE endpoint_id = $1 AND upstream_event_id = $2 LIMIT 1`
+	const q = `SELECT 1 FROM notygo_event WHERE endpoint_id = $1 AND upstream_event_id = $2 LIMIT 1`
 	var dummy int
 	err := r.db.QueryRow(ctx, q, endpointID, upstreamEventID).Scan(&dummy)
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
 	if err != nil {

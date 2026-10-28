@@ -10,9 +10,10 @@ import (
 	"log/slog"
 	"time"
 
+	"notygo/internal/storage"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/oklog/ulid/v2"
-	"notygo/internal/storage"
 )
 
 // ErrNotFound is returned when an event is not found.
@@ -57,7 +58,7 @@ func (r *Repository) Insert(ctx context.Context, e *Event) (*Event, error) {
 	}
 
 	_, err = r.db.Exec(ctx,
-		`INSERT INTO notygo_events (id, endpoint_id, upstream_event_id, request_id, received_at, content_type, payload_raw, payload_hash, status, run_type, error_code, error_summary)
+		`INSERT INTO notygo_event (id, endpoint_id, upstream_event_id, request_id, received_at, content_type, payload_raw, payload_hash, status, run_type, error_code, error_summary)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
 		e.ID, e.EndpointID, e.UpstreamEventID, e.RequestID,
 		e.ReceivedAt,
@@ -75,7 +76,7 @@ func (r *Repository) Insert(ctx context.Context, e *Event) (*Event, error) {
 func (r *Repository) GetByID(ctx context.Context, id string) (*Event, error) {
 	row := r.db.QueryRow(ctx,
 		`SELECT id, endpoint_id, upstream_event_id, request_id, received_at, content_type, payload_raw, payload_hash, status, run_type, error_code, error_summary
-		 FROM notygo_events WHERE id = $1`, id)
+		 FROM notygo_event WHERE id = $1`, id)
 	return scanEvent(row)
 }
 
@@ -85,9 +86,9 @@ func (r *Repository) List(ctx context.Context, page, size int, statusFilter, end
 	var total int64
 	var args []any
 
-	countQuery := `SELECT COUNT(*) FROM notygo_events WHERE 1=1`
+	countQuery := `SELECT COUNT(*) FROM notygo_event WHERE 1=1`
 	listQuery := `SELECT id, endpoint_id, upstream_event_id, request_id, received_at, content_type, payload_raw, payload_hash, status, run_type, error_code, error_summary
-		 FROM notygo_events WHERE 1=1`
+		 FROM notygo_event WHERE 1=1`
 
 	if statusFilter != "" {
 		code, cerr := StatusToCode(statusFilter)
@@ -144,7 +145,7 @@ func (r *Repository) List(ctx context.Context, page, size int, statusFilter, end
 // already owns the event — the caller should no-op.
 func (r *Repository) MarkProcessing(ctx context.Context, id string) (bool, error) {
 	result, err := r.db.Exec(ctx,
-		`UPDATE notygo_events SET status = $1, updated_at = now() WHERE id = $2 AND status = $3`,
+		`UPDATE notygo_event SET status = $1, updated_at = now() WHERE id = $2 AND status = $3`,
 		eventStatusCodeProcessing, id, eventStatusCodeReceived,
 	)
 	if err != nil {
@@ -158,7 +159,7 @@ func (r *Repository) MarkProcessing(ctx context.Context, id string) (bool, error
 // replayed event is not overwritten mid-run.
 func (r *Repository) MarkProcessed(ctx context.Context, id string) error {
 	result, err := r.db.Exec(ctx,
-		`UPDATE notygo_events SET status = $1, updated_at = now() WHERE id = $2 AND status = $3`,
+		`UPDATE notygo_event SET status = $1, updated_at = now() WHERE id = $2 AND status = $3`,
 		eventStatusCodeCompleted, id, eventStatusCodeProcessing,
 	)
 	if err != nil {
@@ -174,7 +175,7 @@ func (r *Repository) MarkProcessed(ctx context.Context, id string) error {
 // MarkDeduped marks an event as deduped (all matched rules were dedupe-skipped).
 func (r *Repository) MarkDeduped(ctx context.Context, id string) error {
 	result, err := r.db.Exec(ctx,
-		`UPDATE notygo_events SET status = $1, updated_at = now() WHERE id = $2 AND status = $3`,
+		`UPDATE notygo_event SET status = $1, updated_at = now() WHERE id = $2 AND status = $3`,
 		eventStatusCodeDeduped, id, eventStatusCodeProcessing,
 	)
 	if err != nil {
@@ -190,7 +191,7 @@ func (r *Repository) MarkDeduped(ctx context.Context, id string) error {
 // MarkFailed marks an event as failed.
 func (r *Repository) MarkFailed(ctx context.Context, id string, errorCode, errorSummary string) error {
 	_, err := r.db.Exec(ctx,
-		`UPDATE notygo_events SET status = $1, error_code = $2, error_summary = $3, updated_at = now() WHERE id = $4`,
+		`UPDATE notygo_event SET status = $1, error_code = $2, error_summary = $3, updated_at = now() WHERE id = $4`,
 		eventStatusCodeFailed, errorCode, errorSummary, id,
 	)
 	if err != nil {
@@ -206,7 +207,7 @@ func (r *Repository) SetStatus(ctx context.Context, id string, status string) er
 		return fmt.Errorf("set event status: %w", err)
 	}
 	_, err = r.db.Exec(ctx,
-		`UPDATE notygo_events SET status = $1, updated_at = now() WHERE id = $2`,
+		`UPDATE notygo_event SET status = $1, updated_at = now() WHERE id = $2`,
 		code, id,
 	)
 	if err != nil {
@@ -218,7 +219,7 @@ func (r *Repository) SetStatus(ctx context.Context, id string, status string) er
 // SetForReplay resets the event for replay: sets status to received and run_type to replay.
 func (r *Repository) SetForReplay(ctx context.Context, id string) error {
 	_, err := r.db.Exec(ctx,
-		`UPDATE notygo_events SET status = $1, run_type = $2, error_code = NULL, error_summary = NULL, updated_at = now() WHERE id = $3`,
+		`UPDATE notygo_event SET status = $1, run_type = $2, error_code = NULL, error_summary = NULL, updated_at = now() WHERE id = $3`,
 		eventStatusCodeReceived, runTypeCodeReplay, id,
 	)
 	if err != nil {
@@ -262,7 +263,7 @@ func (r *Repository) CreateEventRun(ctx context.Context, run *EventRun) (*EventR
 	}
 
 	_, err = r.db.Exec(ctx,
-		`INSERT INTO notygo_event_runs (id, event_id, run_type, mapping_id, mapping_revision, rule_set_snapshot, parsed_fields, validation_result, matched_rule_ids, status, started_at)
+		`INSERT INTO notygo_event_run (id, event_id, run_type, mapping_id, mapping_revision, rule_set_snapshot, parsed_fields, validation_result, matched_rule_ids, status, started_at)
 		 VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9::jsonb, $10, $11)`,
 		run.ID, run.EventID, runTypeCode, run.MappingID, run.MappingRevision,
 		string(ruleSnapshotJSON), string(parsedFieldsJSON), string(validationJSON),
@@ -279,7 +280,7 @@ func (r *Repository) CreateEventRun(ctx context.Context, run *EventRun) (*EventR
 func (r *Repository) GetEventRunByID(ctx context.Context, id string) (*EventRun, error) {
 	row := r.db.QueryRow(ctx,
 		`SELECT id, event_id, run_type, mapping_id, mapping_revision, rule_set_snapshot, parsed_fields, validation_result, matched_rule_ids, status, started_at, finished_at, error_code, error_summary
-		 FROM notygo_event_runs WHERE id = $1`, id)
+		 FROM notygo_event_run WHERE id = $1`, id)
 	return scanEventRun(row)
 }
 
@@ -287,7 +288,7 @@ func (r *Repository) GetEventRunByID(ctx context.Context, id string) (*EventRun,
 func (r *Repository) GetLatestEventRun(ctx context.Context, eventID string) (*EventRun, error) {
 	row := r.db.QueryRow(ctx,
 		`SELECT id, event_id, run_type, mapping_id, mapping_revision, rule_set_snapshot, parsed_fields, validation_result, matched_rule_ids, status, started_at, finished_at, error_code, error_summary
-		 FROM notygo_event_runs WHERE event_id = $1 ORDER BY started_at DESC LIMIT 1`, eventID)
+		 FROM notygo_event_run WHERE event_id = $1 ORDER BY started_at DESC LIMIT 1`, eventID)
 	return scanEventRun(row)
 }
 
@@ -300,7 +301,7 @@ func (r *Repository) CompleteEventRun(ctx context.Context, id string, matchedRul
 	}
 
 	_, err = r.db.Exec(ctx,
-		`UPDATE notygo_event_runs SET status = $1, finished_at = $2, matched_rule_ids = $3::jsonb WHERE id = $4`,
+		`UPDATE notygo_event_run SET status = $1, finished_at = $2, matched_rule_ids = $3::jsonb WHERE id = $4`,
 		eventRunStatusCodeCompleted, now, string(matchedJSON), id,
 	)
 	if err != nil {
@@ -314,7 +315,7 @@ func (r *Repository) FailEventRun(ctx context.Context, id string, errorCode, err
 	now := time.Now().UTC()
 
 	_, err := r.db.Exec(ctx,
-		`UPDATE notygo_event_runs SET status = $1, finished_at = $2, error_code = $3, error_summary = $4 WHERE id = $5`,
+		`UPDATE notygo_event_run SET status = $1, finished_at = $2, error_code = $3, error_summary = $4 WHERE id = $5`,
 		eventRunStatusCodeFailed, now, errorCode, errorSummary, id,
 	)
 	if err != nil {
@@ -349,14 +350,6 @@ func scanEvent(row pgx.Row) (*Event, error) {
 	}
 
 	return &e, nil
-}
-
-func scanEventValue(row pgx.Row) (Event, error) {
-	e, err := scanEvent(row)
-	if err != nil {
-		return Event{}, err
-	}
-	return *e, nil
 }
 
 func scanEventFromRows(rows pgx.Rows) (*Event, error) {

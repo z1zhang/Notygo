@@ -141,10 +141,11 @@ func (s *EmailSender) sendSTARTTLS(addr, host, password, from string, recipients
 	}
 	defer client.Close()
 
-	// Attempt STARTTLS upgrade
+	// STARTTLS upgrade is mandatory on this path: silently continuing after
+	// a failed upgrade would send AUTH credentials in plaintext.
 	tlsConfig := &tls.Config{ServerName: host}
 	if err := client.StartTLS(tlsConfig); err != nil {
-		// STARTTLS not supported; continue with plain SMTP
+		return fmt.Errorf("STARTTLS upgrade %s: %w", addr, err)
 	}
 
 	return mailTransaction(client, host, password, from, recipients, msg)

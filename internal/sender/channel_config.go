@@ -1,18 +1,21 @@
-package channel
+package sender
 
 import (
 	"encoding/json"
 	"time"
 
+	"notygo/internal/channel"
 	"notygo/internal/secret"
-	"notygo/internal/sender"
 )
 
-// BuildSenderConfig builds a sender.ChannelConfig from a channel model,
-// decrypting the stored secret. Shared by the delivery worker and the
-// channel test-send endpoint so both exercise the exact same code path.
-func BuildSenderConfig(dest *Channel, secretSvc *secret.Service) sender.ChannelConfig {
-	cfg := sender.ChannelConfig{
+// BuildChannelConfig assembles a ChannelConfig from a channel domain model,
+// decrypting the stored secret. It lives in the sender (transport adapter)
+// package so the domain model stays free of transport concerns — the
+// dependency direction here is adapter → domain. Shared by the delivery
+// worker and the channel test-send endpoint so both exercise the exact
+// same code path.
+func BuildChannelConfig(dest *channel.Channel, secretSvc *secret.Service) ChannelConfig {
+	cfg := ChannelConfig{
 		Type:      string(dest.Type),
 		Timeout:   time.Duration(dest.TimeoutMs) * time.Millisecond,
 		RawConfig: dest.Config,
@@ -39,10 +42,11 @@ func BuildSenderConfig(dest *Channel, secretSvc *secret.Service) sender.ChannelC
 		}
 	}
 
-	// Decrypt secret if available
+	// Decrypt secret if available. A decryption failure intentionally
+	// degrades to "no secret": the send attempt will then fail with an
+	// auth error, which is visible in the delivery attempt log.
 	if dest.EncryptedSecret != nil && *dest.EncryptedSecret != "" && secretSvc != nil {
-		decrypted, err := secretSvc.Decrypt(*dest.EncryptedSecret)
-		if err == nil {
+		if decrypted, err := secretSvc.Decrypt(*dest.EncryptedSecret); err == nil {
 			cfg.Secret = decrypted
 		}
 	}

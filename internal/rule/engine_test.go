@@ -1,6 +1,7 @@
-package rules
+package rule
 
 import (
+	"encoding/json"
 	"testing"
 )
 
@@ -243,7 +244,7 @@ func TestEvaluate_Regex(t *testing.T) {
 
 func TestEvaluate_Regex_TooLong(t *testing.T) {
 	longPattern := ""
-	for i := 0; i < 257; i++ {
+	for range 257 {
 		longPattern += "a"
 	}
 	rule := &Rule{
@@ -372,6 +373,32 @@ func TestEvaluate_Empty(t *testing.T) {
 	}
 	if result {
 		t.Error("expected empty to be false for non-empty string")
+	}
+}
+
+func TestEvaluate_Contains_LargeNumber(t *testing.T) {
+	// gjson parses payload numbers as float64; a naive %v renders 1e+09 and
+	// breaks substring/regex matching against user values like "1000000000".
+	rule := &Rule{
+		Enabled: true,
+		Conditions: ConditionGroup{
+			Operator: "and",
+			Conditions: []Condition{
+				{Field: "size", Operator: "contains", Value: "1000000000"},
+			},
+		},
+	}
+
+	result, err := Evaluate(rule, map[string]any{"size": float64(1000000000)})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result {
+		t.Error("expected contains to match large integer without scientific notation")
+	}
+
+	if s := StringifyValue(float64(1000000000)); s != "1000000000" {
+		t.Errorf("StringifyValue(1e9) = %q, want %q", s, "1000000000")
 	}
 }
 
@@ -595,4 +622,41 @@ func TestEvaluate_EmptyGroup(t *testing.T) {
 	if !result {
 		t.Error("empty condition group should evaluate to true")
 	}
+}
+
+// FuzzEvaluate exercises the rule engine against arbitrary field maps and
+// condition values across every operator. The contract: no panic; the
+// outcome is a (result, error) pair, errors being legitimate (bad regex,
+// non-numeric comparison).
+func FuzzEvaluate(f *testing.F) {
+	f.Add(`{"a":"x"}`, "a", "x")
+	f.Add(`{"n":1000000000}`, "n", "1000000000")
+	f.Add(`{"deep":{"x":[{"y":"z"}]}}`, "deep.x.0.y", "z")
+	f.Add(`{"nested":{"flag":true}}`, "nested.flag", "false")
+	f.Add(`{"empty":""}`, "empty", "")
+
+	f.Fuzz(func(t *testing.T, payloadJSON, field, value string) {
+		var fields map[string]any
+		if json.Unmarshal([]byte(payloadJSON), &fields) != nil {
+			return // gjson-derived maps always decode from an object
+		}
+		ops := []string{"eq", "ne", "neq", "contains", "not_contains", "regex",
+			"gt", "lt", "gte", "lte", "exists", "not_exists", "empty", "not_empty"}
+		for _, op := range ops {
+			r := &Rule{Enabled: true, Conditions: ConditionGroup{
+				Operator:   "and",
+				Conditions: []Condition{{Field: field, Operator: op, Value: value}},
+				Groups: []ConditionGroup{{
+					Operator:   "or",
+					Conditions: []Condition{{Field: field, Operator: op, Value: value}},
+				}},
+			}}
+			_, _ = Evaluate(r, fields)
+		}
+		// Fuzzing generates unbounded distinct regex patterns; the compile
+		// cache exists for the (finite) rules table, so drain it here to
+		// keep long fuzz runs flat on memory. Fuzz workers are separate
+		// processes and iterations are sequential, so this is race-free.
+		regexCache.Range(func(k, v any) bool { regexCache.Delete(k); return true })
+	})
 }

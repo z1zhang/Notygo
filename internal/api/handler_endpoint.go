@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"notygo/internal/errcode"
 
 	"github.com/go-chi/chi/v5"
 	"log/slog"
@@ -33,7 +34,7 @@ func ListEndpoints(db *pgxpool.Pool, secretSvc *secret.Service) http.HandlerFunc
 		page, size := ParsePagination(r)
 		endpoints, total, err := repo.List(r.Context(), page, size)
 		if err != nil {
-			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to list endpoints")
+			WriteError(w, http.StatusInternalServerError, errcode.SystemInternal, "failed to list endpoints")
 			return
 		}
 		responses := make([]endpoint.EndpointResponse, len(endpoints))
@@ -55,17 +56,17 @@ func CreateEndpoint(db *pgxpool.Pool, secretSvc *secret.Service, auditRepo *audi
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req endpoint.CreateEndpointRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "invalid request body")
+			WriteError(w, http.StatusBadRequest, errcode.ConfigValidation, "invalid request body")
 			return
 		}
 
 		if req.Name == "" {
-			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "name is required")
+			WriteError(w, http.StatusBadRequest, errcode.ConfigValidation, "name is required")
 			return
 		}
 
 		if req.AuthType != nil && !endpoint.IsValidAuthType(*req.AuthType) {
-			WriteError(w, http.StatusBadRequest, ErrConfigValidation, fmt.Sprintf("invalid auth_type %q", *req.AuthType))
+			WriteError(w, http.StatusBadRequest, errcode.ConfigValidation, fmt.Sprintf("invalid auth_type %q", *req.AuthType))
 			return
 		}
 
@@ -78,7 +79,7 @@ func CreateEndpoint(db *pgxpool.Pool, secretSvc *secret.Service, auditRepo *audi
 		if req.Secret != nil && *req.Secret != "" && secretSvc != nil {
 			encrypted, err := secretSvc.Encrypt(*req.Secret)
 			if err != nil {
-				WriteError(w, http.StatusInternalServerError, ErrSystemKeyInvalid, "failed to encrypt secret")
+				WriteError(w, http.StatusInternalServerError, errcode.SystemKeyInvalid, "failed to encrypt secret")
 				return
 			}
 			req.Secret = &encrypted
@@ -86,7 +87,7 @@ func CreateEndpoint(db *pgxpool.Pool, secretSvc *secret.Service, auditRepo *audi
 
 		created, err := repo.Create(r.Context(), req)
 		if err != nil {
-			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to create endpoint")
+			WriteError(w, http.StatusInternalServerError, errcode.SystemInternal, "failed to create endpoint")
 			return
 		}
 
@@ -96,7 +97,7 @@ func CreateEndpoint(db *pgxpool.Pool, secretSvc *secret.Service, auditRepo *audi
 			Action:     "create",
 			TargetType: "endpoint",
 			TargetID:   created.ID,
-			Summary:    stringPtr(fmt.Sprintf("created endpoint %q", created.Name)),
+			Summary:    new(fmt.Sprintf("created endpoint %q", created.Name)),
 		}); auditErr != nil {
 			slog.Error("audit log insert failed", "action", "create", "target_type", "endpoint", "error", auditErr)
 		}
@@ -115,9 +116,9 @@ func GetEndpoint(db *pgxpool.Pool, secretSvc *secret.Service) http.HandlerFunc {
 		s, err := repo.GetByID(r.Context(), id)
 		if err != nil {
 			if errors.Is(err, endpoint.ErrNotFound) {
-				WriteError(w, http.StatusNotFound, ErrConfigValidation, "endpoint not found")
+				WriteError(w, http.StatusNotFound, errcode.ConfigValidation, "endpoint not found")
 			} else {
-				WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to get endpoint")
+				WriteError(w, http.StatusInternalServerError, errcode.SystemInternal, "failed to get endpoint")
 			}
 			return
 		}
@@ -134,12 +135,12 @@ func UpdateEndpoint(db *pgxpool.Pool, secretSvc *secret.Service, auditRepo *audi
 		id := chi.URLParam(r, "id")
 		var req endpoint.UpdateEndpointRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "invalid request body")
+			WriteError(w, http.StatusBadRequest, errcode.ConfigValidation, "invalid request body")
 			return
 		}
 
 		if req.AuthType != nil && !endpoint.IsValidAuthType(*req.AuthType) {
-			WriteError(w, http.StatusBadRequest, ErrConfigValidation, fmt.Sprintf("invalid auth_type %q", *req.AuthType))
+			WriteError(w, http.StatusBadRequest, errcode.ConfigValidation, fmt.Sprintf("invalid auth_type %q", *req.AuthType))
 			return
 		}
 
@@ -147,7 +148,7 @@ func UpdateEndpoint(db *pgxpool.Pool, secretSvc *secret.Service, auditRepo *audi
 		if req.Secret != nil && *req.Secret != "" && secretSvc != nil {
 			encrypted, err := secretSvc.Encrypt(*req.Secret)
 			if err != nil {
-				WriteError(w, http.StatusInternalServerError, ErrSystemKeyInvalid, "failed to encrypt secret")
+				WriteError(w, http.StatusInternalServerError, errcode.SystemKeyInvalid, "failed to encrypt secret")
 				return
 			}
 			req.Secret = &encrypted
@@ -159,9 +160,9 @@ func UpdateEndpoint(db *pgxpool.Pool, secretSvc *secret.Service, auditRepo *audi
 		updated, err := repo.Update(r.Context(), id, req)
 		if err != nil {
 			if errors.Is(err, endpoint.ErrNotFound) {
-				WriteError(w, http.StatusNotFound, ErrConfigValidation, "endpoint not found")
+				WriteError(w, http.StatusNotFound, errcode.ConfigValidation, "endpoint not found")
 			} else {
-				WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to update endpoint")
+				WriteError(w, http.StatusInternalServerError, errcode.SystemInternal, "failed to update endpoint")
 			}
 			return
 		}
@@ -173,7 +174,7 @@ func UpdateEndpoint(db *pgxpool.Pool, secretSvc *secret.Service, auditRepo *audi
 			TargetType:     "endpoint",
 			TargetID:       id,
 			SnapshotBefore: marshalSnapshot(oldEndpoint),
-			Summary:        stringPtr(fmt.Sprintf("updated endpoint %q", updated.Name)),
+			Summary:        new(fmt.Sprintf("updated endpoint %q", updated.Name)),
 		}); auditErr != nil {
 			slog.Error("audit log insert failed", "action", "update", "target_type", "endpoint", "error", auditErr)
 		}
@@ -193,7 +194,7 @@ func DeleteEndpoint(db *pgxpool.Pool, auditRepo *audit.Repository) http.HandlerF
 		oldEndpoint, _ := repo.GetByID(r.Context(), id)
 
 		if err := repo.Delete(r.Context(), id); err != nil {
-			WriteError(w, http.StatusNotFound, ErrConfigValidation, "endpoint not found")
+			WriteError(w, http.StatusNotFound, errcode.ConfigValidation, "endpoint not found")
 			return
 		}
 
@@ -204,7 +205,7 @@ func DeleteEndpoint(db *pgxpool.Pool, auditRepo *audit.Repository) http.HandlerF
 			TargetType:     "endpoint",
 			TargetID:       id,
 			SnapshotBefore: marshalSnapshot(oldEndpoint),
-			Summary:        stringPtr(fmt.Sprintf("deleted endpoint %s", id)),
+			Summary:        new(fmt.Sprintf("deleted endpoint %s", id)),
 		}); auditErr != nil {
 			slog.Error("audit log insert failed", "action", "delete", "target_type", "endpoint", "error", auditErr)
 		}

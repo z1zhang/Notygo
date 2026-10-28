@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"notygo/internal/errcode"
 	"strings"
 	"time"
 
@@ -91,11 +92,11 @@ func (s *SendService) Execute(ctx context.Context, deliveryID string, attemptNo 
 	dest, err := s.destRepo.GetByID(ctx, d.ChannelID)
 	if err != nil {
 		slog.Error("failed to fetch channel for delivery", "delivery_id", d.ID, "event_id", d.EventID, "channel_id", d.ChannelID, "error", err)
-		return true, s.finishFailed(ctx, d.ID, "DELIVER_001", "channel not found")
+		return true, s.finishFailed(ctx, d.ID, errcode.DeliverConnectFailed, "channel not found")
 	}
 
 	// 2. Get channel config
-	destConfig := channel.BuildSenderConfig(dest, s.secretSvc)
+	destConfig := sender.BuildChannelConfig(dest, s.secretSvc)
 
 	// 3. Build rendered message
 	msg := sender.RenderedMessage{
@@ -108,7 +109,7 @@ func (s *SendService) Execute(ctx context.Context, deliveryID string, attemptNo 
 	snd, err := s.senderRegistry.Get(string(dest.Type))
 	if err != nil {
 		slog.Error("no sender for channel type", "type", dest.Type, "error", err)
-		return true, s.finishFailed(ctx, d.ID, "DELIVER_001", err.Error())
+		return true, s.finishFailed(ctx, d.ID, errcode.DeliverConnectFailed, err.Error())
 	}
 
 	// 5. Build request summary for audit/debug
@@ -130,7 +131,7 @@ func (s *SendService) Execute(ctx context.Context, deliveryID string, attemptNo 
 		DeliveryID:     d.ID,
 		AttemptNo:      attemptNo,
 		StartedAt:      startTime,
-		DurationMs:     intPtr(int(duration.Milliseconds())),
+		DurationMs:     new(int(duration.Milliseconds())),
 		RequestSummary: &requestSummary,
 	}
 
@@ -149,12 +150,12 @@ func (s *SendService) Execute(ctx context.Context, deliveryID string, attemptNo 
 	if sendErr != nil {
 		// Non-HTTP error (connection, timeout, SSRF guard, …)
 		slog.Error("delivery send error", "delivery_id", d.ID, "event_id", d.EventID, "error", sendErr)
-		attempt.ErrorCode = stringPtr("DELIVER_001")
-		attempt.ErrorSummary = stringPtr(sendErr.Error())
+		attempt.ErrorCode = new(errcode.DeliverConnectFailed)
+		attempt.ErrorSummary = new(sendErr.Error())
 		if _, err := s.deliveryRepo.RecordDeliveryAttempt(ctx, attempt); err != nil {
 			return false, fmt.Errorf("record attempt: %w", err)
 		}
-		return s.handleFailure(ctx, d, attemptNo, isPermanentNetworkError(sendErr), "DELIVER_001", sendErr.Error())
+		return s.handleFailure(ctx, d, attemptNo, isPermanentNetworkError(sendErr), errcode.DeliverConnectFailed, sendErr.Error())
 	}
 
 	if result.StatusCode >= 200 && result.StatusCode < 300 {
@@ -177,8 +178,8 @@ func (s *SendService) Execute(ctx context.Context, deliveryID string, attemptNo 
 		respBody = result.ResponseBody
 	}
 	errMsg := fmt.Sprintf("HTTP %d: %s", statusCode, respBody)
-	attempt.ErrorCode = stringPtr(errCode)
-	attempt.ErrorSummary = stringPtr(errMsg)
+	attempt.ErrorCode = new(errCode)
+	attempt.ErrorSummary = new(errMsg)
 	if _, err := s.deliveryRepo.RecordDeliveryAttempt(ctx, attempt); err != nil {
 		return false, fmt.Errorf("record attempt: %w", err)
 	}
@@ -241,15 +242,11 @@ func isPermanentNetworkError(err error) bool {
 	if errors.As(err, &dnsErr) && dnsErr.IsNotFound {
 		return true
 	}
-	var unknownAuthorityErr x509.UnknownAuthorityError
-	if errors.As(err, &unknownAuthorityErr) {
+	if _, ok := errors.AsType[x509.UnknownAuthorityError](err); ok {
 		return true
 	}
 	var certInvalidErr x509.CertificateInvalidError
-	if errors.As(err, &certInvalidErr) {
-		return true
-	}
-	return false
+	return errors.As(err, &certInvalidErr)
 }
 
 // isRetryableHTTPStatus returns true for status codes that warrant a retry.
@@ -266,13 +263,13 @@ func isRetryableHTTPStatus(statusCode int) bool {
 func classifyHTTPError(statusCode int) string {
 	switch {
 	case statusCode == 429:
-		return "DELIVER_005"
+		return errcode.DeliverRateLimited
 	case statusCode == 401, statusCode == 403:
-		return "DELIVER_002"
+		return errcode.DeliverAuthFailed
 	case statusCode >= 500:
-		return "DELIVER_001"
+		return errcode.DeliverConnectFailed
 	default:
-		return "DELIVER_004"
+		return errcode.DeliverBusinessError
 	}
 }
 
@@ -344,12 +341,4 @@ func stringValue(s *string) string {
 		return ""
 	}
 	return *s
-}
-
-func stringPtr(s string) *string {
-	return &s
-}
-
-func intPtr(i int) *int {
-	return &i
 }

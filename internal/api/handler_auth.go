@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"notygo/internal/errcode"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -40,12 +41,12 @@ func LoginHandler(db *pgxpool.Pool, auditRepo *audit.Repository, guard *loginGua
 			Password string `json:"password"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			WriteError(w, http.StatusBadRequest, ErrIngestAuthFailed, "invalid request body")
+			WriteError(w, http.StatusBadRequest, errcode.IngestAuthFailed, "invalid request body")
 			return
 		}
 
 		if req.Username == "" || req.Password == "" {
-			WriteError(w, http.StatusBadRequest, ErrIngestAuthFailed, "username and password are required")
+			WriteError(w, http.StatusBadRequest, errcode.IngestAuthFailed, "username and password are required")
 			return
 		}
 
@@ -58,7 +59,7 @@ func LoginHandler(db *pgxpool.Pool, auditRepo *audit.Repository, guard *loginGua
 		// blocked probes cannot bloat the audit table (the failures that
 		// caused the lockout are already recorded with the same IP).
 		if guard.isLocked(ipKey) || guard.isLocked(userKey) {
-			WriteError(w, http.StatusTooManyRequests, ErrAuthLocked,
+			WriteError(w, http.StatusTooManyRequests, errcode.AuthLocked,
 				"too many failed login attempts, try again later")
 			return
 		}
@@ -66,16 +67,17 @@ func LoginHandler(db *pgxpool.Pool, auditRepo *audit.Repository, guard *loginGua
 		// Query admin user
 		var id, passwordHash string
 		err := db.QueryRow(r.Context(),
-			`SELECT id, password FROM notygo_users WHERE username = $1`, req.Username,
+			`SELECT id, password FROM notygo_user WHERE username = $1`, req.Username,
 		).Scan(&id, &passwordHash)
 		if err != nil {
 			// Equalize timing with the existing-user path
 			_ = bcrypt.CompareHashAndPassword([]byte(dummyHash), []byte(req.Password))
 			guard.recordFailure(ipKey)
 			guard.recordFailure(userKey)
+			slog.Warn("login failed: unknown user", "username", req.Username, "remote_ip", ip)
 			writeLoginAudit(r.Context(), auditRepo, "auth.login_failed", req.Username, "-",
 				"ip="+ip+" username="+req.Username+" reason=invalid_credentials")
-			WriteError(w, http.StatusUnauthorized, ErrIngestAuthFailed, "invalid credentials")
+			WriteError(w, http.StatusUnauthorized, errcode.IngestAuthFailed, "invalid credentials")
 			return
 		}
 
@@ -83,16 +85,18 @@ func LoginHandler(db *pgxpool.Pool, auditRepo *audit.Repository, guard *loginGua
 		if err := bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(req.Password)); err != nil {
 			guard.recordFailure(ipKey)
 			guard.recordFailure(userKey)
+			slog.Warn("login failed: wrong password", "username", req.Username, "remote_ip", ip)
 			writeLoginAudit(r.Context(), auditRepo, "auth.login_failed", req.Username, id,
 				"ip="+ip+" username="+req.Username+" reason=invalid_credentials")
-			WriteError(w, http.StatusUnauthorized, ErrIngestAuthFailed, "invalid credentials")
+			WriteError(w, http.StatusUnauthorized, errcode.IngestAuthFailed, "invalid credentials")
 			return
 		}
 
 		// Generate session token (32 random bytes hex)
 		tokenBytes := make([]byte, 32)
 		if _, err := rand.Read(tokenBytes); err != nil {
-			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to generate token")
+			slog.Error("failed to generate session token", "username", req.Username, "error", err)
+			WriteError(w, http.StatusInternalServerError, errcode.SystemInternal, "failed to generate token")
 			return
 		}
 		token := hex.EncodeToString(tokenBytes)
@@ -104,11 +108,11 @@ func LoginHandler(db *pgxpool.Pool, auditRepo *audit.Repository, guard *loginGua
 		sessionID := generateSessionID()
 		nowExpr := storage.NowExpr()
 		_, err = db.Exec(r.Context(),
-			"INSERT INTO notygo_sessions (id, user_id, token_hash, created_at, expires_at) VALUES ($1, $2, $3, "+nowExpr+", $4)",
+			"INSERT INTO notygo_session (id, user_id, token_hash, created_at, expires_at) VALUES ($1, $2, $3, "+nowExpr+", $4)",
 			sessionID, id, hashToken(token), expiresAt,
 		)
 		if err != nil {
-			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to create session")
+			WriteError(w, http.StatusInternalServerError, errcode.SystemInternal, "failed to create session")
 			return
 		}
 

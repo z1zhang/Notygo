@@ -53,7 +53,7 @@ func (r *Repository) Create(ctx context.Context, name string, ruleIDs []string, 
 	}
 
 	_, err = r.db.Exec(ctx,
-		`INSERT INTO notygo_mappings (id, name, revision, rule_ids, continue_on_match, fields, created_at, updated_at) VALUES ($1, $2, 1, $3::jsonb, $4, $5::jsonb, $6, $7)`,
+		`INSERT INTO notygo_mapping (id, name, revision, rule_ids, continue_on_match, fields, created_at, updated_at) VALUES ($1, $2, 1, $3::jsonb, $4, $5::jsonb, $6, $7)`,
 		id, name, ruleIDsJSON, continueOnMatch, string(fieldsJSON), now, now,
 	)
 	if err != nil {
@@ -66,14 +66,14 @@ func (r *Repository) Create(ctx context.Context, name string, ruleIDs []string, 
 // GetByID retrieves a mapping by its ID.
 func (r *Repository) GetByID(ctx context.Context, id string) (*Mapping, error) {
 	row := r.db.QueryRow(ctx,
-		`SELECT `+mappingColumns+` FROM notygo_mappings WHERE id = $1`, id)
+		`SELECT `+mappingColumns+` FROM notygo_mapping WHERE id = $1`, id)
 	return scanMapping(row)
 }
 
 // List returns a paginated list of mappings and the total count.
 func (r *Repository) List(ctx context.Context, page, size int) ([]Mapping, int64, error) {
 	var total int64
-	err := r.db.QueryRow(ctx, `SELECT COUNT(*) FROM notygo_mappings`).Scan(&total)
+	err := r.db.QueryRow(ctx, `SELECT COUNT(*) FROM notygo_mapping`).Scan(&total)
 	if err != nil {
 		return nil, 0, fmt.Errorf("count mappings: %w", err)
 	}
@@ -83,7 +83,7 @@ func (r *Repository) List(ctx context.Context, page, size int) ([]Mapping, int64
 
 	offset := (page - 1) * size
 	rows, err := r.db.Query(ctx,
-		`SELECT `+mappingColumns+` FROM notygo_mappings ORDER BY created_at DESC LIMIT $1 OFFSET $2`, size, offset)
+		`SELECT `+mappingColumns+` FROM notygo_mapping ORDER BY created_at DESC LIMIT $1 OFFSET $2`, size, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list mappings: %w", err)
 	}
@@ -149,7 +149,7 @@ func (r *Repository) Update(ctx context.Context, id string, name *string, ruleID
 	newRevision := existing.Revision + 1
 	now := time.Now().UTC()
 	_, err = r.db.Exec(ctx,
-		`UPDATE notygo_mappings SET name=$1, revision=$2, rule_ids=$3::jsonb, continue_on_match=$4, fields=$5::jsonb, updated_at=$6 WHERE id=$7`,
+		`UPDATE notygo_mapping SET name=$1, revision=$2, rule_ids=$3::jsonb, continue_on_match=$4, fields=$5::jsonb, updated_at=$6 WHERE id=$7`,
 		newName, newRevision, ruleIDsJSON, newContinueOnMatch, string(fieldsJSON), now, id,
 	)
 	if err != nil {
@@ -161,7 +161,7 @@ func (r *Repository) Update(ctx context.Context, id string, name *string, ruleID
 
 // Delete removes a mapping by ID.
 func (r *Repository) Delete(ctx context.Context, id string) error {
-	res, err := r.db.Exec(ctx, `DELETE FROM notygo_mappings WHERE id = $1`, id)
+	res, err := r.db.Exec(ctx, `DELETE FROM notygo_mapping WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("delete mapping: %w", err)
 	}

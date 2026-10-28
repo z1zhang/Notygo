@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -28,11 +29,11 @@ import (
 	"notygo/internal/observability"
 	"notygo/internal/processor"
 	"notygo/internal/queue"
-	"notygo/internal/rules"
+	"notygo/internal/rule"
 	"notygo/internal/secret"
 	"notygo/internal/sender"
 	"notygo/internal/storage"
-	"notygo/internal/templates"
+	"notygo/internal/template"
 )
 
 func main() {
@@ -87,8 +88,8 @@ func main() {
 	// Create repositories
 	endpointRepo := endpoint.NewRepository(db)
 	mappingRepo := mapping.NewRepository(db)
-	ruleRepo := rules.NewRepository(db)
-	templateRepo := templates.NewRepository(db)
+	ruleRepo := rule.NewRepository(db)
+	templateRepo := template.NewRepository(db)
 	destRepo := channel.NewRepository(db)
 	eventRepo := event.NewRepository(db)
 	deliveryRepo := delivery.NewRepository(db)
@@ -174,7 +175,7 @@ func main() {
 
 	go func() {
 		slog.Info("http server listening", "addr", cfg.Server.ListenAddr)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			slog.Error("http server error", "error", err)
 			os.Exit(1)
 		}
@@ -185,6 +186,15 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	sig := <-quit
 	slog.Info("shutdown signal received", "signal", sig.String())
+
+	// A second signal force-exits: one straggler delivery with a long sender
+	// timeout should not hold the process hostage through the full drain
+	// (30s queue + 10s HTTP) — the operator pressing Ctrl-C again has said so.
+	go func() {
+		<-quit
+		slog.Warn("second shutdown signal, forcing exit")
+		os.Exit(130)
+	}()
 
 	// Stop the queue first so in-flight jobs finish and their business
 	// writes land before the HTTP server goes away.
@@ -221,7 +231,7 @@ func ensureAdminUser(ctx context.Context, db *pgxpool.Pool, cfg *config.Config) 
 
 	// Check if any admin user exists
 	var count int
-	err := db.QueryRow(ctx, `SELECT COUNT(*) FROM notygo_users`).Scan(&count)
+	err := db.QueryRow(ctx, `SELECT COUNT(*) FROM notygo_user`).Scan(&count)
 	if err != nil {
 		return fmt.Errorf("check admin users: %w", err)
 	}
@@ -237,7 +247,7 @@ func ensureAdminUser(ctx context.Context, db *pgxpool.Pool, cfg *config.Config) 
 	}
 
 	_, err = db.Exec(ctx,
-		`INSERT INTO notygo_users (id, username, password) VALUES ($1, $2, $3)`,
+		`INSERT INTO notygo_user (id, username, password) VALUES ($1, $2, $3)`,
 		generateID(), username, string(hash),
 	)
 	if err != nil {

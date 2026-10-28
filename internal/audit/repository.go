@@ -3,7 +3,6 @@ package audit
 import (
 	"context"
 	"crypto/rand"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -44,7 +43,7 @@ func (r *Repository) Insert(ctx context.Context, a *AuditLog) error {
 	}
 
 	_, err := r.db.Exec(ctx,
-		`INSERT INTO notygo_audit_logs (id, operator, action, target_type, target_id, snapshot_before, summary, created_at)
+		`INSERT INTO notygo_audit_log (id, operator, action, target_type, target_id, snapshot_before, summary, created_at)
 		 VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)`,
 		a.ID, a.Operator, a.Action, a.TargetType, a.TargetID,
 		snapshotBefore, a.Summary, time.Now().UTC(),
@@ -77,7 +76,7 @@ func (r *Repository) List(ctx context.Context, page, size int, action, targetTyp
 	}
 
 	var total int64
-	countSQL := "SELECT COUNT(*) FROM notygo_audit_logs " + where
+	countSQL := "SELECT COUNT(*) FROM notygo_audit_log " + where
 	err := r.db.QueryRow(ctx, countSQL, args...).Scan(&total)
 	if err != nil {
 		return nil, 0, fmt.Errorf("count audit_logs: %w", err)
@@ -88,7 +87,7 @@ func (r *Repository) List(ctx context.Context, page, size int, action, targetTyp
 
 	offset := (page - 1) * size
 	listSQL := `SELECT id, operator, action, target_type, target_id, snapshot_before, summary, created_at
-		FROM notygo_audit_logs ` + where + fmt.Sprintf(` ORDER BY created_at DESC LIMIT $%d OFFSET $%d`, len(args)+1, len(args)+2)
+		FROM notygo_audit_log ` + where + fmt.Sprintf(` ORDER BY created_at DESC LIMIT $%d OFFSET $%d`, len(args)+1, len(args)+2)
 	listArgs := append(args, size, offset)
 
 	rows, err := r.db.Query(ctx, listSQL, listArgs...)
@@ -122,13 +121,4 @@ func scanAuditLogFromRows(rows pgx.Rows) (*AuditLog, error) {
 		return nil, fmt.Errorf("scan audit_log: %w", err)
 	}
 	return &a, nil
-}
-
-// marshalJSON is a helper to marshal any value to JSON string.
-func marshalJSON(v any) string {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return "{}"
-	}
-	return string(b)
 }

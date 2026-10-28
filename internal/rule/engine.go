@@ -1,4 +1,4 @@
-package rules
+package rule
 
 import (
 	"encoding/json"
@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // ConditionItem can hold either a Condition or a nested ConditionGroup.
@@ -159,10 +160,7 @@ func isEmptyValue(val any) bool {
 // resolveFieldPath resolves a "fields.X" or dotted path from the fields map.
 // If the path starts with "fields.", it strips that prefix.
 func resolveFieldPath(path string, fields map[string]any) any {
-	cleanPath := path
-	if strings.HasPrefix(cleanPath, "fields.") {
-		cleanPath = strings.TrimPrefix(cleanPath, "fields.")
-	}
+	cleanPath := strings.TrimPrefix(path, "fields.")
 
 	parts := strings.Split(cleanPath, ".")
 	var current any = fields
@@ -178,6 +176,37 @@ func resolveFieldPath(path string, fields map[string]any) any {
 		current = m[part]
 	}
 	return current
+}
+
+// StringifyValue converts a field value to its string form for comparison
+// and logging. Numbers are formatted without scientific notation (e.g.
+// 1000000000, not 1e+09) so string operators match user-provided values;
+// bools render as true/false. Exposed for reuse by the processor's logging.
+func StringifyValue(val any) string {
+	switch v := val.(type) {
+	case float64:
+		if v == float64(int64(v)) {
+			return fmt.Sprintf("%d", int64(v))
+		}
+		return fmt.Sprintf("%f", v)
+	case float32:
+		if v == float32(int32(v)) {
+			return fmt.Sprintf("%d", int32(v))
+		}
+		return fmt.Sprintf("%f", v)
+	case int:
+		return fmt.Sprintf("%d", v)
+	case int64:
+		return fmt.Sprintf("%d", v)
+	case int32:
+		return fmt.Sprintf("%d", v)
+	case bool:
+		return strconv.FormatBool(v)
+	case string:
+		return v
+	default:
+		return fmt.Sprintf("%v", v)
+	}
 }
 
 // compareEqual checks equality with type coercion.
@@ -208,7 +237,7 @@ func compareEqual(fieldVal any, condValue string) (bool, error) {
 		}
 		return fv == cf, nil
 	default:
-		return fmt.Sprintf("%v", fieldVal) == condValue, nil
+		return StringifyValue(fieldVal) == condValue, nil
 	}
 }
 
@@ -232,10 +261,16 @@ func compareContains(fieldVal any, condValue string) (bool, error) {
 	}
 	s, ok := fieldVal.(string)
 	if !ok {
-		s = fmt.Sprintf("%v", fieldVal)
+		s = StringifyValue(fieldVal)
 	}
 	return strings.Contains(s, condValue), nil
 }
+
+// regexCache caches compiled patterns so regex conditions don't recompile on
+// every evaluation (each event × each condition). Bounded in practice by the
+// number of distinct regex conditions stored in the rules table (256 chars
+// each); invalid patterns are never cached.
+var regexCache sync.Map // string -> *regexp.Regexp
 
 // matchRegex matches the field value against a regex pattern.
 // Pattern length is limited to 256 characters for safety.
@@ -243,16 +278,23 @@ func matchRegex(fieldVal any, pattern string) (bool, error) {
 	if len(pattern) > 256 {
 		return false, fmt.Errorf("regex pattern exceeds 256 character limit (got %d)", len(pattern))
 	}
-	re, err := regexp.Compile(pattern)
-	if err != nil {
-		return false, fmt.Errorf("invalid regex %q: %w", pattern, err)
+	var re *regexp.Regexp
+	if cached, ok := regexCache.Load(pattern); ok {
+		re = cached.(*regexp.Regexp)
+	} else {
+		compiled, err := regexp.Compile(pattern)
+		if err != nil {
+			return false, fmt.Errorf("invalid regex %q: %w", pattern, err)
+		}
+		regexCache.Store(pattern, compiled)
+		re = compiled
 	}
 	if fieldVal == nil {
 		return false, nil
 	}
 	s, ok := fieldVal.(string)
 	if !ok {
-		s = fmt.Sprintf("%v", fieldVal)
+		s = StringifyValue(fieldVal)
 	}
 	return re.MatchString(s), nil
 }

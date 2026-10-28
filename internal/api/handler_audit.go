@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"notygo/internal/errcode"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"notygo/internal/audit"
@@ -19,7 +20,7 @@ func ListAuditLogs(db *pgxpool.Pool) http.HandlerFunc {
 
 		logs, total, err := repo.List(r.Context(), page, size, action, targetType, startTime, endTime)
 		if err != nil {
-			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to list audit logs")
+			WriteError(w, http.StatusInternalServerError, errcode.SystemInternal, "failed to list audit logs")
 			return
 		}
 

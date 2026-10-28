@@ -2,6 +2,7 @@ package mapping
 
 import (
 	"fmt"
+	"notygo/internal/errcode"
 	"strings"
 
 	"github.com/tidwall/gjson"
@@ -10,7 +11,7 @@ import (
 // ValidationError describes a field-level validation problem encountered during mapping.
 type ValidationError struct {
 	Field  string `json:"field"`
-	Code   string `json:"code"` // PARSE_001, PARSE_002, PARSE_003, PARSE_004
+	Code   string `json:"code"` // errcode.ParseRequiredField / ParseTypeConvert / ParseMultiResult
 	Detail string `json:"detail"`
 }
 
@@ -59,7 +60,7 @@ func applyEntry(entry *MappingEntry, payloadRaw string) (any, []ValidationError)
 		if entry.Required {
 			errs = append(errs, ValidationError{
 				Field:  entry.TargetKey,
-				Code:   "PARSE_002",
+				Code:   errcode.ParseRequiredField,
 				Detail: fmt.Sprintf("required field %q not found at path %q", entry.TargetKey, entry.PayloadPath),
 			})
 		}
@@ -74,7 +75,7 @@ func applyEntry(entry *MappingEntry, payloadRaw string) (any, []ValidationError)
 		if entry.Required {
 			errs = append(errs, ValidationError{
 				Field:  entry.TargetKey,
-				Code:   "PARSE_002",
+				Code:   errcode.ParseRequiredField,
 				Detail: fmt.Sprintf("required field %q is null at path %q", entry.TargetKey, entry.PayloadPath),
 			})
 		}
@@ -96,7 +97,7 @@ func applyEntry(entry *MappingEntry, payloadRaw string) (any, []ValidationError)
 	if err := validateType(val, entry.ValueType); err != nil {
 		errs = append(errs, ValidationError{
 			Field:  entry.TargetKey,
-			Code:   "PARSE_003",
+			Code:   errcode.ParseTypeConvert,
 			Detail: fmt.Sprintf("type mismatch for field %q: %s", entry.TargetKey, err.Error()),
 		})
 	}
@@ -105,7 +106,7 @@ func applyEntry(entry *MappingEntry, payloadRaw string) (any, []ValidationError)
 	if entry.Required && isZero(val) {
 		errs = append(errs, ValidationError{
 			Field:  entry.TargetKey,
-			Code:   "PARSE_002",
+			Code:   errcode.ParseRequiredField,
 			Detail: fmt.Sprintf("required field %q has zero value", entry.TargetKey),
 		})
 	}
@@ -173,7 +174,7 @@ func applyMultiResultMode(entry *MappingEntry, result gjson.Result, errs *[]Vali
 		}
 		*errs = append(*errs, ValidationError{
 			Field:  entry.TargetKey,
-			Code:   "PARSE_004",
+			Code:   errcode.ParseMultiResult,
 			Detail: fmt.Sprintf("unknown multi_result_mode %q for field %q", mode, entry.TargetKey),
 		})
 		return nil
@@ -252,7 +253,7 @@ func typedValue(raw, valueType, field string, errs *[]ValidationError) (any, []V
 		if _, err := fmt.Sscanf(raw, "%f", &f); err != nil {
 			*errs = append(*errs, ValidationError{
 				Field:  field,
-				Code:   "PARSE_003",
+				Code:   errcode.ParseTypeConvert,
 				Detail: fmt.Sprintf("cannot convert default value %q to number", raw),
 			})
 			return raw, *errs
@@ -267,7 +268,7 @@ func typedValue(raw, valueType, field string, errs *[]ValidationError) (any, []V
 		default:
 			*errs = append(*errs, ValidationError{
 				Field:  field,
-				Code:   "PARSE_003",
+				Code:   errcode.ParseTypeConvert,
 				Detail: fmt.Sprintf("cannot convert default value %q to boolean", raw),
 			})
 			return raw, *errs

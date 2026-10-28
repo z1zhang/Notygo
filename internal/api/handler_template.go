@@ -5,25 +5,26 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"notygo/internal/errcode"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"notygo/internal/audit"
-	"notygo/internal/templates"
+	"notygo/internal/template"
 )
 
 // ListTemplates returns a paginated list of templates.
 func ListTemplates(db *pgxpool.Pool) http.HandlerFunc {
-	repo := templates.NewRepository(db)
+	repo := template.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		page, size := ParsePagination(r)
 		result, total, err := repo.List(r.Context(), page, size)
 		if err != nil {
-			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to list templates")
+			WriteError(w, http.StatusInternalServerError, errcode.SystemInternal, "failed to list templates")
 			return
 		}
-		WriteJSON(w, http.StatusOK, PaginatedResponse[templates.Template]{
+		WriteJSON(w, http.StatusOK, PaginatedResponse[template.Template]{
 			Data:  result,
 			Total: total,
 			Page:  page,
@@ -34,7 +35,7 @@ func ListTemplates(db *pgxpool.Pool) http.HandlerFunc {
 
 // CreateTemplate creates a new template.
 func CreateTemplate(db *pgxpool.Pool, auditRepo *audit.Repository) http.HandlerFunc {
-	repo := templates.NewRepository(db)
+	repo := template.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Name          string `json:"name"`
@@ -43,12 +44,12 @@ func CreateTemplate(db *pgxpool.Pool, auditRepo *audit.Repository) http.HandlerF
 			BodyTemplate  string `json:"body_template"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "invalid request body")
+			WriteError(w, http.StatusBadRequest, errcode.ConfigValidation, "invalid request body")
 			return
 		}
 
 		if req.Name == "" {
-			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "name is required")
+			WriteError(w, http.StatusBadRequest, errcode.ConfigValidation, "name is required")
 			return
 		}
 
@@ -58,13 +59,13 @@ func CreateTemplate(db *pgxpool.Pool, auditRepo *audit.Repository) http.HandlerF
 
 		// Validate template syntax
 		if err := validateTemplateSyntax(req.TitleTemplate, req.BodyTemplate); err != nil {
-			WriteError(w, http.StatusBadRequest, ErrTplSyntax, err.Error())
+			WriteError(w, http.StatusBadRequest, errcode.TplSyntax, err.Error())
 			return
 		}
 
 		created, err := repo.Create(r.Context(), req.Name, req.Format, req.TitleTemplate, req.BodyTemplate)
 		if err != nil {
-			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to create template")
+			WriteError(w, http.StatusInternalServerError, errcode.SystemInternal, "failed to create template")
 			return
 		}
 
@@ -76,7 +77,7 @@ func CreateTemplate(db *pgxpool.Pool, auditRepo *audit.Repository) http.HandlerF
 			Action:     "create",
 			TargetType: "template",
 			TargetID:   created.ID,
-			Summary:    stringPtr(fmt.Sprintf("created template %q", created.Name)),
+			Summary:    new(fmt.Sprintf("created template %q", created.Name)),
 		}); auditErr != nil {
 			slog.Error("audit log insert failed", "action", "create", "target_type", "template", "error", auditErr)
 		}
@@ -85,12 +86,12 @@ func CreateTemplate(db *pgxpool.Pool, auditRepo *audit.Repository) http.HandlerF
 
 // GetTemplate returns a single template by ID.
 func GetTemplate(db *pgxpool.Pool) http.HandlerFunc {
-	repo := templates.NewRepository(db)
+	repo := template.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
 		t, err := repo.GetByID(r.Context(), id)
 		if err != nil {
-			WriteError(w, http.StatusNotFound, ErrConfigValidation, "template not found")
+			WriteError(w, http.StatusNotFound, errcode.ConfigValidation, "template not found")
 			return
 		}
 		WriteJSON(w, http.StatusOK, t)
@@ -99,7 +100,7 @@ func GetTemplate(db *pgxpool.Pool) http.HandlerFunc {
 
 // UpdateTemplate updates an existing template, incrementing revision and validating syntax.
 func UpdateTemplate(db *pgxpool.Pool, auditRepo *audit.Repository) http.HandlerFunc {
-	repo := templates.NewRepository(db)
+	repo := template.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
 		var req struct {
@@ -109,7 +110,7 @@ func UpdateTemplate(db *pgxpool.Pool, auditRepo *audit.Repository) http.HandlerF
 			BodyTemplate  *string `json:"body_template,omitempty"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "invalid request body")
+			WriteError(w, http.StatusBadRequest, errcode.ConfigValidation, "invalid request body")
 			return
 		}
 
@@ -124,7 +125,7 @@ func UpdateTemplate(db *pgxpool.Pool, auditRepo *audit.Repository) http.HandlerF
 		}
 		if req.TitleTemplate != nil || req.BodyTemplate != nil {
 			if err := validateTemplateSyntax(titleVal, bodyVal); err != nil {
-				WriteError(w, http.StatusBadRequest, ErrTplSyntax, err.Error())
+				WriteError(w, http.StatusBadRequest, errcode.TplSyntax, err.Error())
 				return
 			}
 		}
@@ -134,7 +135,7 @@ func UpdateTemplate(db *pgxpool.Pool, auditRepo *audit.Repository) http.HandlerF
 
 		updated, err := repo.Update(r.Context(), id, req.Name, req.Format, req.TitleTemplate, req.BodyTemplate)
 		if err != nil {
-			WriteError(w, http.StatusNotFound, ErrConfigValidation, "template not found")
+			WriteError(w, http.StatusNotFound, errcode.ConfigValidation, "template not found")
 			return
 		}
 
@@ -147,7 +148,7 @@ func UpdateTemplate(db *pgxpool.Pool, auditRepo *audit.Repository) http.HandlerF
 			TargetType:     "template",
 			TargetID:       id,
 			SnapshotBefore: marshalSnapshot(oldTemplate),
-			Summary:        stringPtr(fmt.Sprintf("updated template %q", updated.Name)),
+			Summary:        new(fmt.Sprintf("updated template %q", updated.Name)),
 		}); auditErr != nil {
 			slog.Error("audit log insert failed", "action", "update", "target_type", "template", "error", auditErr)
 		}
@@ -156,7 +157,7 @@ func UpdateTemplate(db *pgxpool.Pool, auditRepo *audit.Repository) http.HandlerF
 
 // DeleteTemplate deletes a template by ID.
 func DeleteTemplate(db *pgxpool.Pool, auditRepo *audit.Repository) http.HandlerFunc {
-	repo := templates.NewRepository(db)
+	repo := template.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
 
@@ -164,7 +165,7 @@ func DeleteTemplate(db *pgxpool.Pool, auditRepo *audit.Repository) http.HandlerF
 		oldTemplate, _ := repo.GetByID(r.Context(), id)
 
 		if err := repo.Delete(r.Context(), id); err != nil {
-			WriteError(w, http.StatusNotFound, ErrConfigValidation, "template not found")
+			WriteError(w, http.StatusNotFound, errcode.ConfigValidation, "template not found")
 			return
 		}
 		WriteJSON(w, http.StatusNoContent, nil)
@@ -176,7 +177,7 @@ func DeleteTemplate(db *pgxpool.Pool, auditRepo *audit.Repository) http.HandlerF
 			TargetType:     "template",
 			TargetID:       id,
 			SnapshotBefore: marshalSnapshot(oldTemplate),
-			Summary:        stringPtr(fmt.Sprintf("deleted template %s", id)),
+			Summary:        new(fmt.Sprintf("deleted template %s", id)),
 		}); auditErr != nil {
 			slog.Error("audit log insert failed", "action", "delete", "target_type", "template", "error", auditErr)
 		}

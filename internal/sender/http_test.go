@@ -118,3 +118,31 @@ func TestBuildBodyFieldsErrors(t *testing.T) {
 		}
 	}
 }
+
+// FuzzBuildBodyFields covers the recursive body_fields tree with arbitrary
+// (attacker-shaped, via the admin API) structures. Two contracts: no panic,
+// and a successful result must be JSON-marshalable — Send() marshals it
+// immediately after, so a non-marshalable tree would fail at delivery time.
+func FuzzBuildBodyFields(f *testing.F) {
+	f.Add(`[{"key":"a","value_source":"title"}]`, "t", "b", "text")
+	f.Add(`[{"key":"g","type":"object","children":[{"key":"x","value_source":"literal","value":"v"}]}]`, "t", "b", "markdown")
+	f.Add(`[{"key":"arr","type":"array","children":[{"value_source":"body"},{"key":"ignored","value_source":"format"}]}]`, "t", "b", "html")
+	f.Add(`[]`, "", "", "")
+	f.Add(`[{"key":"bad","value_source":"nope"}]`, "t", "b", "text")
+	f.Add(`[{"key":"deep","type":"object","children":[{"key":"in","type":"object","children":[{"key":"in2","type":"array","children":[{"value_source":"title"}]}]}]}]`, "t", "b", "text")
+
+	f.Fuzz(func(t *testing.T, fieldsJSON, title, body, format string) {
+		var fields []BodyField
+		if json.Unmarshal([]byte(fieldsJSON), &fields) != nil {
+			return
+		}
+		msg := RenderedMessage{Title: title, Body: body, Format: format}
+		v, err := buildBodyFields(fields, msg)
+		if err != nil {
+			return
+		}
+		if _, merr := json.Marshal(v); merr != nil {
+			t.Errorf("buildBodyFields result is not JSON-marshalable: %v", merr)
+		}
+	})
+}

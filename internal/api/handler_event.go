@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"notygo/internal/errcode"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -23,7 +24,7 @@ func ListEvents(db *pgxpool.Pool) http.HandlerFunc {
 
 		events, total, err := repo.List(r.Context(), page, size, statusFilter, endpointIDFilter)
 		if err != nil {
-			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to list events")
+			WriteError(w, http.StatusInternalServerError, errcode.SystemInternal, "failed to list events")
 			return
 		}
 
@@ -43,7 +44,7 @@ func GetEvent(db *pgxpool.Pool) http.HandlerFunc {
 		id := chi.URLParam(r, "id")
 		evt, err := repo.GetByID(r.Context(), id)
 		if err != nil {
-			WriteError(w, http.StatusNotFound, ErrConfigValidation, "event not found")
+			WriteError(w, http.StatusNotFound, errcode.ConfigValidation, "event not found")
 			return
 		}
 
@@ -75,7 +76,7 @@ func ReplayEvent(db *pgxpool.Pool, q *queue.Manager, auditRepo *audit.Repository
 		id := chi.URLParam(r, "id")
 		evt, err := repo.GetByID(ctx, id)
 		if err != nil {
-			WriteError(w, http.StatusNotFound, ErrConfigValidation, "event not found")
+			WriteError(w, http.StatusNotFound, errcode.ConfigValidation, "event not found")
 			return
 		}
 
@@ -83,19 +84,23 @@ func ReplayEvent(db *pgxpool.Pool, q *queue.Manager, auditRepo *audit.Repository
 		// a replay without a job would hang forever.
 		tx, err := db.Begin(ctx)
 		if err != nil {
-			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to reset event status")
+			WriteError(w, http.StatusInternalServerError, errcode.SystemInternal, "failed to reset event status")
 			return
 		}
-		if err := repo.WithTx(tx).SetForReplay(ctx, evt.ID); err == nil {
-			err = q.EnqueueEventProcessTx(ctx, tx, evt.ID)
-		}
-		if err != nil {
+		// Two separate checks: a shared err would invite the shadowed-variable
+		// bug where an enqueue failure commits an empty transaction.
+		if err := repo.WithTx(tx).SetForReplay(ctx, evt.ID); err != nil {
 			_ = tx.Rollback(ctx)
-			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to reset event status")
+			WriteError(w, http.StatusInternalServerError, errcode.SystemInternal, "failed to reset event status")
+			return
+		}
+		if err := q.EnqueueEventProcessTx(ctx, tx, evt.ID); err != nil {
+			_ = tx.Rollback(ctx)
+			WriteError(w, http.StatusInternalServerError, errcode.SystemInternal, "failed to reset event status")
 			return
 		}
 		if err := tx.Commit(ctx); err != nil {
-			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to reset event status")
+			WriteError(w, http.StatusInternalServerError, errcode.SystemInternal, "failed to reset event status")
 			return
 		}
 
@@ -110,15 +115,12 @@ func ReplayEvent(db *pgxpool.Pool, q *queue.Manager, auditRepo *audit.Repository
 			Action:     "replay",
 			TargetType: "event",
 			TargetID:   evt.ID,
-			Summary:    stringPtr(fmt.Sprintf("replayed event %s", evt.ID)),
+			Summary:    new(fmt.Sprintf("replayed event %s", evt.ID)),
 		}); auditErr != nil {
 			slog.Error("audit log insert failed", "action", "replay", "target_type", "event", "error", auditErr)
 		}
 	}
 }
-
-// stringPtr returns a pointer to the given string.
-func stringPtr(s string) *string { return &s }
 
 // marshalSnapshot marshals a value to JSON for audit snapshot_before.
 func marshalSnapshot(v any) *string {

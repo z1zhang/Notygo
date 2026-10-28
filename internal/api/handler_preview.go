@@ -3,14 +3,16 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
+	"notygo/internal/errcode"
 	"strings"
 
 	"github.com/tidwall/gjson"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"notygo/internal/mapping"
-	"notygo/internal/templates"
+	"notygo/internal/template"
 )
 
 // ---------------------------------------------------------------------------
@@ -47,16 +49,16 @@ func PreviewParse() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req previewParseRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "invalid request body")
+			WriteError(w, http.StatusBadRequest, errcode.ConfigValidation, "invalid request body")
 			return
 		}
 		if req.Payload == "" {
-			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "payload is required")
+			WriteError(w, http.StatusBadRequest, errcode.ConfigValidation, "payload is required")
 			return
 		}
 
 		if !gjson.Valid(req.Payload) {
-			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "payload is not valid JSON")
+			WriteError(w, http.StatusBadRequest, errcode.ConfigValidation, "payload is not valid JSON")
 			return
 		}
 
@@ -79,7 +81,7 @@ func PreviewParse() http.HandlerFunc {
 			}
 			resp.SuggestedFields = analyzeObjectPayload(req.Payload, root, "", 1)
 		} else {
-			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "payload root must be a JSON object or array")
+			WriteError(w, http.StatusBadRequest, errcode.ConfigValidation, "payload root must be a JSON object or array")
 			return
 		}
 
@@ -347,11 +349,11 @@ func PreviewMapping() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req previewMappingRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "invalid request body")
+			WriteError(w, http.StatusBadRequest, errcode.ConfigValidation, "invalid request body")
 			return
 		}
 		if req.Payload == "" {
-			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "payload is required")
+			WriteError(w, http.StatusBadRequest, errcode.ConfigValidation, "payload is required")
 			return
 		}
 
@@ -362,7 +364,7 @@ func PreviewMapping() http.HandlerFunc {
 
 		parsedFields, validationErrors, err := mapping.Apply(m, req.Payload)
 		if err != nil {
-			WriteError(w, http.StatusInternalServerError, "SYSTEM_000", "mapping apply failed: "+err.Error())
+			WriteError(w, http.StatusBadRequest, errcode.ParseTypeConvert, "mapping apply failed: "+err.Error())
 			return
 		}
 
@@ -396,11 +398,11 @@ func PreviewDelivery() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req previewDeliveryRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "invalid request body")
+			WriteError(w, http.StatusBadRequest, errcode.ConfigValidation, "invalid request body")
 			return
 		}
 		if req.Payload == "" {
-			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "payload is required")
+			WriteError(w, http.StatusBadRequest, errcode.ConfigValidation, "payload is required")
 			return
 		}
 
@@ -410,7 +412,7 @@ func PreviewDelivery() http.HandlerFunc {
 		}
 		parsedFields, validationErrors, err := mapping.Apply(m, req.Payload)
 		if err != nil {
-			WriteError(w, http.StatusInternalServerError, "SYSTEM_000", "mapping apply failed: "+err.Error())
+			WriteError(w, http.StatusBadRequest, errcode.ParseTypeConvert, "mapping apply failed: "+err.Error())
 			return
 		}
 		if validationErrors == nil {
@@ -418,7 +420,7 @@ func PreviewDelivery() http.HandlerFunc {
 		}
 
 		// Step 2: Render template
-		tmpl := &templates.Template{
+		tmpl := &template.Template{
 			TitleTemplate: req.TitleTemplate,
 			BodyTemplate:  req.BodyTemplate,
 			Format:        req.Format,
@@ -426,18 +428,16 @@ func PreviewDelivery() http.HandlerFunc {
 
 		// Build template data: mapped fields at top level
 		data := make(map[string]any, len(parsedFields))
-		for k, v := range parsedFields {
-			data[k] = v
-		}
+		maps.Copy(data, parsedFields)
 
-		msg, renderErr := templates.Render(tmpl, data)
+		msg, renderErr := template.Render(tmpl, data)
 
 		renderedTitle := ""
 		renderedBody := ""
 		if renderErr != nil {
 			validationErrors = append(validationErrors, mapping.ValidationError{
 				Field:  "template",
-				Code:   "PARSE_004",
+				Code:   errcode.ParseMultiResult,
 				Detail: "template render error: " + renderErr.Error(),
 			})
 		} else {
@@ -463,7 +463,7 @@ func PreviewDelivery() http.HandlerFunc {
 // It accepts either a stored template_id, or an inline template spec (title_template /
 // body_template / format) for previewing unsaved content — no database writes either way.
 func PreviewTemplate(db *pgxpool.Pool) http.HandlerFunc {
-	repo := templates.NewRepository(db)
+	repo := template.NewRepository(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			TemplateID string `json:"template_id"`
@@ -474,7 +474,7 @@ func PreviewTemplate(db *pgxpool.Pool) http.HandlerFunc {
 			SampleData    map[string]any `json:"sample_data"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "invalid request body")
+			WriteError(w, http.StatusBadRequest, errcode.ConfigValidation, "invalid request body")
 			return
 		}
 
@@ -482,12 +482,12 @@ func PreviewTemplate(db *pgxpool.Pool) http.HandlerFunc {
 			req.SampleData = map[string]any{}
 		}
 
-		var tmpl *templates.Template
+		var tmpl *template.Template
 		if req.TemplateID != "" {
 			// Look up the stored template
 			t, err := repo.GetByID(r.Context(), req.TemplateID)
 			if err != nil {
-				WriteError(w, http.StatusNotFound, ErrConfigValidation, "template not found")
+				WriteError(w, http.StatusNotFound, errcode.ConfigValidation, "template not found")
 				return
 			}
 			tmpl = t
@@ -496,24 +496,22 @@ func PreviewTemplate(db *pgxpool.Pool) http.HandlerFunc {
 			if req.Format == "" {
 				req.Format = "text"
 			}
-			tmpl = &templates.Template{
+			tmpl = &template.Template{
 				TitleTemplate: req.TitleTemplate,
 				BodyTemplate:  req.BodyTemplate,
 				Format:        req.Format,
 			}
 		} else {
-			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "template_id or template content is required")
+			WriteError(w, http.StatusBadRequest, errcode.ConfigValidation, "template_id or template content is required")
 			return
 		}
 
 		// Render using the real Go template engine — sample data at top level
 		data := make(map[string]any, len(req.SampleData))
-		for k, v := range req.SampleData {
-			data[k] = v
-		}
-		msg, renderErr := templates.Render(tmpl, data)
+		maps.Copy(data, req.SampleData)
+		msg, renderErr := template.Render(tmpl, data)
 		if renderErr != nil {
-			WriteError(w, http.StatusBadRequest, ErrConfigValidation, "template render error: "+renderErr.Error())
+			WriteError(w, http.StatusBadRequest, errcode.ConfigValidation, "template render error: "+renderErr.Error())
 			return
 		}
 

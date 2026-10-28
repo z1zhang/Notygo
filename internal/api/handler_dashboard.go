@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"net/http"
+	"notygo/internal/errcode"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -40,9 +41,9 @@ func DashboardStats(db *pgxpool.Pool) http.HandlerFunc {
 
 		// Status counts via GROUP BY — one query per table instead of one per tile
 		eventCounts := map[string]int64{}
-		rows, err := db.Query(ctx, "SELECT status, COUNT(*) FROM notygo_events GROUP BY status")
+		rows, err := db.Query(ctx, "SELECT status, COUNT(*) FROM notygo_event GROUP BY status")
 		if err != nil {
-			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to count events")
+			WriteError(w, http.StatusInternalServerError, errcode.SystemInternal, "failed to count events")
 			return
 		}
 		for rows.Next() {
@@ -50,17 +51,22 @@ func DashboardStats(db *pgxpool.Pool) http.HandlerFunc {
 			var n int64
 			if err := rows.Scan(&status, &n); err != nil {
 				rows.Close()
-				WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to count events")
+				WriteError(w, http.StatusInternalServerError, errcode.SystemInternal, "failed to count events")
 				return
 			}
 			eventCounts[status] = n
 		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			WriteError(w, http.StatusInternalServerError, errcode.SystemInternal, "failed to count events")
+			return
+		}
 		rows.Close()
 
 		deliveryCounts := map[string]int64{}
-		rows, err = db.Query(ctx, "SELECT status, COUNT(*) FROM notygo_deliveries GROUP BY status")
+		rows, err = db.Query(ctx, "SELECT status, COUNT(*) FROM notygo_delivery GROUP BY status")
 		if err != nil {
-			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to count deliveries")
+			WriteError(w, http.StatusInternalServerError, errcode.SystemInternal, "failed to count deliveries")
 			return
 		}
 		for rows.Next() {
@@ -68,10 +74,15 @@ func DashboardStats(db *pgxpool.Pool) http.HandlerFunc {
 			var n int64
 			if err := rows.Scan(&status, &n); err != nil {
 				rows.Close()
-				WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to count deliveries")
+				WriteError(w, http.StatusInternalServerError, errcode.SystemInternal, "failed to count deliveries")
 				return
 			}
 			deliveryCounts[status] = n
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			WriteError(w, http.StatusInternalServerError, errcode.SystemInternal, "failed to count deliveries")
+			return
 		}
 		rows.Close()
 
@@ -83,12 +94,12 @@ func DashboardStats(db *pgxpool.Pool) http.HandlerFunc {
 		// Recent failures (same filters the old per-page requests used)
 		failedEvents, err := queryFailedEvents(ctx, db)
 		if err != nil {
-			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to list failed events")
+			WriteError(w, http.StatusInternalServerError, errcode.SystemInternal, "failed to list failed events")
 			return
 		}
 		failedDeliveries, err := queryFailedDeliveries(ctx, db)
 		if err != nil {
-			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to list failed deliveries")
+			WriteError(w, http.StatusInternalServerError, errcode.SystemInternal, "failed to list failed deliveries")
 			return
 		}
 
@@ -105,8 +116,8 @@ func DashboardStats(db *pgxpool.Pool) http.HandlerFunc {
 
 func queryFailedEvents(ctx context.Context, db *pgxpool.Pool) ([]failedEventSummary, error) {
 	rows, err := db.Query(ctx,
-		// event status code: 4=failed (see internal/event/codes.go)
-		"SELECT id, endpoint_id, error_code, error_summary, received_at FROM notygo_events WHERE status = 4 ORDER BY received_at DESC LIMIT 5")
+		// event status code: 4=failed (see internal/event/code.go)
+		"SELECT id, endpoint_id, error_code, error_summary, received_at FROM notygo_event WHERE status = 4 ORDER BY received_at DESC LIMIT 5")
 	if err != nil {
 		return nil, err
 	}
@@ -132,8 +143,8 @@ func queryFailedEvents(ctx context.Context, db *pgxpool.Pool) ([]failedEventSumm
 
 func queryFailedDeliveries(ctx context.Context, db *pgxpool.Pool) ([]failedDeliverySummary, error) {
 	rows, err := db.Query(ctx,
-		// delivery status code: 4=failed (see internal/delivery/codes.go)
-		"SELECT id, channel_id, last_error_code, last_error_summary, created_at FROM notygo_deliveries WHERE status = 4 ORDER BY created_at DESC LIMIT 5")
+		// delivery status code: 4=failed (see internal/delivery/code.go)
+		"SELECT id, channel_id, last_error_code, last_error_summary, created_at FROM notygo_delivery WHERE status = 4 ORDER BY created_at DESC LIMIT 5")
 	if err != nil {
 		return nil, err
 	}

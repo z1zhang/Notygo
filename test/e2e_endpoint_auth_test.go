@@ -290,7 +290,7 @@ func TestEndpointAuth(t *testing.T) {
 		body := `{"i":0}`
 
 		// Burst: 4 back-to-back all pass (bucket starts full).
-		for i := 0; i < 4; i++ {
+		for i := range 4 {
 			s.ingest(t, rateSlug, fmt.Sprintf(`{"i":%d}`, i), nil, http.StatusAccepted)
 		}
 		// 5th immediately after: rejected, and rejection does not consume a
@@ -306,7 +306,7 @@ func TestEndpointAuth(t *testing.T) {
 
 		// 2s idle refills the bucket back to capacity 4.
 		time.Sleep(2 * time.Second)
-		for i := 0; i < 4; i++ {
+		for i := range 4 {
 			s.ingest(t, rateSlug, fmt.Sprintf(`{"j":%d}`, i), nil, http.StatusAccepted)
 		}
 	})

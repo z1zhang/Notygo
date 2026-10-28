@@ -1,6 +1,6 @@
 module notygo
 
-go 1.26.0
+go 1.26.10
 
 require (
 	github.com/go-chi/chi/v5 v5.5.0
@@ -11,6 +11,7 @@ require (
 	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.50.0
 	github.com/riverqueue/river/rivertype v0.50.0
 	github.com/tidwall/gjson v1.20.0
+	go.uber.org/goleak v1.3.0
 	golang.org/x/crypto v0.58.0
 	golang.org/x/time v0.16.0
 )

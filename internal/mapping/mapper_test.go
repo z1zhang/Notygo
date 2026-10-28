@@ -682,3 +682,33 @@ func TestApply_HashPath_First(t *testing.T) {
 		t.Errorf("first_item.name = %v, want dbx", obj["name"])
 	}
 }
+
+// FuzzApply exercises the ingest-boundary contract: Apply must never panic
+// on any payload/path combination — failures surface as validation errors
+// or a returned error. Payloads arrive verbatim from external webhooks.
+func FuzzApply(f *testing.F) {
+	f.Add(`{"title":"hello","items":[{"tag":"a"},{"tag":"b"}],"n":1000000000}`, "items.0.tag")
+	f.Add(`{"deep":{"x":[{"y":"z"}]}}`, "deep.x.#.y")
+	f.Add(`[1,2,3]`, "#")
+	f.Add(`"scalar"`, "0")
+	f.Add(`{"b":true}`, "b")
+	f.Add(`not json at all`, "#.foo")
+	f.Add(`{"unicode":"中文🚀"}`, "unicode")
+
+	f.Fuzz(func(t *testing.T, payload, path string) {
+		first, array, join, upper := "first", "array", "join(-)", "to_upper"
+		m := &Mapping{Fields: []MappingEntry{
+			{PayloadPath: path, TargetKey: "s", ValueType: "string"},
+			{PayloadPath: path, TargetKey: "num", ValueType: "number"},
+			{PayloadPath: path, TargetKey: "b", ValueType: "bool"},
+			{PayloadPath: path, TargetKey: "obj", ValueType: "object"},
+			{PayloadPath: path, TargetKey: "arr", ValueType: "array"},
+			{PayloadPath: path, TargetKey: "m1", ValueType: "string", MultiResultMode: &first},
+			{PayloadPath: path, TargetKey: "m2", ValueType: "string", MultiResultMode: &array},
+			{PayloadPath: path, TargetKey: "m3", ValueType: "string", MultiResultMode: &join},
+			{PayloadPath: path, TargetKey: "t1", ValueType: "string", Transform: &upper},
+			{PayloadPath: path, TargetKey: "r", ValueType: "string", Required: true},
+		}}
+		_, _, _ = Apply(m, payload)
+	})
+}

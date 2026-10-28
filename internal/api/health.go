@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"net/http"
+	"notygo/internal/errcode"
 	"time"
 )
 
@@ -19,7 +20,7 @@ func Readyz(db *pgxpool.Pool) http.HandlerFunc {
 		defer cancel()
 
 		if err := db.Ping(ctx); err != nil {
-			WriteError(w, http.StatusServiceUnavailable, ErrIngestDBUnavailable, "database unavailable")
+			WriteError(w, http.StatusServiceUnavailable, errcode.IngestDBUnavailable, "database unavailable")
 			return
 		}
 		WriteJSON(w, http.StatusOK, map[string]string{"status": "ready"})

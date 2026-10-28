@@ -28,7 +28,7 @@ Webhook POST → Ingest(验证/限流/去重) → events 表（同事务入队 R
 
 ## 登录防爆破
 
-- `LoginHandler` 每次成功/失败都写 `notygo_audit_logs`（action: `auth.login_success` / `auth.login_failed`，summary 含 `ip=... username=...`）
+- `LoginHandler` 每次成功/失败都写 `notygo_audit_log`（action: `auth.login_success` / `auth.login_failed`，summary 含 `ip=... username=...`）
 - 失败按 IP 和用户名双计数（`internal/api/login_guard.go`，内存滑动窗口），达阈值返回 429 `AUTH_001`；锁定期间的探测不再单独写审计（防审计表被刷爆）
 - 用户名不存在时跑假 bcrypt 抹平时序（防用户名枚举）；ingest bearer 比较用 `subtle.ConstantTimeCompare`
 
@@ -44,13 +44,13 @@ Webhook POST → Ingest(验证/限流/去重) → events 表（同事务入队 R
 - **PostgreSQL**: 由 `DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME/DB_SSLMODE` 拼装 URL 形式 DSN（`config.buildPostgresDSN`，`url.URL` 负责特殊字符转义与 IPv6 方括号）
 - **连接层（pgx 原生）**：业务代码直接用 `*pgxpool.Pool`（MaxConns=50, MinConns=4, MaxConnLifetime=5m, MaxConnIdleTime=2m）；goose 只接受 `*sql.DB`，迁移经 `storage.OpenMigrationsDB`（pgx stdlib 从同一 DSN 派生）执行，业务代码不碰
 - 迁移文件：`internal/storage/migrations/postgres/`（goose postgres 方言）
-- **业务表命名（2026-10-26 起）**：全部加 `notygo_` 前缀（`notygo_users` 等）；`river_job` 系列是 River 库的表，**不要**加前缀也不要在 goose 里建它
+- **业务表命名**：`notygo_` 前缀 + **单数**（单数自 2026-10-28 的 004 迁移起，此前为复数）（`notygo_user` 等）；`river_job` 系列是 River 库的表，**不要**加前缀也不要在 goose 里建它
 - **占位符约定**：SQL 直接写 $n（pgx 原生风格），**拼接多条字符串字面量的语句必须全局连续编号**（每个字面量各自从 $1 重排是历史 bug 高发区，`test/e2e_test.go` 会抓）
 - **时间**：列类型 TIMESTAMPTZ，Go 侧直接传/扫 `time.Time`（timestamptz 是绝对时间，无 MySQL DATETIME 的时区歧义）；SQL 内当前时间用 `storage.NowExpr()`（= `now()`）
 - **JSONB**：字符串参数写 JSONB 列时须带显式 `?::jsonb` 转型（协议层面 text→jsonb 有歧义）；查询侧字符串比较参数带 `?::timestamptz` 同理
 - **布尔**：直接传/扫 `bool`，无 boolToInt/intToBool
 - **claim 查询**：调度已交给 River（`river_job` 表由 River 自带 migrator 管理，**不要**在 goose 迁移里复制其 DDL）；业务表侧的幂等抢占用 `UPDATE ... WHERE status = 期望值 RETURNING ...` 单条原子语句（MarkProcessing / MarkAttemptInProgress），重复 Job 无害
-- **枚举语义列（status / run_type / format / auth_type）**：DB 存 SMALLINT 数字码 + CHECK 约束，码表注释在迁移文件头；Go 业务逻辑与 API 仍是字符串常量（真源），转换只发生在仓库层——每包 `codes.go` 提供 encode/decode（未知值报错）。`notygo_channels.type` 是开放扩展点，**保持字符串**
+- **枚举语义列（status / run_type / format / auth_type）**：DB 存 SMALLINT 数字码 + CHECK 约束，码表注释在迁移文件头；Go 业务逻辑与 API 仍是字符串常量（真源），转换只发生在仓库层——每包 `code.go` 提供 encode/decode（未知值报错）。`notygo_channel.type` 是开放扩展点，**保持字符串**
 
 ### 常见陷阱
 
@@ -73,14 +73,15 @@ internal/
   ingest/            — Webhook 入口 + 限流
   mapping/           — 字段映射
   processor/         — 事件处理器（映射→规则→模板→投递）
-  rules/             — 规则模型/仓库
+  rule/             — 规则模型/仓库
   sender/            — 发送器：dingtalk, feishu, wecom, email, http
   endpoint/          — 接入点（Webhook 来源）
   storage/           — 数据库打开/迁移/rebind 驱动
     migrations/postgres/ — PostgreSQL 迁移
-  templates/         — 模板
+  template/         — 模板
   secret/            — 加解密服务
   audit/             — 审计日志
+  errcode/           — 错误码唯一注册表（DOMAIN_NNN，各层共享，前端契约）
   observability/     — 日志/RequestID
 web/                — React 前端（目录原名 frontend/，2026-10-18 更名）
   src/app/           — router.tsx / providers.tsx / query-client.ts
@@ -150,7 +151,7 @@ deploy/              — docker-compose.yml
 ## 已知问题与待办
 
 - 规则评估只看映射字段，未映射的字段规则引用不到
-- `notygo_channels/{id}/test` 已实现（2026-10-21）：真实测试发送，复用 `channel.BuildSenderConfig`（从 delivery worker 抽出共享），审计 action `test`
+- `notygo_channel/{id}/test` 已实现（2026-10-21）：真实测试发送，复用 `channel.BuildSenderConfig`（从 delivery worker 抽出共享），审计 action `test`
 - Dashboard 统计用 4 次 API 请求拼凑，应改为专用后端端点
 - Settings 页的系统配置项（保留天数、并发数等）无 API 暴露，只显示环境变量说明（诚实降级）
 - `/favicon.svg` 由 SPA fallback 返回 index.html（Go 端只服务 /assets/*；与旧版行为一致）
@@ -162,6 +163,7 @@ deploy/              — docker-compose.yml
 go build ./...                       # 构建检查
 go test ./...                        # 运行测试（无 DSN 时 e2e 自动跳过）
 TEST_DATABASE_DSN="postgres://notygo:notygo@master:5432/notygo?sslmode=disable" go test ./test/ -v   # e2e 集成测试（真库）
+golangci-lint run ./...              # lint 门禁（.golangci.yml v2；改完代码必须跑，要求 0 issues）
 cd web && npx tsc -p tsconfig.app.json --noEmit  # 前端类型检查
 cd web && npm run build         # 前端生产构建（含 tsc -b）
 docker build -t Notygo .              # Docker 构建（web/ → web/dist）

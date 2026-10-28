@@ -16,8 +16,8 @@ type Endpoint struct {
 	MaxBodyBytes       int       `json:"max_body_bytes"`
 	RateLimit          *string   `json:"rate_limit,omitempty"`
 	MappingID          *string   `json:"mapping_id,omitempty"`
-	CreatedAt          time.Time `json:"created_at,omitempty"`
-	UpdatedAt          time.Time `json:"updated_at,omitempty"`
+	CreatedAt          time.Time `json:"created_at,omitzero"`
+	UpdatedAt          time.Time `json:"updated_at,omitzero"`
 }
 
 // CreateEndpointRequest is the DTO for creating a new endpoint.

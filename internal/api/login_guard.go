@@ -22,6 +22,8 @@ type loginGuard struct {
 // without limit (RealIP trusts proxy headers).
 const maxTrackedKeys = 65536
 
+// NewLoginGuard creates a login throttler that locks out, per IP and per
+// username, after maxFailures failures within the lockout window.
 func NewLoginGuard(maxFailures int, lockout time.Duration) *loginGuard {
 	if maxFailures < 1 {
 		maxFailures = 1

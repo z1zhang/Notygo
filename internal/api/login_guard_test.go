@@ -11,7 +11,7 @@ func TestLoginGuardLockout(t *testing.T) {
 	g := NewLoginGuard(3, 10*time.Minute)
 	key := "ip:1.2.3.4"
 
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		g.recordFailure(key)
 	}
 	if g.isLocked(key) {

@@ -4,7 +4,7 @@
 package backoff
 
 import (
-	"math/rand"
+	"math/rand/v2"
 	"time"
 )
 
@@ -18,13 +18,8 @@ type Config struct {
 // Delay computes the retry delay for an upcoming attempt number (1-based):
 // base * 2^(n-1), capped at max, with ±jitterPercent spread.
 func Delay(attempt int, cfg Config) time.Duration {
-	shift := attempt - 1
-	if shift < 0 {
-		shift = 0
-	}
-	if shift > 20 { // avoid overflowing time.Duration on degenerate attempt counts
-		shift = 20
-	}
+	// avoid overflowing time.Duration on degenerate attempt counts
+	shift := min(max(attempt-1, 0), 20)
 	d := cfg.Base << uint(shift)
 	if d <= 0 || d > cfg.Max { // negative after overflow → also cap
 		d = cfg.Max

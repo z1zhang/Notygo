@@ -26,9 +26,10 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -81,9 +82,7 @@ func (s *stats) snapshot() (int, map[int]int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := make(map[int]int, len(s.codes))
-	for k, v := range s.codes {
-		out[k] = v
-	}
+	maps.Copy(out, s.codes)
 	return len(s.latencies), out
 }
 
@@ -175,7 +174,7 @@ func main() {
 
 	start := time.Now()
 	var workers sync.WaitGroup
-	for i := 0; i < *concurrency; i++ {
+	for i := range *concurrency {
 		workers.Add(1)
 		go func(id int) {
 			defer workers.Done()
@@ -280,7 +279,7 @@ func printLatencies(st *stats) {
 	if len(lats) == 0 {
 		return
 	}
-	sort.Slice(lats, func(i, j int) bool { return lats[i] < lats[j] })
+	slices.Sort(lats)
 	p := func(q float64) string {
 		i := int(float64(len(lats)-1) * q)
 		return lats[i].Truncate(time.Microsecond).String()
@@ -325,7 +324,7 @@ func setupLoadTest(c *apiClient) ([]string, error) {
 
 	msgValues = make([]string, *ruleCount)
 	ruleIDs := make([]string, 0, *ruleCount)
-	for i := 0; i < *ruleCount; i++ {
+	for i := range *ruleCount {
 		msgValues[i] = fmt.Sprintf("notygo-load-%d", i)
 		tplName := fmt.Sprintf("Load Test Template %d", i)
 		tplBody, _ := json.Marshal(map[string]any{
@@ -360,7 +359,7 @@ func setupLoadTest(c *apiClient) ([]string, error) {
 	fmt.Printf("prepared %d rules (payload rotates so each rule matches 1/%d of events)\n", *ruleCount, *ruleCount)
 
 	slugs := make([]string, 0, *endpointCount)
-	for i := 0; i < *endpointCount; i++ {
+	for i := range *endpointCount {
 		epSlug := *slug
 		if i > 0 {
 			epSlug = fmt.Sprintf("%s-%d", *slug, i+1)
@@ -488,7 +487,7 @@ func startPacer(rate int) chan struct{} {
 		t := time.NewTicker(interval)
 		defer t.Stop()
 		for range t.C {
-			for i := 0; i < perTick; i++ {
+			for range perTick {
 				select {
 				case tokens <- struct{}{}:
 				default:

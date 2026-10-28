@@ -151,7 +151,7 @@ func computeDingTalkSign(timestamp, secret string) (string, error) {
 // fallbackTitle derives a DingTalk message title from the body: the first
 // non-empty line, truncated to 32 runes. "通知" when the body is empty too.
 func fallbackTitle(body string) string {
-	for _, line := range strings.Split(body, "\n") {
+	for line := range strings.SplitSeq(body, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue

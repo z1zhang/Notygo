@@ -1,4 +1,4 @@
-package templates
+package template
 
 import (
 	"context"
@@ -39,7 +39,7 @@ func (r *Repository) Create(ctx context.Context, name, format, titleTemplate, bo
 	}
 
 	_, err = r.db.Exec(ctx,
-		`INSERT INTO notygo_templates (id, name, format, title_template, body_template, revision, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, 1, $6, $7)`,
+		`INSERT INTO notygo_template (id, name, format, title_template, body_template, revision, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, 1, $6, $7)`,
 		id, name, formatCode, titleTemplate, bodyTemplate, now, now,
 	)
 	if err != nil {
@@ -52,14 +52,14 @@ func (r *Repository) Create(ctx context.Context, name, format, titleTemplate, bo
 // GetByID retrieves a template by its ID.
 func (r *Repository) GetByID(ctx context.Context, id string) (*Template, error) {
 	row := r.db.QueryRow(ctx,
-		`SELECT id, name, format, title_template, body_template, revision, created_at, updated_at FROM notygo_templates WHERE id = $1`, id)
+		`SELECT id, name, format, title_template, body_template, revision, created_at, updated_at FROM notygo_template WHERE id = $1`, id)
 	return scanTemplate(row)
 }
 
 // List returns a paginated list of templates and the total count.
 func (r *Repository) List(ctx context.Context, page, size int) ([]Template, int64, error) {
 	var total int64
-	err := r.db.QueryRow(ctx, `SELECT COUNT(*) FROM notygo_templates`).Scan(&total)
+	err := r.db.QueryRow(ctx, `SELECT COUNT(*) FROM notygo_template`).Scan(&total)
 	if err != nil {
 		return nil, 0, fmt.Errorf("count templates: %w", err)
 	}
@@ -69,7 +69,7 @@ func (r *Repository) List(ctx context.Context, page, size int) ([]Template, int6
 
 	offset := (page - 1) * size
 	rows, err := r.db.Query(ctx,
-		`SELECT id, name, format, title_template, body_template, revision, created_at, updated_at FROM notygo_templates ORDER BY created_at DESC LIMIT $1 OFFSET $2`, size, offset)
+		`SELECT id, name, format, title_template, body_template, revision, created_at, updated_at FROM notygo_template ORDER BY created_at DESC LIMIT $1 OFFSET $2`, size, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list templates: %w", err)
 	}
@@ -121,7 +121,7 @@ func (r *Repository) Update(ctx context.Context, id string, name *string, format
 		return nil, fmt.Errorf("update template: %w", err)
 	}
 	_, err = r.db.Exec(ctx,
-		`UPDATE notygo_templates SET name=$1, format=$2, title_template=$3, body_template=$4, revision=$5, updated_at=$6 WHERE id=$7`,
+		`UPDATE notygo_template SET name=$1, format=$2, title_template=$3, body_template=$4, revision=$5, updated_at=$6 WHERE id=$7`,
 		newName, formatCode, newTitle, newBody, newRevision, now, id,
 	)
 	if err != nil {
@@ -133,7 +133,7 @@ func (r *Repository) Update(ctx context.Context, id string, name *string, format
 
 // Delete removes a template by ID.
 func (r *Repository) Delete(ctx context.Context, id string) error {
-	res, err := r.db.Exec(ctx, `DELETE FROM notygo_templates WHERE id = $1`, id)
+	res, err := r.db.Exec(ctx, `DELETE FROM notygo_template WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("delete template: %w", err)
 	}

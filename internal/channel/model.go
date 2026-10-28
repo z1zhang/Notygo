@@ -2,15 +2,20 @@ package channel
 
 import "time"
 
-// ChannelType enumerates supported channel kinds.
+// ChannelType enumerates supported channel kinds. The type is an open
+// extension point (any registered sender key is valid); the source of truth
+// for what is actually available is the sender registry wired up in
+// cmd/server/main.go. These constants cover the built-in senders.
 type ChannelType string
 
+// Built-in channel type values; keys must match the sender registry wired
+// up in cmd/server/main.go.
 const (
-	ChannelTypeWebhook ChannelType = "webhook"
-	ChannelTypeSlack   ChannelType = "slack"
-	ChannelTypeEmail   ChannelType = "email"
-	ChannelTypeDiscord ChannelType = "discord"
-	ChannelTypeCustom  ChannelType = "custom"
+	ChannelTypeDingtalk ChannelType = "dingtalk"
+	ChannelTypeFeishu   ChannelType = "feishu"
+	ChannelTypeWecom    ChannelType = "wecom"
+	ChannelTypeEmail    ChannelType = "email"
+	ChannelTypeHTTP     ChannelType = "http"
 )
 
 // Channel represents a delivery target.
@@ -25,8 +30,8 @@ type Channel struct {
 	TimeoutMs       int       `json:"timeout_ms"`
 	MaxAttempts     int       `json:"max_attempts"`
 	Revision        int       `json:"revision"`
-	CreatedAt       time.Time `json:"created_at,omitempty"`
-	UpdatedAt       time.Time `json:"updated_at,omitempty"`
+	CreatedAt       time.Time `json:"created_at,omitzero"`
+	UpdatedAt       time.Time `json:"updated_at,omitzero"`
 }
 
 // CreateChannelRequest is the DTO for creating a new channel.

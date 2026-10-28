@@ -8,9 +8,12 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
+	"notygo/internal/errcode"
 	"strings"
 	"time"
 
@@ -60,24 +63,24 @@ func (h *Ingester) HandleIngest(w http.ResponseWriter, r *http.Request) {
 	// 1. Extract endpoint slug from URL
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
-		writeIngestError(w, http.StatusBadRequest, "INGEST_005", "missing slug in URL path")
+		writeIngestError(w, r, http.StatusBadRequest, errcode.IngestEndpointMissing, "missing slug in URL path")
 		return
 	}
 
 	// 2. Lookup endpoint by slug
 	src, err := h.endpointRepo.GetBySlug(ctx, slug)
 	if err != nil {
-		if err == endpoint.ErrNotFound {
-			writeIngestError(w, http.StatusNotFound, "INGEST_005", fmt.Sprintf("endpoint %q not found", slug))
+		if errors.Is(err, endpoint.ErrNotFound) {
+			writeIngestError(w, r, http.StatusNotFound, errcode.IngestEndpointMissing, fmt.Sprintf("endpoint %q not found", slug))
 			return
 		}
-		writeIngestError(w, http.StatusInternalServerError, "INGEST_006", "database unavailable")
+		writeIngestError(w, r, http.StatusInternalServerError, errcode.IngestDBUnavailable, "database unavailable")
 		return
 	}
 
 	// 3. Check endpoint is enabled
 	if !src.Enabled {
-		writeIngestError(w, http.StatusForbidden, "INGEST_005", fmt.Sprintf("endpoint %q is disabled", slug))
+		writeIngestError(w, r, http.StatusForbidden, errcode.IngestEndpointMissing, fmt.Sprintf("endpoint %q is disabled", slug))
 		return
 	}
 
@@ -87,7 +90,7 @@ func (h *Ingester) HandleIngest(w http.ResponseWriter, r *http.Request) {
 		endpointRateLimit = *src.RateLimit
 	}
 	if !h.rateLimiter.Allow(slug, endpointRateLimit) {
-		writeIngestError(w, http.StatusTooManyRequests, "INGEST_004", "rate limit exceeded")
+		writeIngestError(w, r, http.StatusTooManyRequests, errcode.IngestRateLimited, "rate limit exceeded")
 		return
 	}
 
@@ -99,11 +102,11 @@ func (h *Ingester) HandleIngest(w http.ResponseWriter, r *http.Request) {
 	lr := io.LimitReader(r.Body, int64(maxBytes)+1)
 	body, err := io.ReadAll(lr)
 	if err != nil {
-		writeIngestError(w, http.StatusBadRequest, "INGEST_003", "failed to read request body")
+		writeIngestError(w, r, http.StatusBadRequest, errcode.IngestInvalidJSON, "failed to read request body")
 		return
 	}
 	if len(body) > maxBytes {
-		writeIngestError(w, http.StatusRequestEntityTooLarge, "INGEST_002",
+		writeIngestError(w, r, http.StatusRequestEntityTooLarge, errcode.IngestBodyTooLarge,
 			fmt.Sprintf("payload exceeds maximum size of %d bytes", maxBytes))
 		return
 	}
@@ -112,19 +115,19 @@ func (h *Ingester) HandleIngest(w http.ResponseWriter, r *http.Request) {
 	switch src.AuthType {
 	case "bearer":
 		if err := h.validateBearerAuth(ctx, src, r); err != nil {
-			writeIngestError(w, http.StatusUnauthorized, "INGEST_001", "authentication failed")
+			writeIngestError(w, r, http.StatusUnauthorized, errcode.IngestAuthFailed, "authentication failed")
 			return
 		}
 	case "hmac":
 		if err := h.validateHMACAuth(ctx, src, r, body); err != nil {
-			writeIngestError(w, http.StatusUnauthorized, "INGEST_001", "authentication failed")
+			writeIngestError(w, r, http.StatusUnauthorized, errcode.IngestAuthFailed, "authentication failed")
 			return
 		}
 	}
 
 	// 7. Validate JSON
 	if !json.Valid(body) {
-		writeIngestError(w, http.StatusBadRequest, "INGEST_003", "invalid JSON payload")
+		writeIngestError(w, r, http.StatusBadRequest, errcode.IngestInvalidJSON, "invalid JSON payload")
 		return
 	}
 
@@ -137,11 +140,13 @@ func (h *Ingester) HandleIngest(w http.ResponseWriter, r *http.Request) {
 	if deliveryID != "" {
 		isDup, err := h.endpointRepo.CheckDuplicateUpstreamEventID(ctx, src.ID, deliveryID)
 		if err != nil {
-			// Log but don't block on duplicate check failure
-			// Continue processing
-			_ = err
+			// A failed duplicate check must not block ingestion (the event
+			// is still valuable), but dedup protection silently degrades —
+			// log it so the degradation is visible to operators.
+			slog.Warn("duplicate check failed, continuing without dedup",
+				"endpoint_id", src.ID, "upstream_event_id", deliveryID, "error", err)
 		} else if isDup {
-			writeIngestError(w, http.StatusConflict, "INGEST_007", "duplicate event")
+			writeIngestError(w, r, http.StatusConflict, errcode.IngestDuplicate, "duplicate event")
 			return
 		}
 	}
@@ -152,18 +157,18 @@ func (h *Ingester) HandleIngest(w http.ResponseWriter, r *http.Request) {
 	// 11. Get request ID from context
 	requestID := observability.GetRequestID(ctx)
 
-	// 12. INSERT INTO notygo_events + queue the processing job in one transaction:
+	// 12. INSERT INTO notygo_event + queue the processing job in one transaction:
 	// the event row and its event_process job are atomic — a crash in between
 	// can never leave an unprocessed event behind.
 	receivedAt := time.Now().UTC()
 	statusCode, err := event.StatusToCode(event.EventStatusReceived)
 	if err != nil {
-		writeIngestError(w, http.StatusInternalServerError, "INGEST_006", "failed to store event")
+		writeIngestError(w, r, http.StatusInternalServerError, errcode.IngestDBUnavailable, "failed to store event")
 		return
 	}
 	runTypeCode, err := event.RunTypeToCode(event.EventRunTypeInitial)
 	if err != nil {
-		writeIngestError(w, http.StatusInternalServerError, "INGEST_006", "failed to store event")
+		writeIngestError(w, r, http.StatusInternalServerError, errcode.IngestDBUnavailable, "failed to store event")
 		return
 	}
 
@@ -174,11 +179,11 @@ func (h *Ingester) HandleIngest(w http.ResponseWriter, r *http.Request) {
 
 	tx, err := h.db.Begin(ctx)
 	if err != nil {
-		writeIngestError(w, http.StatusInternalServerError, "INGEST_006", "failed to store event")
+		writeIngestError(w, r, http.StatusInternalServerError, errcode.IngestDBUnavailable, "failed to store event")
 		return
 	}
 	_, err = tx.Exec(ctx,
-		`INSERT INTO notygo_events (id, endpoint_id, upstream_event_id, request_id, received_at, content_type, payload_raw, payload_hash, status, run_type)
+		`INSERT INTO notygo_event (id, endpoint_id, upstream_event_id, request_id, received_at, content_type, payload_raw, payload_hash, status, run_type)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
 		eventID, src.ID, upstreamEventID, requestID, receivedAt, src.PayloadContentType, string(body), payloadHash, statusCode, runTypeCode,
 	)
@@ -187,11 +192,11 @@ func (h *Ingester) HandleIngest(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		_ = tx.Rollback(ctx)
-		writeIngestError(w, http.StatusInternalServerError, "INGEST_006", "failed to store event")
+		writeIngestError(w, r, http.StatusInternalServerError, errcode.IngestDBUnavailable, "failed to store event")
 		return
 	}
 	if err := tx.Commit(ctx); err != nil {
-		writeIngestError(w, http.StatusInternalServerError, "INGEST_006", "failed to store event")
+		writeIngestError(w, r, http.StatusInternalServerError, errcode.IngestDBUnavailable, "failed to store event")
 		return
 	}
 
@@ -202,7 +207,8 @@ func (h *Ingester) HandleIngest(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
-	json.NewEncoder(w).Encode(resp)
+	// Status is committed; encode failure has nowhere to go.
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // validateBearerAuth checks the Authorization: Bearer header against the endpoint's decrypted secret.
@@ -266,10 +272,25 @@ func (h *Ingester) validateHMACAuth(ctx context.Context, src *endpoint.Endpoint,
 }
 
 // writeIngestError writes a structured error response for ingest endpoints.
-func writeIngestError(w http.ResponseWriter, status int, code, message string) {
+func writeIngestError(w http.ResponseWriter, r *http.Request, status int, code, message string) {
+	// Server-side record by severity: 5xx are ours to fix (error), 401/429
+	// signal probes or abuse worth alerting on (warn). Plain 400s are client
+	// mistakes in untrusted webhook traffic — too noisy to log per-request,
+	// and the request-access log already carries their status.
+	switch {
+	case status >= 500:
+		slog.Error("ingest request failed",
+			"code", code, "message", message, "request_id", observability.GetRequestID(r.Context()))
+	case status == http.StatusUnauthorized, status == http.StatusForbidden, status == http.StatusTooManyRequests:
+		slog.Warn("ingest rejected",
+			"code", code, "message", message,
+			"request_id", observability.GetRequestID(r.Context()), "remote_ip", r.RemoteAddr)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]any{
+	// Status is committed; encode failure has nowhere to go.
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"error": map[string]string{
 			"code":    code,
 			"message": message,

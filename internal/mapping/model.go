@@ -10,8 +10,8 @@ type Mapping struct {
 	RuleIDs         []string       `json:"rule_ids,omitempty"`
 	ContinueOnMatch bool           `json:"continue_on_match"`
 	Fields          []MappingEntry `json:"fields"`
-	CreatedAt       time.Time      `json:"created_at,omitempty"`
-	UpdatedAt       time.Time      `json:"updated_at,omitempty"`
+	CreatedAt       time.Time      `json:"created_at,omitzero"`
+	UpdatedAt       time.Time      `json:"updated_at,omitzero"`
 }
 
 // MappingEntry describes a single field extraction rule within a mapping.

@@ -9,7 +9,6 @@ import (
 	"github.com/riverqueue/river"
 
 	"notygo/internal/delivery"
-	"notygo/internal/event"
 )
 
 const (
@@ -64,7 +63,6 @@ type StuckSweepWorker struct {
 	river.WorkerDefaults[StuckSweepArgs]
 
 	pool         *pgxpool.Pool
-	eventRepo    *event.Repository
 	deliveryRepo *delivery.Repository
 
 	// enqueue functions are bound after the Manager exists (see
@@ -89,7 +87,7 @@ func (w *StuckSweepWorker) Work(ctx context.Context, _ *river.Job[StuckSweepArgs
 
 func (w *StuckSweepWorker) sweepStuckEvents(ctx context.Context) {
 	rows, err := w.pool.Query(ctx,
-		`SELECT id FROM notygo_events WHERE status = 0 AND received_at < $1 LIMIT 100`,
+		`SELECT id FROM notygo_event WHERE status = 0 AND received_at < $1 LIMIT 100`,
 		timeNowUTC().Add(-stuckThreshold))
 	if err != nil {
 		slog.Error("stuck sweep: query events", "error", err)
@@ -122,9 +120,9 @@ func (w *StuckSweepWorker) sweepStuckEvents(ctx context.Context) {
 
 func (w *StuckSweepWorker) sweepStuckDeliveries(ctx context.Context) {
 	rows, err := w.pool.Query(ctx,
-		`UPDATE notygo_deliveries SET status = 1, updated_at = $1
+		`UPDATE notygo_delivery SET status = 1, updated_at = $1
 		 WHERE id IN (
-		   SELECT id FROM notygo_deliveries WHERE status = 2 AND updated_at < $2 LIMIT 100
+		   SELECT id FROM notygo_delivery WHERE status = 2 AND updated_at < $2 LIMIT 100
 		 )
 		 RETURNING id, max_attempts`,
 		timeNowUTC(), timeNowUTC().Add(-stuckThreshold))
@@ -153,10 +151,7 @@ func (w *StuckSweepWorker) sweepStuckDeliveries(ctx context.Context) {
 	}
 
 	for _, s := range items {
-		maxAttempts := s.MaxAttempts
-		if maxAttempts < 1 {
-			maxAttempts = 1
-		}
+		maxAttempts := max(s.MaxAttempts, 1)
 		if err := w.enqueueDelivery(ctx, s.ID, maxAttempts); err != nil {
 			slog.Error("stuck sweep: re-enqueue delivery", "delivery_id", s.ID, "error", err)
 		} else {

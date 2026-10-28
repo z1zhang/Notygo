@@ -1,0 +1,49 @@
+version: "2"
+
+# 门禁目标:抓真问题(错误忽略、死代码、静态缺陷、格式漂移),
+# 不做风格论战。新增规则须先跑全量确认零误报再加。
+
+formatters:
+  enable:
+    - gofmt
+
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - misspell
+    - revive
+  settings:
+    errcheck:
+      # defer 清理与已提交响应的写入是尽力而为,检查它们没有出路:
+      # - defer tx.Rollback(ctx) 在 Commit 后是 no-op(惯用法)
+      # - defer resp.Body.Close / conn.Close / client.Close 是资源清理
+      # - w.Write 在 WriteHeader 之后无法再改变状态码
+      # 排除按静态类型匹配(接口收窄后的具体类型要单列)。
+      exclude-functions:
+        - (net/http.ResponseWriter).Write
+        - (io.Closer).Close
+        - (net.Conn).Close
+        - (*crypto/tls.Conn).Close
+        - (*net/smtp.Client).Close
+        - (*database/sql.DB).Close
+        - (github.com/jackc/pgx/v5.Tx).Rollback
+    revive:
+      rules:
+        - name: exported # 导出符号必须有以名字开头的注释
+        - name: var-naming # 命名规范(缩写词全大写等)
+  exclusions:
+    rules:
+      # 实体名与包名重复(channel.Channel / event.Event 等)是「每实体一包」
+      # 布局的既定风格(ent / SQLBoiler 同款),全量改名 churn 巨大且无行为
+      # 收益 —— 声明为有意决策,不做 stutter 改名。
+      - linters:
+          - revive
+        text: "and that stutters"
+      # 测试里宽松一些:error 检查、未使用参数常见且无风险
+      - path: _test\.go
+        linters:
+          - errcheck
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

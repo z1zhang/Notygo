@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"notygo/internal/errcode"
 
 	"notygo/internal/queue"
 )
@@ -12,7 +13,7 @@ func GetQueueStats(q *queue.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		rows, err := q.Stats(r.Context())
 		if err != nil {
-			WriteError(w, http.StatusInternalServerError, "SYSTEM_999", "failed to load queue stats")
+			WriteError(w, http.StatusInternalServerError, errcode.SystemInternal, "failed to load queue stats")
 			return
 		}
 		if rows == nil {

@@ -9,8 +9,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
-	"regexp"
-	"strings"
+	"maps"
+	"notygo/internal/errcode"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -21,8 +21,8 @@ import (
 	"notygo/internal/endpoint"
 	"notygo/internal/event"
 	"notygo/internal/mapping"
-	"notygo/internal/rules"
-	"notygo/internal/templates"
+	"notygo/internal/rule"
+	"notygo/internal/template"
 )
 
 // DeliveryEnqueuer queues a delivery_send job in the caller's transaction.
@@ -37,8 +37,8 @@ type Service struct {
 	pool         *pgxpool.Pool
 	endpointRepo *endpoint.Repository
 	mappingRepo  *mapping.Repository
-	ruleRepo     *rules.Repository
-	templateRepo *templates.Repository
+	ruleRepo     *rule.Repository
+	templateRepo *template.Repository
 	destRepo     *channel.Repository
 	eventRepo    *event.Repository
 	deliveryRepo *delivery.Repository
@@ -53,8 +53,8 @@ func NewService(
 	pool *pgxpool.Pool,
 	endpointRepo *endpoint.Repository,
 	mappingRepo *mapping.Repository,
-	ruleRepo *rules.Repository,
-	templateRepo *templates.Repository,
+	ruleRepo *rule.Repository,
+	templateRepo *template.Repository,
 	destRepo *channel.Repository,
 	eventRepo *event.Repository,
 	deliveryRepo *delivery.Repository,
@@ -122,12 +122,23 @@ func (s *Service) Process(ctx context.Context, evt *event.Event) error {
 // against the given transaction. Business failures are recorded as
 // status=failed and swallowed (nil); infrastructure errors are returned and
 // roll back everything the run wrote.
+// markFailed, markDeduped, etc. return errors that this file deliberately
+// swallows: the event's state transition failed, but the pipeline continues
+// so a broken event cannot wedge the queue. The event stays in an
+// inconsistent status with no DB record of why, so a log line is the only
+// trace — log it instead of dropping the error on the floor.
+func logStateTransition(eventID, action string, err error) {
+	slog.Error("event state transition failed", "event_id", eventID, "action", action, "error", err)
+}
+
 func (s *Service) processEvent(ctx context.Context, tx pgx.Tx, eventTx *event.Repository, deliveryTx *delivery.Repository, evt *event.Event) error {
 	// 1. Fetch endpoint + mapping
 	src, err := s.endpointRepo.GetByID(ctx, evt.EndpointID)
 	if err != nil {
 		slog.Error("failed to fetch endpoint for event", "event_id", evt.ID, "endpoint_id", evt.EndpointID, "error", err)
-		_ = eventTx.MarkFailed(ctx, evt.ID, "PROCESSOR_001", "endpoint not found")
+		if err := eventTx.MarkFailed(ctx, evt.ID, errcode.ProcessorEndpointNotFound, "endpoint not found"); err != nil {
+			logStateTransition(evt.ID, "mark_failed", err)
+		}
 		return nil
 	}
 
@@ -139,7 +150,9 @@ func (s *Service) processEvent(ctx context.Context, tx pgx.Tx, eventTx *event.Re
 		mapObj, err = s.mappingRepo.GetByID(ctx, *src.MappingID)
 		if err != nil {
 			slog.Error("failed to fetch mapping for event", "event_id", evt.ID, "mapping_id", *src.MappingID, "error", err)
-			_ = eventTx.MarkFailed(ctx, evt.ID, "PROCESSOR_003", fmt.Sprintf("mapping %s not found", *src.MappingID))
+			if err := eventTx.MarkFailed(ctx, evt.ID, errcode.ProcessorMappingNotFound, fmt.Sprintf("mapping %s not found", *src.MappingID)); err != nil {
+				logStateTransition(evt.ID, "mark_failed", err)
+			}
 			return nil
 		}
 		mappingID = &mapObj.ID
@@ -175,19 +188,19 @@ func (s *Service) processEvent(ctx context.Context, tx pgx.Tx, eventTx *event.Re
 	// stored in the EventRun. evalFields adds meta fields that rules and
 	// dedupe can reference (e.g. key_fields: ["payload_hash"]).
 	evalFields := make(map[string]any, len(parsedFields)+2)
-	for k, v := range parsedFields {
-		evalFields[k] = v
-	}
+	maps.Copy(evalFields, parsedFields)
 	evalFields["payload_hash"] = evt.PayloadHash
 	evalFields["endpoint_id"] = evt.EndpointID
 
 	// 3. Get enabled rules selected by this mapping, and build rule_set_snapshot
-	var enabledRules []rules.Rule
+	var enabledRules []rule.Rule
 	if mapObj != nil && len(mapObj.RuleIDs) > 0 {
 		enabledRules, err = s.ruleRepo.ListEnabledByIDs(ctx, mapObj.RuleIDs)
 		if err != nil {
 			slog.Error("failed to list enabled rules by mapping", "event_id", evt.ID, "mapping_id", mapObj.ID, "rule_ids", mapObj.RuleIDs, "error", err)
-			_ = eventTx.MarkFailed(ctx, evt.ID, "PROCESSOR_004", fmt.Sprintf("failed to fetch rules for mapping %s", mapObj.ID))
+			if err := eventTx.MarkFailed(ctx, evt.ID, errcode.ProcessorRulesFetchFailed, fmt.Sprintf("failed to fetch rules for mapping %s", mapObj.ID)); err != nil {
+				logStateTransition(evt.ID, "mark_failed", err)
+			}
 			return nil
 		}
 		slog.Info("rules fetched for event", "event_id", evt.ID, "requested_rule_ids", mapObj.RuleIDs, "fetched_count", len(enabledRules))
@@ -195,7 +208,7 @@ func (s *Service) processEvent(ctx context.Context, tx pgx.Tx, eventTx *event.Re
 		if mapObj != nil {
 			slog.Warn("no rules configured for mapping — event will have zero matched rules", "event_id", evt.ID, "mapping_id", mapObj.ID, "mapping_name", mapObj.Name)
 		}
-		enabledRules = []rules.Rule{}
+		enabledRules = []rule.Rule{}
 	}
 
 	ruleSetSnapshot := make([]event.RuleSnapshot, 0, len(enabledRules))
@@ -232,23 +245,23 @@ func (s *Service) processEvent(ctx context.Context, tx pgx.Tx, eventTx *event.Re
 	var matchedRuleIDs []string
 	deliveryCreated := false
 	var renderFailure error
-	for _, rule := range enabledRules {
-		matched, err := evaluateRule(rule, evalFields)
+	for _, r := range enabledRules {
+		matched, err := rule.Evaluate(&r, evalFields)
 		if err != nil {
-			slog.Warn("rule evaluation error", "event_id", evt.ID, "rule_id", rule.ID, "rule_name", rule.Name, "error", err)
+			slog.Warn("rule evaluation error", "event_id", evt.ID, "rule_id", r.ID, "rule_name", r.Name, "error", err)
 			continue
 		}
-		slog.Info("rule evaluated", "event_id", evt.ID, "rule_id", rule.ID, "rule_name", rule.Name, "matched", matched)
+		slog.Info("rule evaluated", "event_id", evt.ID, "rule_id", r.ID, "rule_name", r.Name, "matched", matched)
 		if matched {
-			matchedRuleIDs = append(matchedRuleIDs, rule.ID)
+			matchedRuleIDs = append(matchedRuleIDs, r.ID)
 
 			// 6. For each matched rule: render template, create deliveries
-			created, renderErr := s.processMatchedRule(ctx, tx, eventTx, deliveryTx, evt, src, createdRun, rule, evalFields)
+			created, renderErr := s.processMatchedRule(ctx, tx, eventTx, deliveryTx, evt, src, createdRun, r, evalFields)
 			if renderErr != nil {
 				// Template render failure — do NOT create empty-content deliveries;
 				// fail the event so the error is visible and fixable
 				slog.Error("template render failed, skipping deliveries for rule",
-					"event_id", evt.ID, "rule_id", rule.ID, "rule_name", rule.Name, "error", renderErr)
+					"event_id", evt.ID, "rule_id", r.ID, "rule_name", r.Name, "error", renderErr)
 				if renderFailure == nil {
 					renderFailure = renderErr
 				}
@@ -265,19 +278,29 @@ func (s *Service) processEvent(ctx context.Context, tx pgx.Tx, eventTx *event.Re
 
 	// 7. Mark EventRun completed (or failed when a template could not render)
 	if renderFailure != nil {
-		_ = eventTx.FailEventRun(ctx, createdRun.ID, "PROCESSOR_005", renderFailure.Error())
-		_ = eventTx.MarkFailed(ctx, evt.ID, "PROCESSOR_005", renderFailure.Error())
+		if err := eventTx.FailEventRun(ctx, createdRun.ID, errcode.ProcessorTemplateRender, renderFailure.Error()); err != nil {
+			logStateTransition(evt.ID, "fail_event_run", err)
+		}
+		if err := eventTx.MarkFailed(ctx, evt.ID, errcode.ProcessorTemplateRender, renderFailure.Error()); err != nil {
+			logStateTransition(evt.ID, "mark_failed", err)
+		}
 		slog.Error("event failed: template render error", "event_id", evt.ID, "error", renderFailure)
 		return nil
 	}
-	_ = eventTx.CompleteEventRun(ctx, createdRun.ID, matchedRuleIDs)
+	if err := eventTx.CompleteEventRun(ctx, createdRun.ID, matchedRuleIDs); err != nil {
+		logStateTransition(evt.ID, "complete_event_run", err)
+	}
 
 	// 8. Mark Event status: deduped if all matched rules were skipped, completed otherwise
 	if len(matchedRuleIDs) > 0 && !deliveryCreated {
-		_ = eventTx.MarkDeduped(ctx, evt.ID)
+		if err := eventTx.MarkDeduped(ctx, evt.ID); err != nil {
+			logStateTransition(evt.ID, "mark_deduped", err)
+		}
 		slog.Info("event deduped", "event_id", evt.ID, "matched_rules", len(matchedRuleIDs), "all_deduped", true)
 	} else {
-		_ = eventTx.MarkProcessed(ctx, evt.ID)
+		if err := eventTx.MarkProcessed(ctx, evt.ID); err != nil {
+			logStateTransition(evt.ID, "mark_processed", err)
+		}
 		slog.Info("event processed", "event_id", evt.ID, "matched_rules", len(matchedRuleIDs), "deliveries_created", deliveryCreated)
 	}
 	if len(matchedRuleIDs) == 0 && mapObj != nil {
@@ -296,7 +319,7 @@ func (s *Service) processEvent(ctx context.Context, tx pgx.Tx, eventTx *event.Re
 // If the rule has dedupe enabled, it checks for duplicates before creating deliveries.
 // Returns (true, nil) if deliveries were actually created, (false, nil) if dedupe-skipped,
 // and (_, err) when the template could not be rendered (no deliveries are created then).
-func (s *Service) processMatchedRule(ctx context.Context, tx pgx.Tx, eventTx *event.Repository, deliveryTx *delivery.Repository, evt *event.Event, src *endpoint.Endpoint, run *event.EventRun, rule rules.Rule, fields map[string]any) (bool, error) {
+func (s *Service) processMatchedRule(ctx context.Context, tx pgx.Tx, eventTx *event.Repository, deliveryTx *delivery.Repository, evt *event.Event, src *endpoint.Endpoint, run *event.EventRun, rule rule.Rule, fields map[string]any) (bool, error) {
 	// === Deduplication check ===
 	if rule.DedupeConfig != nil && rule.DedupeConfig.WindowSeconds > 0 {
 		// Dedupe key: rule_id + payload_hash — same content within window = skip
@@ -322,7 +345,7 @@ func (s *Service) processMatchedRule(ctx context.Context, tx pgx.Tx, eventTx *ev
 // renderAndCreateDeliveries renders the template and creates deliveries,
 // queueing a delivery_send job for each inside the same transaction.
 // Rendering failures return an error — deliveries with empty content are never created.
-func (s *Service) renderAndCreateDeliveries(ctx context.Context, tx pgx.Tx, deliveryTx *delivery.Repository, evt *event.Event, src *endpoint.Endpoint, run *event.EventRun, rule rules.Rule, fields map[string]any) error {
+func (s *Service) renderAndCreateDeliveries(ctx context.Context, tx pgx.Tx, deliveryTx *delivery.Repository, evt *event.Event, src *endpoint.Endpoint, run *event.EventRun, rule rule.Rule, fields map[string]any) error {
 	if rule.TemplateID == nil || *rule.TemplateID == "" {
 		return fmt.Errorf("rule %q has no template configured", rule.Name)
 	}
@@ -334,15 +357,13 @@ func (s *Service) renderAndCreateDeliveries(ctx context.Context, tx pgx.Tx, deli
 
 	// Build template data: mapped fields at top level + Event metadata
 	templateData := make(map[string]any, len(fields)+1)
-	for k, v := range fields {
-		templateData[k] = v
-	}
+	maps.Copy(templateData, fields)
 	templateData["Event"] = map[string]any{
 		"ID":           evt.ID,
 		"ReceivedAt":   evt.ReceivedAt.Format(time.RFC3339),
 		"EndpointName": src.Name,
 	}
-	msg, renderErr := templates.Render(tmpl, templateData)
+	msg, renderErr := template.Render(tmpl, templateData)
 	if renderErr != nil {
 		return fmt.Errorf("template %s render failed: %w", *rule.TemplateID, renderErr)
 	}
@@ -388,207 +409,18 @@ func (s *Service) renderAndCreateDeliveries(ctx context.Context, tx pgx.Tx, deli
 	return nil
 }
 
-// evaluateRule evaluates a rule against parsed fields.
-func evaluateRule(rule rules.Rule, fields map[string]any) (bool, error) {
-	return evaluateConditionGroup(rule.Conditions, rule.Conditions.Operator, fields)
-}
-
-// evaluateConditionGroup evaluates a condition group against parsed fields.
-func evaluateConditionGroup(group rules.ConditionGroup, mode string, fields map[string]any) (bool, error) {
-	if len(group.Conditions) == 0 && len(group.Groups) == 0 {
-		return true, nil
-	}
-
-	// Evaluate sub-groups
-	var groupResults []bool
-	for _, g := range group.Groups {
-		result, err := evaluateConditionGroup(g, g.Operator, fields)
-		if err != nil {
-			return false, err
-		}
-		groupResults = append(groupResults, result)
-	}
-
-	// Evaluate conditions
-	var condResults []bool
-	for _, cond := range group.Conditions {
-		result := evaluateCondition(cond, fields)
-		condResults = append(condResults, result)
-	}
-
-	// Combine results
-	allResults := append(condResults, groupResults...)
-	if len(allResults) == 0 {
-		return true, nil
-	}
-
-	effectiveMode := mode
-	if effectiveMode == "" {
-		effectiveMode = "and"
-	}
-
-	switch effectiveMode {
-	case "or":
-		for _, r := range allResults {
-			if r {
-				return true, nil
-			}
-		}
-		return false, nil
-	default: // "and"
-		for _, r := range allResults {
-			if !r {
-				return false, nil
-			}
-		}
-		return true, nil
-	}
-}
-
-// evaluateCondition evaluates a single condition against parsed fields.
-func evaluateCondition(cond rules.Condition, fields map[string]any) bool {
-	fieldVal, ok := fields[cond.Field]
-	if !ok {
-		slog.Info("condition field not found in parsed_fields", "field", cond.Field, "operator", cond.Operator, "value", cond.Value, "available_fields", formatMapKeys(fields))
-		// Field does not exist in parsed_fields
-		switch cond.Operator {
-		case "exists":
-			// "exists true" → field should exist → false (it doesn't)
-			// "exists false" → field should not exist → true (it doesn't)
-			return cond.Value == "false"
-		case "not_exists":
-			// "not_exists true" → field should not exist → true (it doesn't)
-			// "not_exists false" → field should exist → false (it doesn't)
-			return cond.Value != "false"
-		default:
-			// All other operators fail when the field doesn't exist
-			return false
-		}
-	}
-
-	fieldStr := formatFieldValue(fieldVal)
-	var result bool
-	switch cond.Operator {
-	case "eq":
-		result = fieldStr == cond.Value
-	case "neq":
-		result = fieldStr != cond.Value
-	case "contains":
-		result = strings.Contains(fieldStr, cond.Value)
-	case "not_contains":
-		result = !strings.Contains(fieldStr, cond.Value)
-	case "exists":
-		// Field exists: "exists true" → true, "exists false" → false
-		result = cond.Value != "false"
-	case "not_exists":
-		// Field exists: "not_exists true" → false, "not_exists false" → true
-		result = cond.Value == "false"
-	case "gt", "lt", "gte", "lte":
-		result = compareValues(fieldVal, cond.Value, cond.Operator)
-	case "regex":
-		if len(cond.Value) > 256 {
-			slog.Warn("regex pattern exceeds 256 character limit", "pattern_length", len(cond.Value))
-			result = false
-		} else if re, err := regexp.Compile(cond.Value); err != nil {
-			slog.Warn("invalid regex pattern", "pattern", cond.Value, "error", err)
-			result = false
-		} else {
-			result = re.MatchString(fieldStr)
-		}
-	default:
-		slog.Warn("unknown condition operator", "operator", cond.Operator, "field", cond.Field)
-		result = false
-	}
-	slog.Info("condition evaluated", "field", cond.Field, "field_type", fmt.Sprintf("%T", fieldVal), "field_value", fieldStr, "operator", cond.Operator, "compare_value", cond.Value, "result", result)
-	return result
-}
-
-// formatFieldValue converts a field value to string for comparison.
-// Uses strconv for float64 to avoid scientific notation (e.g. 1e+09) that
-// fmt.Sprintf("%v") can produce for large numbers, which would cause
-// "eq" comparisons to fail against user-provided values like "1000000000".
-func formatFieldValue(val any) string {
-	switch v := val.(type) {
-	case float64:
-		// Format without scientific notation: 1000000000 not 1e+09
-		if v == float64(int64(v)) {
-			return fmt.Sprintf("%d", int64(v))
-		}
-		return fmt.Sprintf("%f", v)
-	case float32:
-		if v == float32(int32(v)) {
-			return fmt.Sprintf("%d", int32(v))
-		}
-		return fmt.Sprintf("%f", v)
-	case int:
-		return fmt.Sprintf("%d", v)
-	case int64:
-		return fmt.Sprintf("%d", v)
-	case int32:
-		return fmt.Sprintf("%d", v)
-	case bool:
-		if v {
-			return "true"
-		}
-		return "false"
-	case string:
-		return v
-	default:
-		return fmt.Sprintf("%v", v)
-	}
-}
-
 // formatFieldSummary returns a concise summary of parsed fields for logging.
 // Shows each key with its value type and truncated value.
 func formatFieldSummary(fields map[string]any) map[string]string {
 	summary := make(map[string]string, len(fields))
 	for k, v := range fields {
-		s := formatFieldValue(v)
+		s := rule.StringifyValue(v)
 		if len(s) > 80 {
 			s = s[:77] + "..."
 		}
 		summary[k] = fmt.Sprintf("%s:%s", fmt.Sprintf("%T", v), s)
 	}
 	return summary
-}
-
-// formatMapKeys returns the keys of a map for logging purposes.
-func formatMapKeys(m map[string]any) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	return keys
-}
-
-func compareValues(a any, b string, op string) bool {
-	aStr := formatFieldValue(a)
-	var aNum, bNum float64
-	_, err1 := fmt.Sscanf(aStr, "%f", &aNum)
-	_, err2 := fmt.Sscanf(b, "%f", &bNum)
-	if err1 == nil && err2 == nil {
-		switch op {
-		case "gt":
-			return aNum > bNum
-		case "lt":
-			return aNum < bNum
-		case "gte":
-			return aNum >= bNum
-		case "lte":
-			return aNum <= bNum
-		}
-	}
-	switch op {
-	case "gt":
-		return aStr > b
-	case "lt":
-		return aStr < b
-	case "gte":
-		return aStr >= b
-	case "lte":
-		return aStr <= b
-	}
-	return false
 }
 
 // sha256Hash returns the hex-encoded SHA-256 hash of the input string.
